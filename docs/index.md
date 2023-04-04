@@ -1,30 +1,58 @@
-# Databases
+# Databasez
 
-<p>
-<a href="https://github.com/encode/databases/actions">
-    <img src="https://github.com/encode/databases/workflows/Test%20Suite/badge.svg" alt="Test Suite">
+<p align="center">
+  <a href="https://databasez.dymmond.com"><img src="https://res.cloudinary.com/dymmond/image/upload/v1680611626/databasez/logo-cmp_luizb0.png" alt='databasez'></a>
+</p>
+
+<p align="center">
+    <em>🚀 Async database support for Python. 🚀</em>
+</p>
+
+<p align="center">
+<a href="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" target="_blank">
+    <img src="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" alt="Test Suite">
 </a>
-<a href="https://pypi.org/project/databases/">
-    <img src="https://badge.fury.io/py/databases.svg" alt="Package version">
+
+<a href="https://pypi.org/project/databasez" target="_blank">
+    <img src="https://img.shields.io/pypi/v/databasez?color=%2334D058&label=pypi%20package" alt="Package version">
+</a>
+
+<a href="https://pypi.org/project/databasez" target="_blank">
+    <img src="https://img.shields.io/pypi/pyversions/databasez.svg?color=%2334D058" alt="Supported Python versions">
 </a>
 </p>
 
-Databases gives you simple asyncio support for a range of databases.
+---
 
-It allows you to make queries using the powerful [SQLAlchemy Core][sqlalchemy-core]
-expression language, and provides support for PostgreSQL, MySQL, and SQLite.
+**Documentation**: [https://databasez.dymmond.com](https://databasez.dymmond.com) 📚
 
-Databases is suitable for integrating against any async Web framework, such as [Starlette][starlette],
-[Sanic][sanic], [Responder][responder], [Quart][quart], [aiohttp][aiohttp], [Tornado][tornado], or [FastAPI][fastapi].
-
-**Requirements**: Python 3.7+
+**Source Code**: [https://github.com/dymmond/databasez](https://github.com/dymmond/databasez)
 
 ---
+
+## Motivation
+
+There is a great package from [Encode](https://github.com/encode/databases/) that was doing what
+this package was initially forked to do but Encode is also very busy with other projects and
+without the proper time to maintain the so much required package.
+
+From a need to extend to new drivers and newest technologies and adding extra features common and
+useful to the many, [Databases](https://github.com/encode/databases/) was forked to become
+**Databasez**.
+
+This package is 100% backwards compatible with [Databases](https://github.com/encode/databases/)
+from Encode and will remain like this for the time being but adding extra features and regular
+updates as well as continuing to be community driven.
+
+A lot of packages depends of Databases and this was the main reason for the fork of **Databasez**.
+The need of progressing.
+
+Databasez was built to with Python 3.8+ and on the top of the newest SQLAlchemy 2.0.
 
 ## Installation
 
 ```shell
-$ pip install databases
+$ pip install databasez
 ```
 
 Database drivers supported are:
@@ -91,7 +119,7 @@ rows = await database.fetch_all(query=query)
 print('High Scores:', rows)
 ```
 
-Check out the documentation on [making database queries](database_queries.md)
+Check out the documentation on [making database queries](https://www.encode.io/databases/database_queries/)
 for examples of how to start using databases together with SQLAlchemy core expressions.
 
 

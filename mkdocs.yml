@@ -1,22 +1,76 @@
-site_name: Databases
+site_name: Saffier
 site_description: Async database support for Python.
+site_url: https://databases.dymmond.com
 
 theme:
     name: "material"
+    custom_dir: docs/overrides
+    language: en
+    palette:
+        - scheme: "default"
+          primary: "cyan"
+          accent: "amber"
+          media: "(prefers-color-scheme: light)"
+          toggle:
+              icon: "material/lightbulb"
+              name: "Switch to dark mode"
+        - scheme: "slate"
+          media: "(prefers-color-scheme: dark)"
+          primary: "cyan"
+          accent: "amber"
+          toggle:
+              icon: "material/lightbulb-outline"
+              name: "Switch to light mode"
+    favicon: statics/images/favicon.ico
+    logo: statics/images/logo-white.png
+    features:
+        - search.suggest
+        - search.highlight
+        - content.tabs.link
 
-repo_name: encode/databases
+repo_name: dymmond/databasez
 repo_url: https://github.com/dymmond/databasez
-# edit_uri: ""
+edit_uri: ""
+plugins:
+    - search
+    - markdownextradata:
+          data: data
 
 nav:
-    - Introduction: "index.md"
-    - Database Queries: "database_queries.md"
-    - Connections & Transactions: "connections_and_transactions.md"
-    - Tests & Migrations: "tests_and_migrations.md"
+    - Databasez: "index.md"
+    - Databasez People: "databasez-people.md"
     - Contributing: "contributing.md"
-
+    - Sponsorship: "sponsorship.md"
+    - Release Notes: "release-notes.md"
 markdown_extensions:
-    - mkautodoc
+    - attr_list
+    - toc:
+          permalink: true
+    - markdown.extensions.codehilite:
+          guess_lang: false
+    - mdx_include:
+          base_path: docs
     - admonition
-    - pymdownx.highlight
-    - pymdownx.superfences
+    - codehilite
+    - extra
+    - pymdownx.superfences:
+          custom_fences:
+              - name: mermaid
+                class: mermaid
+                format: !!python/name:pymdownx.superfences.fence_code_format ""
+    - pymdownx.emoji:
+          emoji_index: !!python/name:materialx.emoji.twemoji
+          emoji_generator: !!python/name:materialx.emoji.to_svg
+    - pymdownx.tabbed:
+          alternate_style: true
+    - md_in_html
+
+extra:
+    alternate:
+        - link: /
+          name: English
+          lang: en
+
+extra_css:
+    - statics/css/extra.css
+    - statics/css/custom.css
