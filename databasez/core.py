@@ -5,12 +5,16 @@ import logging
 import typing
 from contextvars import ContextVar
 from types import TracebackType
-from urllib.parse import SplitResult, parse_qsl, unquote, urlsplit
+from urllib.parse import SplitResult, parse_qsl, unquote, urlencode, urlsplit
+
+from sqlalchemy import text
+from sqlalchemy.sql import ClauseElement
 
 from databasez.importer import import_from_string
 from databasez.interfaces import DatabaseBackend, Record
-from sqlalchemy import text
-from sqlalchemy.sql import ClauseElement
+
+if typing.TYPE_CHECKING:
+    from databasez.types import DictAny
 
 try:  # pragma: no cover
     import click
@@ -31,6 +35,29 @@ logger = logging.getLogger("databases")
 
 
 class Database:
+    """
+    An abstraction on the top of the EncodeORM databases.Database object.
+
+    This object allows to pass also a configuration dictionary in the format of
+
+    DATABASEZ_CONFIG = {
+        "connection": {
+            "credentials": {
+                "scheme": 'sqlite', "postgres"...
+                "host": ...,
+                "port": ...,
+                "user": ...,
+                "password": ...,
+                "database": ...,
+                "options": {
+                    "driver": ...
+                    "ssl": ...
+                }
+            }
+        }
+    }
+    """
+
     SUPPORTED_BACKENDS = {
         "postgresql": "databasez.backends.postgres:PostgresBackend",
         "postgresql+aiopg": "databasez.backends.aiopg:AiopgBackend",
@@ -42,15 +69,26 @@ class Database:
         "mssql+aioodbc": "databasez.backends.mssql:MSSQLBackend",
         "sqlite": "databasez.backends.sqlite:SQLiteBackend",
     }
+    DIRECT_URL_SCHEME = {"sqlite"}
+    MANDATORY_FIELDS = ["host", "port", "user", "database"]
 
     def __init__(
         self,
-        url: typing.Union[str, "DatabaseURL"],
+        url: typing.Optional[typing.Union[str, "DatabaseURL"]] = None,
         *,
         force_rollback: bool = False,
+        config: typing.Optional["DictAny"] = None,
         **options: typing.Any,
     ):
-        self.url = DatabaseURL(url)
+        assert config is None or url is None, "Use either 'url' or 'config', not both."
+
+        _url: typing.Optional[typing.Union[str, "DatabaseURL"]] = None
+        if not config:
+            _url = url
+        else:
+            _url = self._build_url(config)
+
+        self.url = DatabaseURL(_url)  # type: ignore
         self.options = options
         self.is_connected = False
 
@@ -68,6 +106,62 @@ class Database:
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
         self._global_transaction: typing.Optional[Transaction] = None
+
+    @property
+    def allowed_url_schemes(self) -> typing.Set[str]:
+        schemes = {
+            value
+            for value in self.SUPPORTED_BACKENDS.keys()
+            if value not in self.DIRECT_URL_SCHEME
+        }
+        return schemes
+
+    def _build_url(self, config: "DictAny") -> str:
+        assert "connection" in config, "connection not found in the database configuration"
+        connection = config["connection"]
+
+        assert "credentials" in connection, "credetials not found in connection"
+        credentials = connection["credentials"]
+
+        assert (
+            "scheme" in credentials
+        ), "scheme is missing from credentials. Use postgres or mysql instead"
+
+        scheme = credentials["scheme"]
+        if not scheme or scheme is None:
+            raise ValueError("scheme cannot be None")
+
+        database = credentials["database"]
+
+        scheme = scheme.lower()
+        if scheme.lower() in self.DIRECT_URL_SCHEME:
+            return self._build_url_for_direct_url_scheme(scheme, database)
+
+        for value in self.MANDATORY_FIELDS:
+            if not value or value is None:
+                raise ValueError(f"{value} is required in the credentials")
+
+        user = credentials["user"]
+        password = credentials.get("password", None)
+        host = credentials["host"]
+        port = credentials["port"]
+
+        if "password" not in credentials:
+            connection_string = f"{scheme}://{user}@{host}:{port}/{database}"
+        else:
+            connection_string = f"{scheme}://{user}:{password}@{host}:{port}/{database}"
+
+        options = credentials.get("options", None)
+
+        if options is None or not options:
+            return connection_string
+        return f"{connection_string}?{urlencode(options)}"
+
+    def _build_url_for_direct_url_scheme(self, scheme: str, database: str) -> str:
+        """Builds the URL for direct url schemes that do not support user, password and other
+        parameters. Example: SQLite.
+        """
+        return f"{scheme}:///{database}"
 
     async def connect(self) -> None:
         """
@@ -180,7 +274,7 @@ class Database:
             return self._global_connection
 
         try:
-            return self._connection_context.get()
+            return self._connection_context.get()  # type: ignore
         except LookupError:
             connection = Connection(self._backend)
             self._connection_context.set(connection)

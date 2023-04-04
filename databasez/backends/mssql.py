@@ -303,7 +303,7 @@ class MSSQLTransaction(TransactionBackend):
         cursor = await self._connection._connection.cursor()
         if self._is_root:
             try:
-                await cursor.execute(f"ROLLBACK TRANSACTION")
+                await cursor.execute("ROLLBACK TRANSACTION")
             except ext_pyodbc.ProgrammingError:
                 logger.error("There is no transaction to rollback")
         else:

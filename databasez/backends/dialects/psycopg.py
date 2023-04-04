@@ -18,9 +18,7 @@ class PGExecutionContext_psycopg(PGExecutionContext):
 
 
 class PGNumeric(Numeric):
-    def bind_processor(
-        self, dialect: typing.Any
-    ) -> typing.Union[str, None]:  # pragma: no cover
+    def bind_processor(self, dialect: typing.Any) -> typing.Union[str, None]:  # pragma: no cover
         return processors.to_str
 
     def result_processor(
