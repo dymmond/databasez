@@ -30,10 +30,29 @@
 
 ---
 
+## Motivation
+
+There is a great package from [Encode](https://github.com/encode/databases/) that was doing what
+this package was initially forked to do but Encode is also very busy with other projects and
+without the proper time to maintain the so much required package.
+
+From a need to extend to new drivers and newest technologies and adding extra features common and
+useful to the many, [Databases](https://github.com/encode/databases/) was forked to become
+**Databasez**.
+
+This package is 100% backwards compatible with [Databases](https://github.com/encode/databases/)
+from Encode and will remain like this for the time being but adding extra features and regular
+updates as well as continuing to be community driven.
+
+A lot of packages depends of Databases and this was the main reason for the fork of **Databasez**.
+The need of progressing.
+
+Databasez was built to with Python 3.8+ and on the top of the newest SQLAlchemy 2.0.
+
 ## Installation
 
 ```shell
-$ pip install databases
+$ pip install databasez
 ```
 
 Database drivers supported are:
