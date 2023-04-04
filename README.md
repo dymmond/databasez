@@ -1,25 +1,32 @@
-# Databases
+# Databasez
 
-<p>
-<a href="https://github.com/encode/databases/actions">
-    <img src="https://github.com/encode/databases/workflows/Test%20Suite/badge.svg" alt="Test Suite">
+<p align="center">
+  <a href="https://databasez.dymmond.com"><img src="https://res.cloudinary.com/dymmond/image/upload/v1680611626/databasez/logo-cmp_luizb0.png" alt='databasez'></a>
+</p>
+
+<p align="center">
+    <em>🚀 Async database support for Python. 🚀</em>
+</p>
+
+<p align="center">
+<a href="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" target="_blank">
+    <img src="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" alt="Test Suite">
 </a>
-<a href="https://pypi.org/project/databasex/">
-    <img src="https://badge.fury.io/py/databasex.svg" alt="Package version">
+
+<a href="https://pypi.org/project/databasez" target="_blank">
+    <img src="https://img.shields.io/pypi/v/databasez?color=%2334D058&label=pypi%20package" alt="Package version">
+</a>
+
+<a href="https://pypi.org/project/databasez" target="_blank">
+    <img src="https://img.shields.io/pypi/pyversions/databasez.svg?color=%2334D058" alt="Supported Python versions">
 </a>
 </p>
 
-Databases gives you simple asyncio support for a range of databases.
+---
 
-It allows you to make queries using the powerful [SQLAlchemy Core][sqlalchemy-core]
-expression language, and provides support for PostgreSQL, MySQL, and SQLite.
+**Documentation**: [https://databasez.dymmond.com](https://databasez.dymmond.com) 📚
 
-Databases is suitable for integrating against any async Web framework, such as [Starlette][starlette],
-[Sanic][sanic], [Responder][responder], [Quart][quart], [aiohttp][aiohttp], [Tornado][tornado], or [FastAPI][fastapi].
-
-**Documentation**: [https://www.encode.io/databases/](https://www.encode.io/databases/)
-
-**Requirements**: Python 3.7+
+**Source Code**: [https://github.com/dymmond/databasez](https://github.com/dymmond/databasez)
 
 ---
 
