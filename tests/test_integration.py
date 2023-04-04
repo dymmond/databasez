@@ -1,5 +1,10 @@
 import pytest
 import sqlalchemy
+from esmerald import Gateway
+from esmerald import JSONResponse as EsmeraldJSONResponse
+from esmerald import Request, route
+from esmerald.applications import Esmerald
+from esmerald.testclient import EsmeraldTestClient
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
@@ -96,6 +101,38 @@ def get_app(database_url):
     return app
 
 
+def get_esmerald_app(database_url):
+    database = Database(database_url, force_rollback=True)
+
+    @route("/notes", methods=["GET"])
+    async def list_notes(request: Request) -> EsmeraldJSONResponse:
+        query = notes.select()
+        results = await database.fetch_all(query)
+        content = [
+            {"text": result["text"], "completed": result["completed"]} for result in results
+        ]
+        return EsmeraldJSONResponse(content)
+
+    @route("/notes", methods=["POST"])
+    async def add_notes(request: Request) -> EsmeraldJSONResponse:
+        data = await request.json()
+        query = notes.insert().values(text=data["text"], completed=data["completed"])
+        await database.execute(query)
+        return EsmeraldJSONResponse({"text": data["text"], "completed": data["completed"]})
+
+    app = Esmerald(routes=[Gateway(handler=list_notes), Gateway(handler=add_notes)])
+
+    @app.on_event("startup")
+    async def startup():
+        await database.connect()
+
+    @app.on_event("shutdown")
+    async def shutdown():
+        await database.disconnect()
+
+    return app
+
+
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 def test_integration(database_url):
     app = get_app(database_url)
@@ -110,6 +147,26 @@ def test_integration(database_url):
         assert response.json() == [{"text": "example", "completed": True}]
 
     with TestClient(app) as client:
+        # Ensure sessions are isolated
+        response = client.get("/notes")
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+def test_integration_esmerald(database_url):
+    app = get_esmerald_app(database_url)
+
+    with EsmeraldTestClient(app) as client:
+        response = client.post("/notes", json={"text": "example", "completed": True})
+        assert response.status_code == 200
+        assert response.json() == {"text": "example", "completed": True}
+
+        response = client.get("/notes")
+        assert response.status_code == 200
+        assert response.json() == [{"text": "example", "completed": True}]
+
+    with EsmeraldTestClient(app) as client:
         # Ensure sessions are isolated
         response = client.get("/notes")
         assert response.status_code == 200
