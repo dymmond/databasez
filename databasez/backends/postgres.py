@@ -2,15 +2,16 @@ import logging
 import typing
 
 import asyncpg
+from sqlalchemy.engine.interfaces import Dialect
+from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.ddl import DDLElement
+
 from databasez.backends.common.records import Record, create_column_maps
 from databasez.backends.dialects.psycopg import dialect as psycopg_dialect
 from databasez.core import LOG_EXTRA, DatabaseURL
 from databasez.interfaces import ConnectionBackend, DatabaseBackend
 from databasez.interfaces import Record as RecordInterface
 from databasez.interfaces import TransactionBackend
-from sqlalchemy.engine.interfaces import Dialect
-from sqlalchemy.sql import ClauseElement
-from sqlalchemy.sql.ddl import DDLElement
 
 logger = logging.getLogger("databases")
 
@@ -58,13 +59,13 @@ class PostgresBackend(DatabaseBackend):
 
     async def connect(self) -> None:
         assert self._pool is None, "DatabaseBackend is already running"
-        kwargs = dict(
-            host=self._database_url.hostname,
-            port=self._database_url.port,
-            user=self._database_url.username,
-            password=self._database_url.password,
-            database=self._database_url.database,
-        )
+        kwargs = {
+            "host": self._database_url.hostname,
+            "port": self._database_url.port,
+            "user": self._database_url.username,
+            "password": self._database_url.password,
+            "database": self._database_url.database,
+        }
         kwargs.update(self._get_connection_kwargs())
         self._pool = await asyncpg.create_pool(**kwargs)
 

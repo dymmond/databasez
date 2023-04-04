@@ -29,7 +29,7 @@ test: ## Runs the tests
 
 .PHONY: requirements
 requirements: ## Install requirements for development
-	pip install -e .[dev,test,doc]
+	pip install -e .[dev,test,doc,testing]
 
 ifndef VERBOSE
 .SILENT:

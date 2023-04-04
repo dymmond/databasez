@@ -69,6 +69,8 @@ test = [
     "ruff>=0.0.256,<1.0.0",
 ]
 
+testing = ["sqlalchemy_utils>=0.40.0"]
+
 dev = [
     "asyncmy>=0.2.7,<0.3.0",
     "aiopg>=1.4.0,<2.0.0",
