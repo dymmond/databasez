@@ -1,4 +1,4 @@
-from databasex.core import Database, DatabaseURL
+from databasez.core import Database, DatabaseURL
 
 __version__ = "0.1.0"
 

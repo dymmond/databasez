@@ -1,7 +1,7 @@
 from urllib.parse import quote
 
 import pytest
-from databasex import DatabaseURL
+from databasez import DatabaseURL
 
 
 def test_database_url_repr():

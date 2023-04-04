@@ -6,9 +6,9 @@ if [ "$VIRTUAL_ENV" != '' ]; then
 elif [ -d 'venv' ] ; then
     export PREFIX="venv/bin/"
 fi
-export SOURCE_FILES="databasex tests"
+export SOURCE_FILES="databasez tests"
 export EXCLUDE=__init__.py
-export MAIN="databasex"
+export MAIN="databasez"
 
 set -x
 

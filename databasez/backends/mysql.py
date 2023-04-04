@@ -1,48 +1,33 @@
 import getpass
-import json
 import logging
 import typing
 import uuid
 
-import aiopg
+import aiomysql
+from sqlalchemy.dialects.mysql import pymysql
 from sqlalchemy.engine.cursor import CursorResultMetaData
 from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
-from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
 
-from databasex.backends.common.records import Record, Row, create_column_maps
-from databasex.backends.compilers.psycopg import PGCompiler_psycopg
-from databasex.backends.dialects.psycopg import PGDialect_psycopg
-from databasex.core import LOG_EXTRA, DatabaseURL
-from databasex.interfaces import ConnectionBackend, DatabaseBackend
-from databasex.interfaces import Record as RecordInterface
-from databasex.interfaces import TransactionBackend
+from databasez.backends.common.records import Record, Row, create_column_maps
+from databasez.core import LOG_EXTRA, DatabaseURL
+from databasez.interfaces import ConnectionBackend, DatabaseBackend
+from databasez.interfaces import Record as RecordInterface
+from databasez.interfaces import TransactionBackend
 
 logger = logging.getLogger("databases")
 
 
-class AiopgBackend(DatabaseBackend):
+class MySQLBackend(DatabaseBackend):
     def __init__(
         self, database_url: typing.Union[DatabaseURL, str], **options: typing.Any
     ) -> None:
         self._database_url = DatabaseURL(database_url)
         self._options = options
-        self._dialect = self._get_dialect()
-        self._pool: typing.Union[aiopg.Pool, None] = None
-
-    def _get_dialect(self) -> Dialect:
-        dialect = PGDialect_psycopg(json_serializer=json.dumps, json_deserializer=lambda x: x)
-        dialect.statement_compiler = PGCompiler_psycopg
-        dialect.implicit_returning = True
-        dialect.supports_native_enum = True
-        dialect.supports_smallserial = True  # 9.2+
-        dialect._backslash_escapes = False
-        dialect.supports_sane_multi_rowcount = True  # psycopg 2.0.9+
-        dialect._has_native_hstore = True
-        dialect.supports_native_decimal = True
-
-        return dialect
+        self._dialect = pymysql.dialect(paramstyle="pyformat")
+        self._dialect.supports_native_decimal = True
+        self._pool = None
 
     def _get_connection_kwargs(self) -> dict:
         url_options = self._database_url.options
@@ -50,12 +35,15 @@ class AiopgBackend(DatabaseBackend):
         kwargs = {}
         min_size = url_options.get("min_size")
         max_size = url_options.get("max_size")
+        pool_recycle = url_options.get("pool_recycle")
         ssl = url_options.get("ssl")
 
         if min_size is not None:
             kwargs["minsize"] = int(min_size)
         if max_size is not None:
             kwargs["maxsize"] = int(max_size)
+        if pool_recycle is not None:
+            kwargs["pool_recycle"] = int(pool_recycle)
         if ssl is not None:
             kwargs["ssl"] = {"true": True, "false": False}[ssl.lower()]
 
@@ -72,12 +60,13 @@ class AiopgBackend(DatabaseBackend):
     async def connect(self) -> None:
         assert self._pool is None, "DatabaseBackend is already running"
         kwargs = self._get_connection_kwargs()
-        self._pool = await aiopg.create_pool(
+        self._pool = await aiomysql.create_pool(
             host=self._database_url.hostname,
-            port=self._database_url.port,
+            port=self._database_url.port or 3306,
             user=self._database_url.username or getpass.getuser(),
             password=self._database_url.password,
-            database=self._database_url.database,
+            db=self._database_url.database,
+            autocommit=True,
             **kwargs,
         )
 
@@ -87,8 +76,8 @@ class AiopgBackend(DatabaseBackend):
         await self._pool.wait_closed()
         self._pool = None
 
-    def connection(self) -> "AiopgConnection":
-        return AiopgConnection(self, self._dialect)
+    def connection(self) -> "MySQLConnection":
+        return MySQLConnection(self, self._dialect)
 
 
 class CompilationContext:
@@ -96,11 +85,11 @@ class CompilationContext:
         self.context = context
 
 
-class AiopgConnection(ConnectionBackend):
-    def __init__(self, database: AiopgBackend, dialect: Dialect):
+class MySQLConnection(ConnectionBackend):
+    def __init__(self, database: MySQLBackend, dialect: Dialect):
         self._database = database
         self._dialect = dialect
-        self._connection: typing.Optional[aiopg.Connection] = None
+        self._connection: typing.Optional[aiomysql.Connection] = None
 
     async def acquire(self) -> None:
         assert self._connection is None, "Connection is already acquired"
@@ -118,7 +107,6 @@ class AiopgConnection(ConnectionBackend):
         query_str, args, result_columns, context = self._compile(query)
         column_maps = create_column_maps(result_columns)
         dialect = self._dialect
-
         cursor = await self._connection.cursor()
         try:
             await cursor.execute(query_str, args)
@@ -136,7 +124,7 @@ class AiopgConnection(ConnectionBackend):
             ]
             return [Record(row, result_columns, dialect, column_maps) for row in rows]
         finally:
-            cursor.close()
+            await cursor.close()
 
     async def fetch_one(self, query: ClauseElement) -> typing.Optional[RecordInterface]:
         assert self._connection is not None, "Connection is not acquired"
@@ -159,7 +147,7 @@ class AiopgConnection(ConnectionBackend):
             )
             return Record(row, result_columns, dialect, column_maps)
         finally:
-            cursor.close()
+            await cursor.close()
 
     async def execute(self, query: ClauseElement) -> typing.Any:
         assert self._connection is not None, "Connection is not acquired"
@@ -167,9 +155,11 @@ class AiopgConnection(ConnectionBackend):
         cursor = await self._connection.cursor()
         try:
             await cursor.execute(query_str, args)
+            if cursor.lastrowid == 0:
+                return cursor.rowcount
             return cursor.lastrowid
         finally:
-            cursor.close()
+            await cursor.close()
 
     async def execute_many(self, queries: typing.List[ClauseElement]) -> None:
         assert self._connection is not None, "Connection is not acquired"
@@ -179,7 +169,7 @@ class AiopgConnection(ConnectionBackend):
                 single_query, args, _, _ = self._compile(single_query)
                 await cursor.execute(single_query, args)
         finally:
-            cursor.close()
+            await cursor.close()
 
     async def iterate(self, query: ClauseElement) -> typing.AsyncGenerator[typing.Any, None]:
         assert self._connection is not None, "Connection is not acquired"
@@ -200,10 +190,10 @@ class AiopgConnection(ConnectionBackend):
                 )
                 yield Record(record, result_columns, dialect, column_maps)
         finally:
-            cursor.close()
+            await cursor.close()
 
     def transaction(self) -> TransactionBackend:
-        return AiopgTransaction(self)
+        return MySQLTransaction(self)
 
     def _compile(self, query: ClauseElement) -> typing.Tuple[str, list, tuple]:
         compiled = query.compile(
@@ -242,13 +232,13 @@ class AiopgConnection(ConnectionBackend):
         return compiled.string, args, result_map, CompilationContext(execution_context)
 
     @property
-    def raw_connection(self) -> aiopg.connection.Connection:
+    def raw_connection(self) -> aiomysql.connection.Connection:
         assert self._connection is not None, "Connection is not acquired"
         return self._connection
 
 
-class AiopgTransaction(TransactionBackend):
-    def __init__(self, connection: AiopgConnection):
+class MySQLTransaction(TransactionBackend):
+    def __init__(self, connection: MySQLConnection):
         self._connection = connection
         self._is_root = False
         self._savepoint_name = ""
@@ -258,35 +248,35 @@ class AiopgTransaction(TransactionBackend):
     ) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
         self._is_root = is_root
-        cursor = await self._connection._connection.cursor()
         if self._is_root:
-            await cursor.execute("BEGIN")
+            await self._connection._connection.begin()
         else:
             id = str(uuid.uuid4()).replace("-", "_")
             self._savepoint_name = f"STARLETTE_SAVEPOINT_{id}"
+            cursor = await self._connection._connection.cursor()
             try:
                 await cursor.execute(f"SAVEPOINT {self._savepoint_name}")
             finally:
-                cursor.close()
+                await cursor.close()
 
     async def commit(self) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
-        cursor = await self._connection._connection.cursor()
         if self._is_root:
-            await cursor.execute("COMMIT")
+            await self._connection._connection.commit()
         else:
+            cursor = await self._connection._connection.cursor()
             try:
                 await cursor.execute(f"RELEASE SAVEPOINT {self._savepoint_name}")
             finally:
-                cursor.close()
+                await cursor.close()
 
     async def rollback(self) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
-        cursor = await self._connection._connection.cursor()
         if self._is_root:
-            await cursor.execute("ROLLBACK")
+            await self._connection._connection.rollback()
         else:
+            cursor = await self._connection._connection.cursor()
             try:
                 await cursor.execute(f"ROLLBACK TO SAVEPOINT {self._savepoint_name}")
             finally:
-                cursor.close()
+                await cursor.close()

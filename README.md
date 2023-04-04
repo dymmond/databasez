@@ -4,8 +4,8 @@
 <a href="https://github.com/encode/databases/actions">
     <img src="https://github.com/encode/databases/workflows/Test%20Suite/badge.svg" alt="Test Suite">
 </a>
-<a href="https://pypi.org/project/databases/">
-    <img src="https://badge.fury.io/py/databases.svg" alt="Package version">
+<a href="https://pypi.org/project/databasex/">
+    <img src="https://badge.fury.io/py/databasex.svg" alt="Package version">
 </a>
 </p>
 

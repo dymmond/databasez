@@ -6,8 +6,8 @@ fi
 if [ -d 'site' ] ; then
     rm -r site
 fi
-if [ -d 'databasex.egg-info' ] ; then
-    rm -r databasex.egg-info
+if [ -d 'databasez.egg-info' ] ; then
+    rm -r databasez.egg-info
 fi
 if [ -d '.mypy_cache' ] ; then
     rm -r .mypy_cache
@@ -16,5 +16,5 @@ if [ -d '.pytest_cache' ] ; then
     rm -r .pytest_cache
 fi
 
-find databasex -type f -name "*.py[co]" -delete
-find databasex -type d -name __pycache__ -delete
+find databasez -type f -name "*.py[co]" -delete
+find databasez -type d -name __pycache__ -delete

@@ -7,10 +7,10 @@ elif [ -d 'venv' ] ; then
     export PREFIX="venv/bin/"
 fi
 
-export SOURCE_FILES="databasex tests"
+export SOURCE_FILES="databasez tests"
 set -x
 
 ${PREFIX}ruff $SOURCE_FILES --fix --line-length 99
 ${PREFIX}black $SOURCE_FILES --line-length 99
 ${PREFIX}isort $SOURCE_FILES --project=saffier --line-length 99
-${PREFIX}mypy databasex
+${PREFIX}mypy databasez

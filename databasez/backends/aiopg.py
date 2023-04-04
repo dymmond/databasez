@@ -1,33 +1,48 @@
 import getpass
+import json
 import logging
 import typing
 import uuid
 
-import asyncmy
-from sqlalchemy.dialects.mysql import pymysql
+import aiopg
 from sqlalchemy.engine.cursor import CursorResultMetaData
 from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
+from sqlalchemy.engine.row import Row
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
 
-from databasex.backends.common.records import Record, Row, create_column_maps
-from databasex.core import LOG_EXTRA, DatabaseURL
-from databasex.interfaces import ConnectionBackend, DatabaseBackend
-from databasex.interfaces import Record as RecordInterface
-from databasex.interfaces import TransactionBackend
+from databasez.backends.common.records import Record, Row, create_column_maps
+from databasez.backends.compilers.psycopg import PGCompiler_psycopg
+from databasez.backends.dialects.psycopg import PGDialect_psycopg
+from databasez.core import LOG_EXTRA, DatabaseURL
+from databasez.interfaces import ConnectionBackend, DatabaseBackend
+from databasez.interfaces import Record as RecordInterface
+from databasez.interfaces import TransactionBackend
 
 logger = logging.getLogger("databases")
 
 
-class AsyncMyBackend(DatabaseBackend):
+class AiopgBackend(DatabaseBackend):
     def __init__(
         self, database_url: typing.Union[DatabaseURL, str], **options: typing.Any
     ) -> None:
         self._database_url = DatabaseURL(database_url)
         self._options = options
-        self._dialect = pymysql.dialect(paramstyle="pyformat")
-        self._dialect.supports_native_decimal = True
-        self._pool = None
+        self._dialect = self._get_dialect()
+        self._pool: typing.Union[aiopg.Pool, None] = None
+
+    def _get_dialect(self) -> Dialect:
+        dialect = PGDialect_psycopg(json_serializer=json.dumps, json_deserializer=lambda x: x)
+        dialect.statement_compiler = PGCompiler_psycopg
+        dialect.implicit_returning = True
+        dialect.supports_native_enum = True
+        dialect.supports_smallserial = True  # 9.2+
+        dialect._backslash_escapes = False
+        dialect.supports_sane_multi_rowcount = True  # psycopg 2.0.9+
+        dialect._has_native_hstore = True
+        dialect.supports_native_decimal = True
+
+        return dialect
 
     def _get_connection_kwargs(self) -> dict:
         url_options = self._database_url.options
@@ -35,15 +50,12 @@ class AsyncMyBackend(DatabaseBackend):
         kwargs = {}
         min_size = url_options.get("min_size")
         max_size = url_options.get("max_size")
-        pool_recycle = url_options.get("pool_recycle")
         ssl = url_options.get("ssl")
 
         if min_size is not None:
             kwargs["minsize"] = int(min_size)
         if max_size is not None:
             kwargs["maxsize"] = int(max_size)
-        if pool_recycle is not None:
-            kwargs["pool_recycle"] = int(pool_recycle)
         if ssl is not None:
             kwargs["ssl"] = {"true": True, "false": False}[ssl.lower()]
 
@@ -60,13 +72,12 @@ class AsyncMyBackend(DatabaseBackend):
     async def connect(self) -> None:
         assert self._pool is None, "DatabaseBackend is already running"
         kwargs = self._get_connection_kwargs()
-        self._pool = await asyncmy.create_pool(
+        self._pool = await aiopg.create_pool(
             host=self._database_url.hostname,
-            port=self._database_url.port or 3306,
+            port=self._database_url.port,
             user=self._database_url.username or getpass.getuser(),
             password=self._database_url.password,
-            db=self._database_url.database,
-            autocommit=True,
+            database=self._database_url.database,
             **kwargs,
         )
 
@@ -76,8 +87,8 @@ class AsyncMyBackend(DatabaseBackend):
         await self._pool.wait_closed()
         self._pool = None
 
-    def connection(self) -> "AsyncMyConnection":
-        return AsyncMyConnection(self, self._dialect)
+    def connection(self) -> "AiopgConnection":
+        return AiopgConnection(self, self._dialect)
 
 
 class CompilationContext:
@@ -85,11 +96,11 @@ class CompilationContext:
         self.context = context
 
 
-class AsyncMyConnection(ConnectionBackend):
-    def __init__(self, database: AsyncMyBackend, dialect: Dialect):
+class AiopgConnection(ConnectionBackend):
+    def __init__(self, database: AiopgBackend, dialect: Dialect):
         self._database = database
         self._dialect = dialect
-        self._connection: typing.Optional[asyncmy.Connection] = None
+        self._connection: typing.Optional[aiopg.Connection] = None
 
     async def acquire(self) -> None:
         assert self._connection is None, "Connection is already acquired"
@@ -108,93 +119,91 @@ class AsyncMyConnection(ConnectionBackend):
         column_maps = create_column_maps(result_columns)
         dialect = self._dialect
 
-        async with self._connection.cursor() as cursor:
-            try:
-                await cursor.execute(query_str, args)
-                rows = await cursor.fetchall()
-                metadata = CursorResultMetaData(context, cursor.description)
-                rows = [
-                    Row(
-                        metadata,
-                        metadata._processors,
-                        metadata._keymap,
-                        Row._default_key_style,
-                        row,
-                    )
-                    for row in rows
-                ]
-                return [Record(row, result_columns, dialect, column_maps) for row in rows]
-            finally:
-                await cursor.close()
-
-    async def fetch_one(self, query: ClauseElement) -> typing.Optional[RecordInterface]:
-        assert self._connection is not None, "Connection is not acquired"
-        query_str, args, result_columns, context = self._compile(query)
-        column_maps = create_column_maps(result_columns)
-        dialect = self._dialect
-        async with self._connection.cursor() as cursor:
-            try:
-                await cursor.execute(query_str, args)
-                row = await cursor.fetchone()
-                if row is None:
-                    return None
-                metadata = CursorResultMetaData(context, cursor.description)
-                row = Row(
+        cursor = await self._connection.cursor()
+        try:
+            await cursor.execute(query_str, args)
+            rows = await cursor.fetchall()
+            metadata = CursorResultMetaData(context, cursor.description)
+            rows = [
+                Row(
                     metadata,
                     metadata._processors,
                     metadata._keymap,
                     Row._default_key_style,
                     row,
                 )
-                return Record(row, result_columns, dialect, column_maps)
-            finally:
-                await cursor.close()
+                for row in rows
+            ]
+            return [Record(row, result_columns, dialect, column_maps) for row in rows]
+        finally:
+            cursor.close()
+
+    async def fetch_one(self, query: ClauseElement) -> typing.Optional[RecordInterface]:
+        assert self._connection is not None, "Connection is not acquired"
+        query_str, args, result_columns, context = self._compile(query)
+        column_maps = create_column_maps(result_columns)
+        dialect = self._dialect
+        cursor = await self._connection.cursor()
+        try:
+            await cursor.execute(query_str, args)
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            metadata = CursorResultMetaData(context, cursor.description)
+            row = Row(
+                metadata,
+                metadata._processors,
+                metadata._keymap,
+                Row._default_key_style,
+                row,
+            )
+            return Record(row, result_columns, dialect, column_maps)
+        finally:
+            cursor.close()
 
     async def execute(self, query: ClauseElement) -> typing.Any:
         assert self._connection is not None, "Connection is not acquired"
         query_str, args, _, _ = self._compile(query)
-        async with self._connection.cursor() as cursor:
-            try:
-                await cursor.execute(query_str, args)
-                if cursor.lastrowid == 0:
-                    return cursor.rowcount
-                return cursor.lastrowid
-            finally:
-                await cursor.close()
+        cursor = await self._connection.cursor()
+        try:
+            await cursor.execute(query_str, args)
+            return cursor.lastrowid
+        finally:
+            cursor.close()
 
     async def execute_many(self, queries: typing.List[ClauseElement]) -> None:
         assert self._connection is not None, "Connection is not acquired"
-        async with self._connection.cursor() as cursor:
-            try:
-                for single_query in queries:
-                    single_query, args, _, _ = self._compile(single_query)
-                    await cursor.execute(single_query, args)
-            finally:
-                await cursor.close()
+        cursor = await self._connection.cursor()
+        try:
+            for single_query in queries:
+                single_query, args, _, _ = self._compile(single_query)
+                await cursor.execute(single_query, args)
+        finally:
+            cursor.close()
 
     async def iterate(self, query: ClauseElement) -> typing.AsyncGenerator[typing.Any, None]:
         assert self._connection is not None, "Connection is not acquired"
         query_str, args, result_columns, context = self._compile(query)
         column_maps = create_column_maps(result_columns)
         dialect = self._dialect
-        async with self._connection.cursor() as cursor:
-            try:
-                await cursor.execute(query_str, args)
-                metadata = CursorResultMetaData(context, cursor.description)
-                async for row in cursor:
-                    record = Row(
-                        metadata,
-                        metadata._processors,
-                        metadata._keymap,
-                        Row._default_key_style,
-                        row,
-                    )
-                    yield Record(record, result_columns, dialect, column_maps)
-            finally:
-                await cursor.close()
+        cursor = await self._connection.cursor()
+        try:
+            await cursor.execute(query_str, args)
+            metadata = CursorResultMetaData(context, cursor.description)
+            async for row in cursor:
+                record = Row(
+                    metadata,
+                    metadata._processors,
+                    metadata._keymap,
+                    Row._default_key_style,
+                    row,
+                )
+                yield Record(record, result_columns, dialect, column_maps)
+        finally:
+            cursor.close()
 
     def transaction(self) -> TransactionBackend:
-        return AsyncMyTransaction(self)
+        return AiopgTransaction(self)
 
     def _compile(self, query: ClauseElement) -> typing.Tuple[str, list, tuple]:
         compiled = query.compile(
@@ -233,13 +242,13 @@ class AsyncMyConnection(ConnectionBackend):
         return compiled.string, args, result_map, CompilationContext(execution_context)
 
     @property
-    def raw_connection(self) -> asyncmy.connection.Connection:
+    def raw_connection(self) -> aiopg.connection.Connection:
         assert self._connection is not None, "Connection is not acquired"
         return self._connection
 
 
-class AsyncMyTransaction(TransactionBackend):
-    def __init__(self, connection: AsyncMyConnection):
+class AiopgTransaction(TransactionBackend):
+    def __init__(self, connection: AiopgConnection):
         self._connection = connection
         self._is_root = False
         self._savepoint_name = ""
@@ -249,35 +258,35 @@ class AsyncMyTransaction(TransactionBackend):
     ) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
         self._is_root = is_root
+        cursor = await self._connection._connection.cursor()
         if self._is_root:
-            await self._connection._connection.begin()
+            await cursor.execute("BEGIN")
         else:
             id = str(uuid.uuid4()).replace("-", "_")
             self._savepoint_name = f"STARLETTE_SAVEPOINT_{id}"
-            async with self._connection._connection.cursor() as cursor:
-                try:
-                    await cursor.execute(f"SAVEPOINT {self._savepoint_name}")
-                finally:
-                    await cursor.close()
+            try:
+                await cursor.execute(f"SAVEPOINT {self._savepoint_name}")
+            finally:
+                cursor.close()
 
     async def commit(self) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
+        cursor = await self._connection._connection.cursor()
         if self._is_root:
-            await self._connection._connection.commit()
+            await cursor.execute("COMMIT")
         else:
-            async with self._connection._connection.cursor() as cursor:
-                try:
-                    await cursor.execute(f"RELEASE SAVEPOINT {self._savepoint_name}")
-                finally:
-                    await cursor.close()
+            try:
+                await cursor.execute(f"RELEASE SAVEPOINT {self._savepoint_name}")
+            finally:
+                cursor.close()
 
     async def rollback(self) -> None:
         assert self._connection._connection is not None, "Connection is not acquired"
+        cursor = await self._connection._connection.cursor()
         if self._is_root:
-            await self._connection._connection.rollback()
+            await cursor.execute("ROLLBACK")
         else:
-            async with self._connection._connection.cursor() as cursor:
-                try:
-                    await cursor.execute(f"ROLLBACK TO SAVEPOINT {self._savepoint_name}")
-                finally:
-                    await cursor.close()
+            try:
+                await cursor.execute(f"ROLLBACK TO SAVEPOINT {self._savepoint_name}")
+            finally:
+                cursor.close()

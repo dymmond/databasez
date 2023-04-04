@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import sqlalchemy
-from databasex import Database, DatabaseURL
+from databasez import Database, DatabaseURL
 
 assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
@@ -1006,7 +1006,7 @@ def test_global_connection_is_initialized_lazily(database_url):
     so it's _query_lock will belong to same event loop that async_adapter has
     initialized.
 
-    See https://github.com/encode/databases/issues/157 for more context.
+    See https://github.com/dymmond/databasez/issues/157 for more context.
     """
 
     database_url = DatabaseURL(database_url)

@@ -11,11 +11,11 @@ from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
 
-from databasex.backends.common.records import Record, Row, create_column_maps
-from databasex.core import LOG_EXTRA, DatabaseURL
-from databasex.interfaces import ConnectionBackend, DatabaseBackend
-from databasex.interfaces import Record as RecordInterface
-from databasex.interfaces import TransactionBackend
+from databasez.backends.common.records import Record, Row, create_column_maps
+from databasez.core import LOG_EXTRA, DatabaseURL
+from databasez.interfaces import ConnectionBackend, DatabaseBackend
+from databasez.interfaces import Record as RecordInterface
+from databasez.interfaces import TransactionBackend
 
 logger = logging.getLogger("databases")
 

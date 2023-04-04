@@ -1,5 +1,5 @@
 import pytest
-from databasex.importer import ImportFromStringError, import_from_string
+from databasez.importer import ImportFromStringError, import_from_string
 
 
 def test_invalid_format():

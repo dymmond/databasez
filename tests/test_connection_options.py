@@ -4,20 +4,19 @@ Unit tests for the backend connection arguments.
 import sys
 
 import pytest
-from databasex.backends.aiopg import AiopgBackend
-from databasex.backends.mssql import MSSQLBackend
-from databasex.backends.mysql import MySQLBackend
-from databasex.backends.postgres import PostgresBackend
-from databasex.core import DatabaseURL
-
+from databasez.backends.aiopg import AiopgBackend
+from databasez.backends.mssql import MSSQLBackend
+from databasez.backends.mysql import MySQLBackend
+from databasez.backends.postgres import PostgresBackend
+from databasez.core import DatabaseURL
 from tests.test_databases import DATABASE_URLS, async_adapter
 
 if sys.version_info >= (3, 7):  # pragma: no cover
-    from databasex.backends.asyncmy import AsyncMyBackend
+    from databasez.backends.asyncmy import AsyncMyBackend
 
 
 if sys.version_info < (3, 10):  # pragma: no cover
-    from databasex.backends.mysql import MySQLBackend
+    from databasez.backends.mysql import MySQLBackend
 
 
 def test_postgres_pool_size():

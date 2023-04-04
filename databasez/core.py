@@ -7,11 +7,10 @@ from contextvars import ContextVar
 from types import TracebackType
 from urllib.parse import SplitResult, parse_qsl, unquote, urlsplit
 
+from databasez.importer import import_from_string
+from databasez.interfaces import DatabaseBackend, Record
 from sqlalchemy import text
 from sqlalchemy.sql import ClauseElement
-
-from databasex.importer import import_from_string
-from databasex.interfaces import DatabaseBackend, Record
 
 try:  # pragma: no cover
     import click
@@ -33,15 +32,15 @@ logger = logging.getLogger("databases")
 
 class Database:
     SUPPORTED_BACKENDS = {
-        "postgresql": "databasex.backends.postgres:PostgresBackend",
-        "postgresql+aiopg": "databasex.backends.aiopg:AiopgBackend",
-        "postgres": "databasex.backends.postgres:PostgresBackend",
-        "mysql": "databasex.backends.mysql:MySQLBackend",
-        "mysql+asyncmy": "databasex.backends.asyncmy:AsyncMyBackend",
-        "mssql": "databasex.backends.mssql:MSSQLBackend",
-        "mssql+pyodbc": "databasex.backends.mssql:MSSQLBackend",
-        "mssql+aioodbc": "databasex.backends.mssql:MSSQLBackend",
-        "sqlite": "databasex.backends.sqlite:SQLiteBackend",
+        "postgresql": "databasez.backends.postgres:PostgresBackend",
+        "postgresql+aiopg": "databasez.backends.aiopg:AiopgBackend",
+        "postgres": "databasez.backends.postgres:PostgresBackend",
+        "mysql": "databasez.backends.mysql:MySQLBackend",
+        "mysql+asyncmy": "databasez.backends.asyncmy:AsyncMyBackend",
+        "mssql": "databasez.backends.mssql:MSSQLBackend",
+        "mssql+pyodbc": "databasez.backends.mssql:MSSQLBackend",
+        "mssql+aioodbc": "databasez.backends.mssql:MSSQLBackend",
+        "sqlite": "databasez.backends.sqlite:SQLiteBackend",
     }
 
     def __init__(

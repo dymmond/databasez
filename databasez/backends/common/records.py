@@ -8,7 +8,7 @@ from sqlalchemy.sql.compiler import _CompileLabel
 from sqlalchemy.sql.schema import Column
 from sqlalchemy.types import TypeEngine
 
-from databasex.interfaces import Record as RecordInterface
+from databasez.interfaces import Record as RecordInterface
 
 DIALECT_EXCLUDE = {"postgresql"}
 

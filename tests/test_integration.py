@@ -1,6 +1,6 @@
 import pytest
 import sqlalchemy
-from databasex import Database, DatabaseURL
+from databasez import Database, DatabaseURL
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.testclient import TestClient

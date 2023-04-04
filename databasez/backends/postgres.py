@@ -2,16 +2,15 @@ import logging
 import typing
 
 import asyncpg
+from databasez.backends.common.records import Record, create_column_maps
+from databasez.backends.dialects.psycopg import dialect as psycopg_dialect
+from databasez.core import LOG_EXTRA, DatabaseURL
+from databasez.interfaces import ConnectionBackend, DatabaseBackend
+from databasez.interfaces import Record as RecordInterface
+from databasez.interfaces import TransactionBackend
 from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
-
-from databasex.backends.common.records import Record, create_column_maps
-from databasex.backends.dialects.psycopg import dialect as psycopg_dialect
-from databasex.core import LOG_EXTRA, DatabaseURL
-from databasex.interfaces import ConnectionBackend, DatabaseBackend
-from databasex.interfaces import Record as RecordInterface
-from databasex.interfaces import TransactionBackend
 
 logger = logging.getLogger("databases")
 
@@ -121,9 +120,9 @@ class PostgresConnection(ConnectionBackend):
         # it does not convert all the types, e.g. JSON stays string
         # instead of an object
         # see also:
-        # https://github.com/encode/databases/pull/131
-        # https://github.com/encode/databases/pull/132
-        # https://github.com/encode/databases/pull/246
+        # https://github.com/dymmond/databasez/pull/131
+        # https://github.com/dymmond/databasez/pull/132
+        # https://github.com/dymmond/databasez/pull/246
         row = await self.fetch_one(query)
         if row is None:
             return None
