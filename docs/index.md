@@ -45,7 +45,7 @@ from Encode and will remain like this for the time being but adding extra featur
 updates as well as continuing to be community driven.
 
 By the time this project was created, Databases was yet to merge possible SQLAlchemy 2.0 changes
-from the author of this package and therefore, this package aims to have that done and unblock
+from the author of this package and therefore, this package aims to unblock
 a lot of the projects out there that want SQLAlchemy 2.0 with the best of databases with new features.
 
 A lot of packages depends of Databases and this was the main reason for the fork of **Databasez**.
