@@ -15,6 +15,9 @@ fi
 if [ -d '.pytest_cache' ] ; then
     rm -r .pytest_cache
 fi
+if [ -d '.ruff_cache' ] ; then
+    rm -r .ruff_cache
+fi
 
 find databasez -type f -name "*.py[co]" -delete
 find databasez -type d -name __pycache__ -delete
