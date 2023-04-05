@@ -263,26 +263,26 @@ async def test_queries_raw(database_url):
             results = await database.fetch_all(query=query, values={"completed": True})
             assert len(results) == 2
             assert results[0]["text"] == "example1"
-            assert results[0]["completed"] is True
+            assert results[0]["completed"] == True
             assert results[1]["text"] == "example3"
-            assert results[1]["completed"] is True
+            assert results[1]["completed"] == True
 
             # fetch_one()
             query = "SELECT * FROM notes WHERE completed = :completed"
             result = await database.fetch_one(query=query, values={"completed": False})
             assert result["text"] == "example2"
-            assert result["completed"] is False
+            assert result["completed"] == False
 
             # fetch_val()
             query = "SELECT completed FROM notes WHERE text = :text"
             result = await database.fetch_val(query=query, values={"text": "example1"})
-            assert result is True
+            assert result == True
 
             query = "SELECT * FROM notes WHERE text = :text"
             result = await database.fetch_val(
                 query=query, values={"text": "example1"}, column="completed"
             )
-            assert result is True
+            assert result == True
 
             # iterate()
             query = "SELECT * FROM notes"
@@ -291,11 +291,11 @@ async def test_queries_raw(database_url):
                 iterate_results.append(result)
             assert len(iterate_results) == 3
             assert iterate_results[0]["text"] == "example1"
-            assert iterate_results[0]["completed"] is True
+            assert iterate_results[0]["completed"] == True
             assert iterate_results[1]["text"] == "example2"
-            assert iterate_results[1]["completed"] is False
+            assert iterate_results[1]["completed"] == False
             assert iterate_results[2]["text"] == "example3"
-            assert iterate_results[2]["completed"] is True
+            assert iterate_results[2]["completed"] == True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -1101,11 +1101,11 @@ async def test_queries_with_expose_backend_connection(database_url):
                 assert len(results) == 3
                 # Raw output for the raw request
                 assert results[0][1] == "example1"
-                assert results[0][2] is True
+                assert results[0][2] == True
                 assert results[1][1] == "example2"
-                assert results[1][2] is False
+                assert results[1][2] == False
                 assert results[2][1] == "example3"
-                assert results[2][2] is True
+                assert results[2][2] == True
 
                 # fetch_one()
                 if database.url.scheme in ["postgresql", "postgresql+asyncpg"]:
@@ -1128,7 +1128,7 @@ async def test_queries_with_expose_backend_connection(database_url):
 
                 # Raw output for the raw request
                 assert result[1] == "example1"
-                assert result[2] is True
+                assert result[2] == True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -1282,7 +1282,7 @@ async def test_column_names(database_url, select_query):
 
             assert sorted(results[0]._mapping.keys()) == ["completed", "id", "text"]
             assert results[0]["text"] == "example1"
-            assert results[0]["completed"] is True
+            assert results[0]["completed"] == True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
