@@ -37,7 +37,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Internet :: WWW/HTTP",
 ]
-dependencies = ["sqlalchemy>=2.0.8,<2.0.10"]
+dependencies = ["sqlalchemy>=2.0.8,<2.1"]
 keywords = [
     "mysql",
     "postgres",
