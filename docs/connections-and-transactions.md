@@ -136,17 +136,19 @@ needs to be set.
 ```python
 from databasez import Database
 
-CONFIG = "connection": {
-    "credentials": {
-        "scheme": 'sqlite', "postgres", "postgres+aiopg"...
-        "host": ...,
-        "port": ...,
-        "user": ...,
-        "password": ...,
-        "database": ...,
-        "options": {
-            "driver": ... # In case of MSSQL
-            "ssl": ...
+CONFIG = {
+    "connection": {
+        "credentials": {
+             "scheme": 'sqlite', "postgres", "postgres+aiopg"...
+             "host": ...,
+             "port": ...,
+             "user": ...,
+             "password": ...,
+             "database": ...,
+             "options": {
+             "driver": ... # In case of MSSQL
+             "ssl": ...
+            }
         }
     }
 }
