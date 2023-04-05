@@ -1,7 +1,7 @@
 # Databasez
 
 <p align="center">
-  <a href="https://databasez.dymmond.com"><img src="https://res.cloudinary.com/dymmond/image/upload/v1680611626/databasez/logo-cmp_luizb0.png" alt='databasez'></a>
+  <a href="https://databasez.tarsild.io"><img src="https://res.cloudinary.com/dymmond/image/upload/v1680611626/databasez/logo-cmp_luizb0.png" alt='databasez'></a>
 </p>
 
 <p align="center">
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" target="_blank">
-    <img src="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" alt="Test Suite">
+<a href="https://github.com/tarsil/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" target="_blank">
+    <img src="https://github.com/tarsil/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" alt="Test Suite">
 </a>
 
 <a href="https://pypi.org/project/databasez" target="_blank">
@@ -24,9 +24,9 @@
 
 ---
 
-**Documentation**: [https://databasez.dymmond.com](https://databasez.dymmond.com) 📚
+**Documentation**: [https://databasez.tarsild.io](https://databasez.tarsild.io) 📚
 
-**Source Code**: [https://github.com/dymmond/databasez](https://github.com/dymmond/databasez)
+**Source Code**: [https://github.com/tarsil/databasez](https://github.com/tarsil/databasez)
 
 ---
 
@@ -44,10 +44,22 @@ This package is 100% backwards compatible with [Databases](https://github.com/en
 from Encode and will remain like this for the time being but adding extra features and regular
 updates as well as continuing to be community driven.
 
+By the time this project was created, Databases was yet to merge possible SQLAlchemy 2.0 changes
+from the author of this package and therefore, this package aims to have that done and unblock
+a lot of the projects out there that want SQLAlchemy 2.0 with the best of databases with new features.
+
 A lot of packages depends of Databases and this was the main reason for the fork of **Databasez**.
 The need of progressing.
 
-Databasez was built to with Python 3.8+ and on the top of the newest SQLAlchemy 2.0.
+It allows you to make queries using the powerful [SQLAlchemy Core][sqlalchemy-core]
+expression language, and provides support for PostgreSQL, MySQL, SQLite and MSSQL.
+
+Databasez is suitable for integrating against any async Web framework, such as [Esmerald][esmerald],
+[Starlette][starlette], [Sanic][sanic], [Responder][responder], [Quart][quart], [aiohttp][aiohttp],
+[Tornado][tornado], or [FastAPI][fastapi].
+
+Databasez was built for Python 3.8+ and on the top of the newest **SQLAlchemy 2** and gives you
+simple asyncio support for a range of databases.
 
 ## Installation
 
@@ -55,49 +67,98 @@ Databasez was built to with Python 3.8+ and on the top of the newest SQLAlchemy 
 $ pip install databasez
 ```
 
+If you are interested in using the [test client](./test-client.md), you can also install:
+
+```shell
+$ pip install databasez[testing]
+```
+
+## What does databasez support at the moment
+
+Databasez currently supports `sqlite`, `postgres`, `mysql` and `sql server`. More drivers can and
+will be added in the future.
+
 Database drivers supported are:
 
-* [asyncpg][asyncpg]
-* [aiopg][aiopg]
-* [aiomysql][aiomysql]
-* [asyncmy][asyncmy]
-* [aiosqlite][aiosqlite]
-* [aioodbc][aioodbc]
+* [asyncpg][asyncpg] - For postgres.
+* [aiopg][aiopg] - For postgres.
+* [aiomysql][aiomysql] - For MySQL/MariaDB.
+* [asyncmy][asyncmy] - For MySQL/MariaDB.
+* [aiosqlite][aiosqlite] - For SQLite.
+* [aioodbc][aioodbc] - For MSSQL (SQL Server).
+
+### Driver installation
 
 You can install the required database drivers with:
 
+#### Postgres
+
 ```shell
-$ pip install databases[asyncpg]
-$ pip install databases[aiopg]
-$ pip install databases[aiomysql]
-$ pip install databases[asyncmy]
-$ pip install databases[aiosqlite]
-$ pip install databases[aioodbc]
+$ pip install databasez[asyncpg]
 ```
 
-Note that if you are using any synchronous SQLAlchemy functions such as `engine.create_all()` or [alembic][alembic] migrations then you still have to install a synchronous DB driver: [psycopg2][psycopg2] for PostgreSQL, [pymysql][pymysql] for MySQL and [pyodbc][pyodbc] for SQL Server.
+or
+
+```shell
+$ pip install databasez[aiopg]
+```
+
+#### MySQL/MariaDB
+
+```shell
+$ pip install databasez[aiomysql]
+```
+
+or
+
+```shell
+$ pip install databasez[asyncmy]
+```
+
+#### SQLite
+
+```shell
+$ pip install databasez[aiosqlite]
+```
+
+#### MSSQL
+
+```shell
+$ pip install databasez[aioodbc]
+```
+
+!!! Note
+    Note that if you are using any synchronous SQLAlchemy functions such as `engine.create_all()`
+    or [alembic][alembic] migrations then you still have to install a synchronous DB driver:
+    [psycopg2][psycopg2] for PostgreSQL, [pymysql][pymysql] for MySQL and
+    [pyodbc][pyodbc] for SQL Server.
 
 ---
 
 ## Quickstart
 
-For this example we'll create a very simple SQLite database to run some
-queries against.
+For a simple quickstart example, we will be creating a simple SQLite database to run some queries
+against.
+
+First, install the required drivers for `SQLite` and `ipython`. The `ipython` is to have an
+interactive python shell with some extras. IPython also supports `await`, which is exactly
+what we need. [See more details](https://ipython.org/) about it.
+
+**Install the required drivers**
 
 ```shell
 $ pip install databases[aiosqlite]
 $ pip install ipython
 ```
 
-We can now run a simple example from the console.
+Now from the console, we can run a simple example.
 
-Note that we want to use `ipython` here, because it supports using `await`
-expressions directly from the console.
 
 ```python
 # Create a database instance, and connect to it.
-from databases import Database
-database = Database('sqlite+aiosqlite:///example.db')
+from databasez import Database
+
+database = Database("sqlite+aiosqlite:///example.db")
 await database.connect()
 
 # Create a table.
@@ -116,15 +177,13 @@ await database.execute_many(query=query, values=values)
 # Run a database query.
 query = "SELECT * FROM HighScores"
 rows = await database.fetch_all(query=query)
-print('High Scores:', rows)
+
+print("High Scores:", rows)
 ```
 
 Check out the documentation on [making database queries](https://www.encode.io/databases/database_queries/)
 for examples of how to start using databases together with SQLAlchemy core expressions.
 
-
-<p align="center">&mdash; ⭐️ &mdash;</p>
-<p align="center"><i>Databases is <a href="https://github.com/encode/databases/blob/master/LICENSE.md">BSD licensed</a> code. Designed & built in Brighton, England.</i></p>
 
 [sqlalchemy-core]: https://docs.sqlalchemy.org/en/latest/core/
 [sqlalchemy-core-tutorial]: https://docs.sqlalchemy.org/en/latest/core/tutorial.html
@@ -139,6 +198,7 @@ for examples of how to start using databases together with SQLAlchemy core expre
 [aiosqlite]: https://github.com/omnilib/aiosqlite
 [aioodbc]: https://aioodbc.readthedocs.io/en/latest/
 
+[esmerald]: https://github.com/dymmond/esmerald
 [starlette]: https://github.com/encode/starlette
 [sanic]: https://github.com/huge-success/sanic
 [responder]: https://github.com/kennethreitz/responder

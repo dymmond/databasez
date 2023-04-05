@@ -12,5 +12,5 @@ set -x
 
 ${PREFIX}ruff $SOURCE_FILES --fix --line-length 99
 ${PREFIX}black $SOURCE_FILES --line-length 99
-${PREFIX}isort $SOURCE_FILES --project=saffier --line-length 99
+${PREFIX}isort $SOURCE_FILES --project=databasez --line-length 99
 ${PREFIX}mypy databasez

@@ -3,9 +3,12 @@ name: Test Suite
 
 on:
   push:
-    branches: ["master"]
+    branches:
+      - "**"
   pull_request:
-    branches: ["master"]
+    branches: ["main"]
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
   tests:
@@ -64,6 +67,9 @@ jobs:
 
       - name: "Install dependencies"
         run: "scripts/install"
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: pip install build twine
       - name: "Run linting checks"
         run: "scripts/check"
       - name: "Build package & docs"

@@ -82,6 +82,12 @@ class Record(RecordInterface):
         except KeyError as e:
             raise AttributeError(e.args[0]) from e
 
+    def __str__(self) -> str:
+        return f"Record{str(self._row)}"
+
+    def __repr__(self) -> str:
+        return str(self)
+
 
 class Row(SQLRow):
     def __getitem__(self, key: typing.Any) -> typing.Any:
