@@ -1,4 +1,4 @@
-site_name: Saffier
+site_name: Databasez
 site_description: Async database support for Python.
 site_url: https://databases.dymmond.com
 
@@ -28,8 +28,8 @@ theme:
         - search.highlight
         - content.tabs.link
 
-repo_name: dymmond/databasez
-repo_url: https://github.com/dymmond/databasez
+repo_name: tarsil/databasez
+repo_url: https://github.com/tarsil/databasez
 edit_uri: ""
 plugins:
     - search
@@ -38,6 +38,10 @@ plugins:
 
 nav:
     - Databasez: "index.md"
+    - Queries: "queries.md"
+    - Connections & Transactions: "connections-and-transactions.md"
+    - Test Client: "test-client.md"
+    - Vendors: "vendors.md"
     - Databasez People: "databasez-people.md"
     - Contributing: "contributing.md"
     - Sponsorship: "sponsorship.md"

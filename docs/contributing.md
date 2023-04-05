@@ -1,116 +1,139 @@
-# Contibuting
+# Contributing
 
-All contributions to *databases* are welcome!
+Thank you for showing interes in contributing to Databasez. There are many ways you can help and contribute to the
+project.
 
-## Issues
+* Try Databasez and [report bugs and issues](https://github.com/tarsil/databasez/issues/new) you find.
+* [Implement new features](https://github.com/tarsil/databasez/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+* Help othes by [reviewing pull requests](https://github.com/tarsil/databasez/pulls)
+* Help writting documentation
+* Use the discussions and actively participate on them.
+* Become an contributor by helping Databasez growing and spread the words across small, medium, large or any company
+size.
 
-To make it as simple as possible for us to help you, please include the following:
+## Reporting possible bugs and issues
 
-* OS 
-* python version
-* databases version
-* database backend (mysql, sqlite or postgresql)
-* database driver (aiopg, aiomysql etc.)
+It is natural that you might find something that Databasez should support or even experience some sorte of unexpected
+behaviour that needs addressing.
 
-Please try to always include the above unless you're unable to install *databases* or **know** it's not relevant
-to your question or feature request.
+The way we love doing things is very simple, contributions should start out with a
+[discussion](https://github.com/tarsil/databasez/discussions). The potential bugs shall be raised as "Potential Issue"
+in the discussions, the feature requests may be raised as "Ideas".
 
-## Pull Requests
+We can then decide if the discussion needs to be escalated into an "Issue" or not.
 
-It should be quite straight forward to get started and create a Pull Request.
+When reporting something you should always try to:
 
-!!! note
-    Unless your change is trivial (typo, docs tweak etc.), please create an issue to discuss the change before
-    creating a pull request.
+* Be as more descriptive as possible
+* Provide as much evidence as you can, something like:
+    * OS platform
+    * Python version
+    * Installed dependencies
+    * Code snippets
+    * Tracebacks
 
-To make contributing as easy and fast as possible, you'll want to run tests and linting locally. 
+Avoid putting examples extremely complex to understand and read. Simplify the examples as much as possible to make
+it clear to understand and get the required help.
 
-You'll need to have **python >= 3.6 (recommended 3.7+)** and **git** installed.
+## Development
 
-## Getting started
+To develop for Databasez, create a fork of the [Databasez repository](https://github.com/tarsil/databasez) on GitHub.
 
-1. Clone your fork and cd into the repo directory
-```bash
-git clone git@github.com:<your username>/databases.git
-cd databases
+After, clone your fork with the follow command replacing `YOUR-USERNAME` wih your GitHub username:
+
+```shell
+$ git clone https://github.com/YOUR-USERNAME/databasez
 ```
 
-2. Create and activate virtual env
-```bash
-virtualenv env
-source env/bin/activate
+### Install the project dependencies
+
+```shell
+$ cd databasez
+$ scripts/install
 ```
 
-3. Install databases, dependencies and test dependencies
-```bash
-pip install -r requirements.txt
+### Run the tests
+
+To run the tests, use:
+
+```shell
+$ scripts/test
 ```
 
-4. Checkout a new branch and make your changes
-```bash
-git checkout -b my-new-feature-branch
+Because Databasez uses pytest, any additional arguments will be passed. More info within the
+[pytest documentation](https://docs.pytest.org/en/latest/how-to/usage.html)
+
+For example, to run a single test_script:
+
+```shell
+$ scripts/test tests/test_apiviews.py
 ```
 
-## Make your changes...
+To run the linting, use:
 
-## Contribute
-
-1. Formatting and linting - databases uses black for formatting, autoflake for linting and mypy for type hints check
-run all of those with lint script
-```bash
-./scripts/lint
+```shell
+$ scripts/lint
 ```
 
-2. Prepare tests (basic)
-   1. Set-up `TEST_DATABASE_URLS` env variable where you can comma separate urls for several backends
-   2. The simples one is for sqlite alone: `sqlite:///test.db`
+### Documentation
 
-3. Prepare tests (all backends)
-   1. In order to run all backends you need either a docker installation on your system or all supported backends servers installed on your local machine.
-   2. A sample docker configuration that reflects the CI/CD workflow of databases might be:
-   
-   ```dockerfile
-    version: '2.1'
-    services:
-      postgres:
-        image: postgres:10.8
-        environment:
-          POSTGRES_USER: username
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: testsuite
-        ports:
-          - 5432:5432
-    
-      mysql:
-        image: mysql:5.7
-        environment:
-          MYSQL_USER: username
-          MYSQL_PASSWORD: password
-          MYSQL_ROOT_PASSWORD: password
-          MYSQL_DATABASE: testsuite
-        ports:
-          - 3306:3306
-   ```
-   3. To test all backends, the test urls need to consist of all possible drivers too, so a sample might look like following:
-   ```text
-    sqlite:///test.db,
-    sqlite+aiosqlite:///test.db,
-    mysql+aiomysql://username:password@localhost:3306/testsuite,
-    mysql+asyncmy://username:password@localhost:3306/testsuite,
-    postgresql+aiopg://username:password@127.0.0.1:5432/testsuite,
-    postgresql+asyncpg://username:password@localhost:5432/testsuite
-   ```
+Improving the documentation is quite easy and it is placed inside the `databasez/docs` folder.
 
-4. Run tests
-```bash
-./scripts/test
+To start the docs, run:
+
+```shell
+$ scripts/docs
 ```
 
-5. Build documentation
-   1. If you have changed the documentation make sure it runs successfully. 
-   You can preview the live documentation by running the following command:
-```bash
-./scripts/docs
+## Building Databasez
+
+To build a package locally, run:
+
+```shell
+$ scripts/build
 ```
 
-6. Commit, push, and create your pull request
+Alternatively running:
+
+```
+$ scripts/install
+```
+
+It will install the requirements and create a local build in your virtual environment.
+
+## Releasing
+
+*This section is for the maintainers of `Databasez`*.
+
+### Building the Databasez for release
+
+Before releasing a new package into production some considerations need to be taken into account.
+
+* **Changelog**
+    * Like many projects, we follow the format from [keepchangelog](https://keepachangelog.com/en/1.0.0/).
+    * [Compare](https://github.com/tarsil/databasez/compare/) `main` with the release tag and list of the entries
+that are of interest to the users of the framework.
+        * What **must** go in the changelog? added, changed, removed or deprecated features and the bug fixes.
+        * What is **should not go** in the changelog? Documentation changes, tests or anything not specified in the
+point above.
+        * Make sure the order of the entries are sorted by importance.
+        * Keep it simple.
+
+* *Version bump*
+    * The version should be in `__init__.py` of the main package.
+
+#### Releasing
+
+Once the `release` PR is merged, create a new [release](https://github.com/tarsil/databasez/releases/new)
+that includes:
+
+Example:
+
+There will be a release of the version `0.2.3`, this is what it should include.
+
+* Release title: `Version 0.2.3`.
+* Tag: `0.2.3`.
+* The description should be copied from the changelog.
+
+Once the release is created, it should automatically upload the new version to PyPI. If something
+does not work with PyPI the release can be done by running `scripts/release`.
