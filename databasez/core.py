@@ -31,7 +31,7 @@ except ImportError:  # pragma: no cover
     DISCONNECT_EXTRA = {}
 
 
-logger = logging.getLogger("databases")
+logger = logging.getLogger("databasez")
 
 
 class Database:

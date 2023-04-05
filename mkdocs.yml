@@ -41,6 +41,7 @@ nav:
     - Queries: "queries.md"
     - Connections & Transactions: "connections-and-transactions.md"
     - Test Client: "test-client.md"
+    - Tests & Migrations: "tests-and-migrations.md"
     - Vendors: "vendors.md"
     - Databasez People: "databasez-people.md"
     - Contributing: "contributing.md"

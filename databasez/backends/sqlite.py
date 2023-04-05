@@ -13,7 +13,7 @@ from databasez.backends.common.records import Record, Row, create_column_maps
 from databasez.core import LOG_EXTRA, DatabaseURL
 from databasez.interfaces import ConnectionBackend, DatabaseBackend, TransactionBackend
 
-logger = logging.getLogger("databases")
+logger = logging.getLogger("databasez")
 
 
 class SQLiteBackend(DatabaseBackend):

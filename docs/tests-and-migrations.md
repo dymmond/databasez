@@ -1,46 +1,18 @@
 # Tests and Migrations
 
-Databases is designed to allow you to fully integrate with production
+Databasez is designed to allow you to fully integrate with production
 ready services, with API support for test isolation, and integration
 with [Alembic][alembic] for database migrations.
 
 ## Test isolation
 
-For strict test isolation you will always want to rollback the test database
-to a clean state between each test case:
-
-```python
-database = Database(DATABASE_URL, force_rollback=True)
-```
-
-This will ensure that all database connections are run within a transaction
-that rollbacks once the database is disconnected.
-
-If you're integrating against a web framework you'll typically want to
-use something like the following pattern:
-
-```python
-if TESTING:
-    database = Database(TEST_DATABASE_URL, force_rollback=True)
-else:
-    database = Database(DATABASE_URL)
-```
-
-This will give you test cases that run against a different database to
-the development database, with strict test isolation so long as you make sure
-to connect and disconnect to the database between test cases.
-
-For a lower level API you can explicitly create force-rollback transactions:
-
-```python
-async with database.transaction(force_rollback=True):
-    ...
-```
+Databasez provides the [DatabaseTestClient](./test-client.md#databasetestclient) already configured
+to create the `test_` database from you.
 
 ## Migrations
 
-Because `databases` uses SQLAlchemy core, you can integrate with [Alembic][alembic]
-for database migration support.
+Because `databasez` uses SQLAlchemy core, you can integrate with [Alembic][alembic]
+for database migration support. The same as you could do with `databases`.
 
 ```shell
 $ pip install alembic
@@ -81,12 +53,18 @@ rather than using the async drivers that `databases` provides support for.
 This will also be the case if you're using SQLAlchemy's standard tooling, such
 as using `metadata.create_all(engine)` to setup the database tables.
 
-**Note for MySQL**:
+### Note for MySQL:
 
 For MySQL you'll probably need to explicitly specify the `pymysql` dialect when
 using Alembic since the default MySQL dialect does not support Python 3.
 
-If you're using the `databases.DatabaseURL` datatype, you can obtain this using
+If you're using the `databasesz.DatabaseURL` datatype, you can obtain this using
 `DATABASE_URL.replace(dialect="pymysql")`
 
+## Examples
+
+[Saffier][saffier] (from the same author) is a good example as it has an internal migration system
+based on Alembic and integrates with **Databasez**.
+
 [alembic]: https://alembic.sqlalchemy.org/en/latest/
+[saffier]: https://saffier.tarsild.io

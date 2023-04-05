@@ -13,7 +13,7 @@ from databasez.interfaces import ConnectionBackend, DatabaseBackend
 from databasez.interfaces import Record as RecordInterface
 from databasez.interfaces import TransactionBackend
 
-logger = logging.getLogger("databases")
+logger = logging.getLogger("databasez")
 
 
 class PostgresBackend(DatabaseBackend):
