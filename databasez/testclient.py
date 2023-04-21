@@ -3,6 +3,7 @@ import os
 import typing
 from typing import Any
 
+import nest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -10,6 +11,8 @@ from sqlalchemy_utils.functions.database import _set_url_database, _sqlite_file_
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
+
+nest_asyncio.apply()
 
 
 async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:

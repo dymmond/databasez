@@ -9,6 +9,7 @@ from urllib.parse import SplitResult, parse_qsl, unquote, urlencode, urlsplit
 
 from sqlalchemy import text
 from sqlalchemy.sql import ClauseElement
+from sqlalchemy.util._concurrency_py3k import greenlet_spawn
 
 from databasez.importer import import_from_string
 from databasez.interfaces import DatabaseBackend, Record
@@ -396,6 +397,11 @@ class Connection:
     @property
     def raw_connection(self) -> typing.Any:
         return self._connection.raw_connection
+
+    async def run_sync(
+        self, fn: typing.Callable[..., typing.Any], *arg: typing.Any, **kw: typing.Any
+    ) -> typing.Any:
+        return await greenlet_spawn(fn, self._connection.raw_connection, *arg, **kw)
 
     @staticmethod
     def _build_query(
