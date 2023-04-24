@@ -147,7 +147,7 @@ what we need. [See more details](https://ipython.org/) about it.
 **Install the required drivers**
 
 ```shell
-$ pip install databases[aiosqlite]
+$ pip install databasez[aiosqlite]
 $ pip install ipython
 ```
 
@@ -182,7 +182,7 @@ print("High Scores:", rows)
 ```
 
 Check out the documentation on [making database queries](https://databasez.tarsild.io/queries/)
-for examples of how to start using databases together with SQLAlchemy core expressions.
+for examples of how to start using databasez together with SQLAlchemy core expressions.
 
 
 [sqlalchemy-core]: https://docs.sqlalchemy.org/en/latest/core/
