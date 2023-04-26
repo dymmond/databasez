@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.2.2
+
+### Fixed
+
+- Bad state when a connection was cancelled.
+
 ## 0.2.1
 
 ### Fixed
