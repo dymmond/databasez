@@ -1,4 +1,4 @@
 # Contributing
 
-Please read the [Contributing](https://databasex.dymmond.com/contributing/)
+Please read the [Contributing](https://databsez.tarsild.io/contributing/)
 guidelines in the official documentation.

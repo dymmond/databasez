@@ -139,6 +139,9 @@ def create_column_maps(
         column_map[column_name] = (idx, datatype)
         column_map_int[idx] = (idx, datatype)
 
+        if not column:
+            continue
+
         # Added in SQLA 2.0 and _CompileLabels do not have _annotations
         # When this happens, the mapping is on the second position
         if isinstance(column[0], _CompileLabel):
