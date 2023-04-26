@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.2.1
+
+### Fixed
+
+- Error raised when checking the column mapping for empty columns.
+
 ## 0.2.0
 
 ### Changed
@@ -20,5 +26,5 @@ forked from [Encode](https://github.com/encode/databases) with additional featur
 
 * SQLAlchemy 2+ integration.
 * Additonal support for `mssql`.
-* [Connection as dict](./connections-and-transactions.md#connection-options-as-a-dictionary). 
+* [Connection as dict](./connections-and-transactions.md#connection-options-as-a-dictionary).
 * Brings a native test client.
