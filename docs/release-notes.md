@@ -1,5 +1,14 @@
 # Release Notes
 
+## 0.3.0
+
+### Changed
+
+- Upgraded SQLAlchemy to version 2.0.12+ where the BaseRow
+implementation was redesigned and improved in terms of performance. [#10](https://github.com/tarsil/databasez/pull/10)
+- Updated internal Record representation of the returned Row from SQLAlchemy
+reflecting the performance improvements.
+
 ## 0.2.2
 
 ### Fixed
