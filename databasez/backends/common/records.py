@@ -95,6 +95,15 @@ class Row(SQLRow):
         An instance of a Row in SQLAlchemy allows the access
         to the Row._fields as tuple and the Row._mapping for
         the values.
+
+        return RowMapping(
+            self._parent,
+            None,
+            self._keymap,
+            RowMapping._default_key_style,
+            self._data,
+            return RowMapping(self._parent, None, self._key_to_index, self._data)
+        )
         """
         if isinstance(key, int):
             field = self._fields[key]
