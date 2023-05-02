@@ -37,7 +37,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Internet :: WWW/HTTP",
 ]
-dependencies = ["nest_asyncio>=1.5.6,<2.0.0", "sqlalchemy>=2.0.9,<2.1"]
+dependencies = ["nest_asyncio>=1.5.6,<2.0.0", "sqlalchemy>=2.0.12,<2.1"]
 keywords = [
     "mysql",
     "postgres",
@@ -49,11 +49,11 @@ keywords = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dymmond/databasez"
-Documentation = "https://databasez.dymmond.com/"
-Changelog = "https://databasez.dymmond.com/release-notes/"
+Homepage = "https://github.com/tarsil/databasez"
+Documentation = "https://databasez.tarsild/"
+Changelog = "https://databasez.tarsild.io/release-notes/"
 Funding = "https://github.com/sponsors/tarsil"
-Source = "https://github.com/dymmond/databasez"
+Source = "https://github.com/tarsil/databasez"
 
 [project.optional-dependencies]
 test = [

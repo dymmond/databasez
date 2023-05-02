@@ -140,9 +140,8 @@ class MSSQLConnection(ConnectionBackend):
             rows = [
                 Row(
                     metadata,
-                    metadata._processors,
-                    metadata._keymap,
-                    Row._default_key_style,
+                    metadata._effective_processors,
+                    metadata._key_to_index,
                     row,
                 )
                 for row in rows
@@ -165,9 +164,8 @@ class MSSQLConnection(ConnectionBackend):
             metadata = CursorResultMetaData(context, cursor.description)
             row = Row(
                 metadata,
-                metadata._processors,
-                metadata._keymap,
-                Row._default_key_style,
+                metadata._effective_processors,
+                metadata._key_to_index,
                 row,
             )
             return Record(row, result_columns, dialect, column_maps)
@@ -210,9 +208,8 @@ class MSSQLConnection(ConnectionBackend):
             async for row in cursor:
                 record = Row(
                     metadata,
-                    metadata._processors,
-                    metadata._keymap,
-                    Row._default_key_style,
+                    metadata._effective_processors,
+                    metadata._key_to_index,
                     row,
                 )
                 yield Record(record, result_columns, dialect, column_maps)
