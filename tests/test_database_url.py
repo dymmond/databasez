@@ -1,6 +1,7 @@
 from urllib.parse import quote
 
 import pytest
+
 from databasez import DatabaseURL
 
 

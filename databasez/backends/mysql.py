@@ -4,16 +4,17 @@ import typing
 import uuid
 
 import aiomysql
-from databasez.backends.common.records import Record, Row, create_column_maps
-from databasez.core import LOG_EXTRA, DatabaseURL
-from databasez.interfaces import ConnectionBackend, DatabaseBackend
-from databasez.interfaces import Record as RecordInterface
-from databasez.interfaces import TransactionBackend
 from sqlalchemy.dialects.mysql import pymysql
 from sqlalchemy.engine.cursor import CursorResultMetaData
 from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
 from sqlalchemy.sql import ClauseElement
 from sqlalchemy.sql.ddl import DDLElement
+
+from databasez.backends.common.records import Record, Row, create_column_maps
+from databasez.core import LOG_EXTRA, DatabaseURL
+from databasez.interfaces import ConnectionBackend, DatabaseBackend
+from databasez.interfaces import Record as RecordInterface
+from databasez.interfaces import TransactionBackend
 
 logger = logging.getLogger("databasez")
 
