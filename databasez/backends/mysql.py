@@ -36,12 +36,15 @@ class MySQLBackend(DatabaseBackend):
         min_size = url_options.get("min_size")
         max_size = url_options.get("max_size")
         pool_recycle = url_options.get("pool_recycle")
+        unix_socket = url_options.get("unix_socket")
         ssl = url_options.get("ssl")
 
         if min_size is not None:
             kwargs["minsize"] = int(min_size)
         if max_size is not None:
             kwargs["maxsize"] = int(max_size)
+        if unix_socket is not None:
+            kwargs["unix_socket"] = unix_socket
         if pool_recycle is not None:
             kwargs["pool_recycle"] = int(pool_recycle)
         if ssl is not None:
