@@ -4,17 +4,16 @@ import typing
 import uuid
 
 import asyncmy
-from sqlalchemy.dialects.mysql import pymysql
-from sqlalchemy.engine.cursor import CursorResultMetaData
-from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
-from sqlalchemy.sql import ClauseElement
-from sqlalchemy.sql.ddl import DDLElement
-
 from databasez.backends.common.records import Record, Row, create_column_maps
 from databasez.core import LOG_EXTRA, DatabaseURL
 from databasez.interfaces import ConnectionBackend, DatabaseBackend
 from databasez.interfaces import Record as RecordInterface
 from databasez.interfaces import TransactionBackend
+from sqlalchemy.dialects.mysql import pymysql
+from sqlalchemy.engine.cursor import CursorResultMetaData
+from sqlalchemy.engine.interfaces import Dialect, ExecutionContext
+from sqlalchemy.sql import ClauseElement
+from sqlalchemy.sql.ddl import DDLElement
 
 logger = logging.getLogger("databasez")
 
@@ -36,12 +35,15 @@ class AsyncMyBackend(DatabaseBackend):
         min_size = url_options.get("min_size")
         max_size = url_options.get("max_size")
         pool_recycle = url_options.get("pool_recycle")
+        unix_socket = url_options.get("unix_socket")
         ssl = url_options.get("ssl")
 
         if min_size is not None:
             kwargs["minsize"] = int(min_size)
         if max_size is not None:
             kwargs["maxsize"] = int(max_size)
+        if unix_socket is not None:
+            kwargs["unix_socket"] = unix_socket
         if pool_recycle is not None:
             kwargs["pool_recycle"] = int(pool_recycle)
         if ssl is not None:

@@ -4,13 +4,12 @@ Unit tests for the backend connection arguments.
 import sys
 
 import pytest
-from tests.test_databases import DATABASE_URLS, async_adapter
-
 from databasez.backends.aiopg import AiopgBackend
 from databasez.backends.asyncmy import AsyncMyBackend
 from databasez.backends.mysql import MySQLBackend
 from databasez.backends.postgres import PostgresBackend
 from databasez.core import DatabaseURL
+from tests.test_databases import DATABASE_URLS, async_adapter
 
 
 def test_postgres_pool_size():
@@ -71,6 +70,15 @@ def test_mysql_pool_size():
 
 
 @pytest.mark.skipif(sys.version_info >= (3, 10), reason="requires python3.9 or lower")
+def test_mysql_unix_socket():
+    backend = MySQLBackend(
+        "mysql+aiomysql://username:password@/testsuite?unix_socket=/tmp/mysqld/mysqld.sock"
+    )
+    kwargs = backend._get_connection_kwargs()
+    assert kwargs == {"unix_socket": "/tmp/mysqld/mysqld.sock"}
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 10), reason="requires python3.9 or lower")
 def test_mysql_explicit_pool_size():
     backend = MySQLBackend("mysql://localhost/database", min_size=1, max_size=20)
     kwargs = backend._get_connection_kwargs()
@@ -103,6 +111,15 @@ def test_asyncmy_pool_size():
     backend = AsyncMyBackend("mysql+asyncmy://localhost/database?min_size=1&max_size=20")
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"minsize": 1, "maxsize": 20}
+
+
+@pytest.mark.skipif(sys.version_info < (3, 7), reason="requires python3.7 or higher")
+def test_asyncmy_unix_socket():
+    backend = AsyncMyBackend(
+        "mysql+asyncmy://username:password@/testsuite?unix_socket=/tmp/mysqld/mysqld.sock"
+    )
+    kwargs = backend._get_connection_kwargs()
+    assert kwargs == {"unix_socket": "/tmp/mysqld/mysqld.sock"}
 
 
 @pytest.mark.skipif(sys.version_info < (3, 7), reason="requires python3.7 or higher")

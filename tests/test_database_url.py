@@ -1,7 +1,6 @@
 from urllib.parse import quote
 
 import pytest
-
 from databasez import DatabaseURL
 
 
@@ -68,6 +67,9 @@ def test_database_url_constructor():
 def test_database_url_options():
     u = DatabaseURL("postgresql://localhost/mydatabase?pool_size=20&ssl=true")
     assert u.options == {"pool_size": "20", "ssl": "true"}
+
+    u = DatabaseURL("mysql+asyncmy://username/testsuite?unix_socket=/tmp/mysqld/mysqld.sock")
+    assert u.options == {"unix_socket": "/tmp/mysqld/mysqld.sock"}
 
 
 def test_replace_database_url_components():
