@@ -1,5 +1,12 @@
 # Release Notes
 
+## 0.4.0
+
+### Changed
+
+- Added extra support for unix sockets for mysql and asyncmy. PR [#13](https://github.com/tarsil/databasez/pull/13) by [tarsil](https://github.com/tarsil).
+- Update version of SQLAlchemy.
+
 ## 0.3.0
 
 ### Changed
