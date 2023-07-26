@@ -1,5 +1,13 @@
 # Release Notes
 
+## 0.5.0
+
+### Fixed
+
+- Patch done in the core of Databases fixing the concurrent usage of connections and transactions.
+This patch also affects databases. [#PR 546](https://github.com/encode/databases/pull/546) by [@zevisert](https://github.com/zevisert).
+We thank [@zevisert](https://github.com/zevisert) for the fix done in the original project that also affect Databasez.
+
 ## 0.4.0
 
 ### Changed
