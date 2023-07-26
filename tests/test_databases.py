@@ -3,7 +3,6 @@ import datetime
 import decimal
 import functools
 import gc
-import itertools
 import os
 from typing import MutableMapping
 from unittest.mock import MagicMock, patch
