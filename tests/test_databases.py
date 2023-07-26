@@ -2,7 +2,10 @@ import asyncio
 import datetime
 import decimal
 import functools
+import gc
+import itertools
 import os
+from typing import MutableMapping
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qsl, urlsplit
 
@@ -1354,3 +1357,246 @@ async def test_mapping_property_interface(database_url):
         list_result = await database.fetch_all(query=query)
         assert list_result[0]._mapping["text"] == "example1"
         assert list_result[0]._mapping["completed"] is True
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_transaction_context_child_task_inheritance(database_url):
+    """
+    Ensure that transactions are inherited by child tasks.
+    """
+    async with Database(database_url) as database:
+
+        async def check_transaction(transaction, active_transaction):
+            # Should have inherited the same transaction backend from the parent task
+            assert transaction._transaction is active_transaction
+
+        async with database.transaction() as transaction:
+            await asyncio.create_task(check_transaction(transaction, transaction._transaction))
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_transaction_context_child_task_inheritance_example(database_url):
+    """
+    Ensure that child tasks may influence inherited transactions.
+    """
+    # This is an practical example of the above test.
+    db = Database(database_url)
+    if db.url.dialect == "mssql":
+        return
+
+    async with Database(database_url) as database:
+        async with database.transaction():
+            # Create a note
+            await database.execute(notes.insert().values(id=1, text="setup", completed=True))
+
+            # Change the note from the same task
+            await database.execute(notes.update().where(notes.c.id == 1).values(text="prior"))
+
+            # Confirm the change
+            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
+            assert result.text == "prior"
+
+            async def run_update_from_child_task(connection):
+                # Change the note from a child task
+                await connection.execute(notes.update().where(notes.c.id == 1).values(text="test"))
+
+            await asyncio.create_task(run_update_from_child_task(database.connection()))
+
+            # Confirm the child's change
+            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
+            assert result.text == "test"
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_transaction_context_sibling_task_isolation(database_url):
+    """
+    Ensure that transactions are isolated between sibling tasks.
+    """
+    start = asyncio.Event()
+    end = asyncio.Event()
+
+    async with Database(database_url) as database:
+
+        async def check_transaction(transaction):
+            await start.wait()
+            # Parent task is now in a transaction, we should not
+            # see its transaction backend since this task was
+            # _started_ in a context where no transaction was active.
+            assert transaction._transaction is None
+            end.set()
+
+        transaction = database.transaction()
+        assert transaction._transaction is None
+        task = asyncio.create_task(check_transaction(transaction))
+
+        async with transaction:
+            start.set()
+            assert transaction._transaction is not None
+            await end.wait()
+
+        # Cleanup for "Task not awaited" warning
+        await task
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_transaction_context_sibling_task_isolation_example(database_url):
+    """
+    Ensure that transactions are running in sibling tasks are isolated from eachother.
+    """
+    # This is an practical example of the above test.
+    db = Database(database_url)
+    if db.url.dialect == "mssql":
+        return
+    setup = asyncio.Event()
+    done = asyncio.Event()
+
+    async def tx1(connection):
+        async with connection.transaction():
+            await db.execute(notes.insert(), values={"id": 1, "text": "tx1", "completed": False})
+            setup.set()
+            await done.wait()
+
+    async def tx2(connection):
+        async with connection.transaction():
+            await setup.wait()
+            result = await db.fetch_all(notes.select())
+            assert result == [], result
+            done.set()
+
+    async with Database(database_url) as db:
+        await asyncio.gather(tx1(db), tx2(db))
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_connection_cleanup_contextmanager(database_url):
+    """
+    Ensure that task connections are not persisted unecessarily.
+    """
+
+    ready = asyncio.Event()
+    done = asyncio.Event()
+
+    async def check_child_connection(database: Database):
+        async with database.connection():
+            ready.set()
+            await done.wait()
+
+    async with Database(database_url) as database:
+        # Should have a connection in this task
+        # .connect is lazy, it doesn't create a Connection, but .connection does
+        connection = database.connection()
+        assert isinstance(database._connection_map, MutableMapping)
+        assert database._connection_map.get(asyncio.current_task()) is connection
+
+        # Create a child task and see if it registers a connection
+        task = asyncio.create_task(check_child_connection(database))
+        await ready.wait()
+        assert database._connection_map.get(task) is not None
+        assert database._connection_map.get(task) is not connection
+
+        # Let the child task finish, and see if it cleaned up
+        done.set()
+        await task
+        # This is normal exit logic cleanup, the WeakKeyDictionary
+        # shouldn't have cleaned up yet since the task is still referenced
+        assert task not in database._connection_map
+
+    # Context manager closes, all open connections are removed
+    assert isinstance(database._connection_map, MutableMapping)
+    assert len(database._connection_map) == 0
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_connection_cleanup_garbagecollector(database_url):
+    """
+    Ensure that connections for tasks are not persisted unecessarily, even
+    if exit handlers are not called.
+    """
+    database = Database(database_url)
+    await database.connect()
+
+    created = asyncio.Event()
+
+    async def check_child_connection(database: Database):
+        # neither .disconnect nor .__aexit__ are called before deleting this task
+        database.connection()
+        created.set()
+
+    task = asyncio.create_task(check_child_connection(database))
+    await created.wait()
+    assert task in database._connection_map
+    await task
+    del task
+    gc.collect()
+
+    # Should not have a connection for the task anymore
+    assert len(database._connection_map) == 0
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_transaction_context_cleanup_contextmanager(database_url):
+    """
+    Ensure that contextvar transactions are not persisted unecessarily.
+    """
+    from databasez.core import ACTIVE_TRANSACTIONS
+
+    assert ACTIVE_TRANSACTIONS.get() is None
+
+    async with Database(database_url) as database:
+        async with database.transaction() as transaction:
+            open_transactions = ACTIVE_TRANSACTIONS.get()
+            assert isinstance(open_transactions, MutableMapping)
+            assert open_transactions.get(transaction) is transaction._transaction
+
+        # Context manager closes, open_transactions is cleaned up
+        open_transactions = ACTIVE_TRANSACTIONS.get()
+        assert isinstance(open_transactions, MutableMapping)
+        assert open_transactions.get(transaction, None) is None
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@async_adapter
+async def test_transaction_context_cleanup_garbagecollector(database_url):
+    """
+    Ensure that contextvar transactions are not persisted unecessarily, even
+    if exit handlers are not called.
+    This test should be an XFAIL, but cannot be due to the way that is hangs
+    during teardown.
+    """
+    from databasez.core import ACTIVE_TRANSACTIONS
+
+    assert ACTIVE_TRANSACTIONS.get() is None
+
+    async with Database(database_url) as database:
+        transaction = database.transaction()
+        await transaction.start()
+
+        # Should be tracking the transaction
+        open_transactions = ACTIVE_TRANSACTIONS.get()
+        assert isinstance(open_transactions, MutableMapping)
+        assert open_transactions.get(transaction) is transaction._transaction
+
+        # neither .commit, .rollback, nor .__aexit__ are called
+        del transaction
+        gc.collect()
+
+        # A strong reference to the transaction is kept alive by the connection's
+        # ._transaction_stack, so it is still be tracked at this point.
+        assert len(open_transactions) == 1
+
+        # If that were magically cleared, the transaction would be cleaned up,
+        # but as it stands this always causes a hang during teardown at
+        # `Database(...).disconnect()` if the transaction is not closed.
+        transaction = database.connection()._transaction_stack[-1]
+        await transaction.rollback()
+        del transaction
+
+        # Now with the transaction rolled-back, it should be cleaned up.
+        assert len(open_transactions) == 0

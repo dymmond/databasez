@@ -37,14 +37,14 @@ to connect to the database.
 
 ## Connecting and disconnecting
 
-You can control the database connect/disconnect, by using it as a async context manager.
+You can control the database connection, by using it as a async context manager.
 
 ```python
 async with Database(DATABASE_URL) as database:
     ...
 ```
 
-Or by using explicit connection and disconnection:
+Or by using explicit `.connect()` and `disconnect()`:
 
 ```python
 database = Database(DATABASE_URL)
@@ -246,10 +246,53 @@ async def create_users(request):
     ...
 ```
 
-Transaction blocks are managed as task-local state. Nested transactions
-are fully supported, and are implemented using database savepoints.
+The state of a transaction is liked to the connection used in the currently executing async task.
+If you would like to influence an active transaction from another task, the connection must be
+shared:
 
 Transaction isolation-level can be specified if the driver backend supports that:
+
+```python
+async def add_excitement(connnection: databases.core.Connection, id: int):
+    await connection.execute(
+        "UPDATE notes SET text = CONCAT(text, '!!!') WHERE id = :id",
+        {"id": id}
+    )
+
+
+async with Database(database_url) as database:
+    async with database.transaction():
+        # This note won't exist until the transaction closes...
+        await database.execute(
+            "INSERT INTO notes(id, text) values (1, 'databases is cool')"
+        )
+        # ...but child tasks can use this connection now!
+        await asyncio.create_task(add_excitement(database.connection(), id=1))
+
+    await database.fetch_val("SELECT text FROM notes WHERE id=1")
+    # ^ returns: "databases is cool!!!"
+```
+
+Nested transactions are fully supported, and are implemented using database savepoints:
+
+```python
+async with databases.Database(database_url) as db:
+    async with db.transaction() as outer:
+        # Do something in the outer transaction
+        ...
+
+        # Suppress to prevent influence on the outer transaction
+        with contextlib.suppress(ValueError):
+            async with db.transaction():
+                # Do something in the inner transaction
+                ...
+
+                raise ValueError('Abort the inner transaction')
+
+    # Observe the results of the outer transaction,
+    # without effects from the inner transaction.
+    await db.fetch_all('SELECT * FROM ...')
+```
 
 ```python
 async with database.transaction(isolation="serializable"):
