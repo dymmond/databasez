@@ -61,6 +61,11 @@ Databasez is suitable for integrating against any async Web framework, such as [
 Databasez was built for Python 3.8+ and on the top of the newest **SQLAlchemy 2** and gives you
 simple asyncio support for a range of databases.
 
+### Special notes
+
+Saffier couldn't exist without [Databases](https://www.encode.io/databasex/) and the continuous work
+done by the amazing team behind it. For that reason, thank you!
+
 ## Installation
 
 ```shell
