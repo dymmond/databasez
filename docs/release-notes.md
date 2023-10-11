@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.6.0
+
+### Added
+
+- Support for Python 3.12
+
+### Changed
+
+* `pyodbc` version for MSSQL driver.
+
 ## 0.5.0
 
 ### Fixed
