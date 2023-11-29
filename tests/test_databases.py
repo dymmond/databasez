@@ -10,6 +10,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 import sqlalchemy
+from sqlalchemy.engine import URL, make_url
 
 from databasez import Database, DatabaseURL
 
@@ -17,9 +18,12 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
+
 DATABASE_CONFIG_URLS = []
 for value in DATABASE_URLS:
-    spliter = urlsplit(value)
+    raw_url = make_url(value)
+    url: URL = DatabaseURL._sanitize_password(raw_url)
+    spliter = urlsplit(url.render_as_string(hide_password=False))
     DATABASE_CONFIG_URLS.append(
         {
             "connection": {
@@ -39,7 +43,7 @@ for value in DATABASE_URLS:
 
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):
-        return super(AsyncMock, self).__call__(*args, **kwargs)
+        return super().__call__(*args, **kwargs)
 
 
 class MyEpochType(sqlalchemy.types.TypeDecorator):

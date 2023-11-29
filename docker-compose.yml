@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
       POSTGRES_USER: "postgres"
-      POSTGRES_PASSWORD: "password*1123456879#"
+      POSTGRES_PASSWORD: "passwsss*1348394#"
       POSTGRES_DB: "testsuite"
     expose:
       - "5432"
@@ -19,8 +19,8 @@ services:
     environment:
       MYSQL_USER: "mysql"
       MYSQL_PASSWORD: "mysql"
-      MYSQL_DATABASE: "testsuite"
-      MYSQL_ROOT_PASSWORD: "password*1123456879#"
+      MYSQL_DATABASE: "passwsss*1348394#"
+      MYSQL_ROOT_PASSWORD: "password"
     expose:
       - "3306"
     ports:

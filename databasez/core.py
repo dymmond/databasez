@@ -569,7 +569,8 @@ class DatabaseURL:
                 f"Invalid type for DatabaseURL. Expected str or DatabaseURL, got {type(url)}"
             )
 
-    def _sanitize_password(self, url: URL) -> URL:
+    @classmethod
+    def _sanitize_password(cls, url: URL) -> URL:
         """
         Making sure all the passwords are allowed.
         """
@@ -585,7 +586,7 @@ class DatabaseURL:
     def components(self) -> SplitResult:
         if not hasattr(self, "_components"):
             raw_url = make_url(self._url)
-            url = self._sanitize_password(raw_url)
+            url = DatabaseURL._sanitize_password(raw_url)
             self._components = urlsplit(url.render_as_string(hide_password=False))
         return self._components
 
