@@ -56,7 +56,7 @@ class AiopgBackend(DatabaseBackend):
         if max_size is not None:
             kwargs["maxsize"] = int(max_size)
         if ssl is not None:
-            kwargs["ssl"] = {"true": True, "false": False}[ssl.lower()]
+            kwargs["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
 
         for key, value in self._options.items():
             # Coerce 'min_size' and 'max_size' for consistency.

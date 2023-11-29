@@ -51,7 +51,7 @@ class MSSQLBackend(DatabaseBackend):
         if pool_recycle is not None:
             kwargs["pool_recycle"] = int(pool_recycle)
         if ssl is not None:
-            kwargs["ssl"] = {"true": True, "false": False}[ssl.lower()]
+            kwargs["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
 
         kwargs.update(
             {
