@@ -24,7 +24,7 @@ jobs:
         env:
           MYSQL_USER: username
           MYSQL_PASSWORD: password
-          MYSQL_ROOT_PASSWORD: password
+          MYSQL_ROOT_PASSWORD: password*1123456879#
           MYSQL_DATABASE: testsuite
         ports:
           - 3306:3306
@@ -34,7 +34,7 @@ jobs:
         image: postgres:14
         env:
           POSTGRES_USER: username
-          POSTGRES_PASSWORD: password
+          POSTGRES_PASSWORD: password*1123456879#
           POSTGRES_DB: testsuite
         ports:
           - 5432:5432

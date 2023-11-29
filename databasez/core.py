@@ -6,9 +6,10 @@ import typing
 import weakref
 from contextvars import ContextVar
 from types import TracebackType
-from urllib.parse import SplitResult, parse_qsl, unquote, urlencode, urlsplit
+from urllib.parse import SplitResult, parse_qsl, quote_plus, unquote, urlencode, urlsplit
 
 from sqlalchemy import text
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.sql import ClauseElement
 
 from databasez.importer import import_from_string
@@ -568,10 +569,24 @@ class DatabaseURL:
                 f"Invalid type for DatabaseURL. Expected str or DatabaseURL, got {type(url)}"
             )
 
+    def _sanitize_password(self, url: URL) -> URL:
+        """
+        Making sure all the passwords are allowed.
+        """
+        password = url.password
+        if not password or password is None:
+            return url
+
+        quoted_password = quote_plus(password)
+        url = url._replace(password=quoted_password)
+        return url
+
     @property
     def components(self) -> SplitResult:
         if not hasattr(self, "_components"):
-            self._components = urlsplit(self._url)
+            raw_url = make_url(self._url)
+            url = self._sanitize_password(raw_url)
+            self._components = urlsplit(url.render_as_string(hide_password=False))
         return self._components
 
     @property
