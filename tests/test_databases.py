@@ -22,7 +22,7 @@ DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split("
 DATABASE_CONFIG_URLS = []
 for value in DATABASE_URLS:
     raw_url = make_url(value)
-    url: URL = DatabaseURL._sanitize_password(raw_url)
+    url: URL = DatabaseURL._sanitize_fields(raw_url)
     spliter = urlsplit(url.render_as_string(hide_password=False))
     DATABASE_CONFIG_URLS.append(
         {

@@ -570,7 +570,7 @@ class DatabaseURL:
             )
 
     @classmethod
-    def _sanitize_password(cls, url: URL) -> URL:
+    def _sanitize_fields(cls, url: URL) -> URL:
         """
         Making sure all the passwords are allowed.
         """
@@ -578,15 +578,20 @@ class DatabaseURL:
         if not password or password is None:
             return url
 
+        username = url.username
+        if not username or username is None:
+            return url
+
+        quoted_username = quote_plus(username)
         quoted_password = quote_plus(password)
-        url = url._replace(password=quoted_password)
+        url = url._replace(username=quoted_username, password=quoted_password)
         return url
 
     @property
     def components(self) -> SplitResult:
         if not hasattr(self, "_components"):
             raw_url = make_url(self._url)
-            url = DatabaseURL._sanitize_password(raw_url)
+            url = DatabaseURL._sanitize_fields(raw_url)
             self._components = urlsplit(url.render_as_string(hide_password=False))
         return self._components
 

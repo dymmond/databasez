@@ -5,7 +5,7 @@ services:
     image: postgres:14
     environment:
       POSTGRES_HOST_AUTH_METHOD: trust
-      POSTGRES_USER: "postgres"
+      POSTGRES_USER: "postgres@123*#"
       POSTGRES_PASSWORD: "passwsss*1348394#"
       POSTGRES_DB: "testsuite"
     expose:
@@ -17,9 +17,9 @@ services:
     restart: always
     image: mysql:5.7
     environment:
-      MYSQL_USER: "mysql"
-      MYSQL_PASSWORD: "mysql"
-      MYSQL_DATABASE: "passwsss*1348394#"
+      MYSQL_USER: "mysql@123*#"
+      MYSQL_PASSWORD: "passwsss*1348394#"
+      MYSQL_DATABASE: "testsuite"
       MYSQL_ROOT_PASSWORD: "password"
     expose:
       - "3306"

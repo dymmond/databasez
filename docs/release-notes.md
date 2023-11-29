@@ -1,5 +1,12 @@
 # Release Notes
 
+## 0.7.0
+
+### Fixed
+
+- `urllib.parse.urlsplit` was causing the password or username from being properly parsed and
+split with special characters.
+
 ## 0.6.0
 
 ### Added
