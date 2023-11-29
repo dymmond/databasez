@@ -48,7 +48,7 @@ class MySQLBackend(DatabaseBackend):
         if pool_recycle is not None:
             kwargs["pool_recycle"] = int(pool_recycle)
         if ssl is not None:
-            kwargs["ssl"] = {"true": True, "false": False}[ssl.lower()]
+            kwargs["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
 
         for key, value in self._options.items():
             # Coerce 'min_size' and 'max_size' for consistency.
