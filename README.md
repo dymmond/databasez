@@ -49,7 +49,6 @@ from the author of this package and therefore, this package aims to unblock
 a lot of the projects out there that want SQLAlchemy 2.0 with the best of databases with new features.
 
 A lot of packages depends of Databases and this was the main reason for the fork of **Databasez**.
-The need of progressing.
 
 It allows you to make queries using the powerful [SQLAlchemy Core][sqlalchemy-core]
 expression language, and provides support for PostgreSQL, MySQL, SQLite and MSSQL.
