@@ -6,10 +6,10 @@ import typing
 import weakref
 from contextvars import ContextVar
 from types import TracebackType
-from urllib.parse import SplitResult, parse_qsl, quote_plus, unquote, urlencode, urlsplit
+from urllib.parse import SplitResult, parse_qsl, quote, unquote, urlencode, urlsplit
 
 from sqlalchemy import text
-from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine import make_url
 from sqlalchemy.sql import ClauseElement
 
 from databasez.importer import import_from_string
@@ -569,29 +569,11 @@ class DatabaseURL:
                 f"Invalid type for DatabaseURL. Expected str or DatabaseURL, got {type(url)}"
             )
 
-    @classmethod
-    def _sanitize_fields(cls, url: URL) -> URL:
-        """
-        Making sure all the passwords are allowed.
-        """
-        password = url.password
-        if not password or password is None:
-            return url
-
-        username = url.username
-        if not username or username is None:
-            return url
-
-        quoted_username = quote_plus(username)
-        quoted_password = quote_plus(password)
-        url = url._replace(username=quoted_username, password=quoted_password)
-        return url
-
     @property
     def components(self) -> SplitResult:
         if not hasattr(self, "_components"):
-            raw_url = make_url(self._url)
-            url = DatabaseURL._sanitize_fields(raw_url)
+            url = make_url(self._url)
+            self.password = url.password
             self._components = urlsplit(url.render_as_string(hide_password=False))
         return self._components
 
@@ -613,8 +595,8 @@ class DatabaseURL:
     def userinfo(self) -> typing.Optional[bytes]:
         if self.components.username:
             info = self.components.username
-            if self.components.password:
-                info += ":" + self.components.password
+            if self.password:
+                info += ":" + quote(self.password)
             return info.encode("utf-8")
         return None
 
@@ -626,9 +608,16 @@ class DatabaseURL:
 
     @property
     def password(self) -> typing.Optional[str]:
-        if self.components.password is None:
+        if self.components.password is None and getattr(self, "_password", None) is None:
             return None
-        return unquote(self.components.password)
+
+        if getattr(self, "_password", None) is None:
+            return self.components.password
+        return typing.cast(str, self._password)
+
+    @password.setter
+    def password(self, value: typing.Any) -> None:
+        self._password = value
 
     @property
     def hostname(self) -> typing.Optional[str]:
