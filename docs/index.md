@@ -33,8 +33,7 @@
 ## Motivation
 
 There is a great package from [Encode](https://github.com/encode/databases/) that was doing what
-this package was initially forked to do but Encode is also very busy with other projects and
-without the proper time to maintain the so much required package.
+this package was forked to do.
 
 From a need to extend to new drivers and newest technologies and adding extra features common and
 useful to the many, [Databases](https://github.com/encode/databases/) was forked to become

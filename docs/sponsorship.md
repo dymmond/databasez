@@ -28,7 +28,7 @@ interesting to you.
 Our official chat is on discord, we find it very useful and free for people to discuss issues, helping and contributing
 in a more organised manner.
 
-<a href="https://discord.gg/eMrM9sWWvu" target="_blank">Esmerald discord channel</a>. Join us! 🗸
+<a href="https://discord.gg/eMrM9sWWvu" target="_blank">Databasez discord channel</a>. Join us! 🗸
 
 ## 🔥 Sponsor the author
 
@@ -42,4 +42,3 @@ He can afterwards go for a coffee☕, on him, to say thanks🙏.
 You can become a [**Special One**](https://github.com/sponsors/tarsil/sponsorships?sponsor=tarsil&tier_id=230059&preview=false)
 or a [**Legend**](https://github.com/sponsors/tarsil/sponsorships?sponsor=tarsil&tier_id=230042&preview=false)
 sponsor for Databasez.
-
