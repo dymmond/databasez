@@ -1,10 +1,12 @@
 # Release Notes
 
+### 0.7.2
+
+### Fixed
+
+- Regression introduced by asyncio with `DatabaseTestClient`.
+
 ## 0.7.1
-
-### Changed
-
-- Removed nest_asyncio dependency.
 
 ### Fixed
 
