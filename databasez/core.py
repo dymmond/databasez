@@ -6,7 +6,7 @@ import typing
 import weakref
 from contextvars import ContextVar
 from types import TracebackType
-from urllib.parse import SplitResult, parse_qsl, quote_plus, unquote, urlencode, urlsplit
+from urllib.parse import SplitResult, parse_qsl, quote, quote_plus, unquote, urlencode, urlsplit
 
 from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
@@ -592,6 +592,7 @@ class DatabaseURL:
         if not hasattr(self, "_components"):
             raw_url = make_url(self._url)
             url = DatabaseURL._sanitize_fields(raw_url)
+            self.password = raw_url.password
             self._components = urlsplit(url.render_as_string(hide_password=False))
         return self._components
 
@@ -613,8 +614,8 @@ class DatabaseURL:
     def userinfo(self) -> typing.Optional[bytes]:
         if self.components.username:
             info = self.components.username
-            if self.components.password:
-                info += ":" + self.components.password
+            if self.password:
+                info += ":" + quote(self.password)
             return info.encode("utf-8")
         return None
 
@@ -626,9 +627,16 @@ class DatabaseURL:
 
     @property
     def password(self) -> typing.Optional[str]:
-        if self.components.password is None:
+        if self.components.password is None and getattr(self, "_password", None) is None:
             return None
-        return unquote(self.components.password)
+
+        if getattr(self, "_password", None) is None:
+            return unquote(self.components.password)
+        return self._password
+
+    @password.setter
+    def password(self, value: typing.Any) -> typing.Optional[str]:
+        self._password = value
 
     @property
     def hostname(self) -> typing.Optional[str]:
