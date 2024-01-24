@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.7.1
+
+### Changed
+
+- Removed nest_asyncio dependency.
+
+### Fixed
+
+- Fix regression introduced by SQLAlchemy 2.0.25 with `make_url`.
+
 ## 0.7.0
 
 ### Fixed
