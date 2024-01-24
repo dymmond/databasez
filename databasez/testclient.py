@@ -1,9 +1,7 @@
-import asyncio
 import os
 import typing
 from typing import Any
 
-import nest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -11,8 +9,7 @@ from sqlalchemy_utils.functions.database import _set_url_database, _sqlite_file_
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
-
-nest_asyncio.apply()
+from databasez.conf.utils.sync import run_sync
 
 
 async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
@@ -45,7 +42,7 @@ class DatabaseTestClient(Database):
         self.test_db_url = test_database_url._url
         self.use_existing = use_existing
 
-        asyncio.get_event_loop().run_until_complete(self.setup())
+        run_sync(self.setup())
 
         super().__init__(test_database_url, force_rollback=force_rollback, **options)
         self.drop = drop_database
