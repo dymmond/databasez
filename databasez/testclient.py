@@ -204,7 +204,7 @@ class DatabaseTestClient(Database):
             async with engine.begin() as conn:
                 # Disconnect all users from the database we are dropping.
                 version = conn.dialect.server_version_info
-                pid_column = "pid" if (version >= (9, 2)) else "procpid"
+                pid_column = "pid" if (version >= (9, 2)) else "procpid"  # type: ignore
                 text = """
                 SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
                 FROM pg_stat_activity
