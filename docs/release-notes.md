@@ -41,7 +41,7 @@ We thank [@zevisert](https://github.com/zevisert) for the fix done in the origin
 
 ### Changed
 
-- Added extra support for unix sockets for mysql and asyncmy. PR [#13](https://github.com/tarsil/databasez/pull/13) by [tarsil](https://github.com/tarsil).
+- Added extra support for unix sockets for mysql and asyncmy. PR [#13](https://github.com/dymmond/databasez/pull/13) by [tarsil](https://github.com/tarsil).
 - Update version of SQLAlchemy.
 
 ## 0.3.0
@@ -49,7 +49,7 @@ We thank [@zevisert](https://github.com/zevisert) for the fix done in the origin
 ### Changed
 
 - Upgraded SQLAlchemy to version 2.0.12+ where the BaseRow
-implementation was redesigned and improved in terms of performance. [#10](https://github.com/tarsil/databasez/pull/10)
+implementation was redesigned and improved in terms of performance. [#10](https://github.com/dymmond/databasez/pull/10)
 - Updated internal Record representation of the returned Row from SQLAlchemy
 reflecting the performance improvements.
 

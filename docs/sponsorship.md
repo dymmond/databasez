@@ -12,7 +12,7 @@ Giving a start to Databasez is very simple and helps promoting the work across t
 
 The button is located at the top right.
 
-[https://github.com/tarsil/databasez](https://github.com/tarsil/databasez).
+[https://github.com/dymmond/databasez](https://github.com/dymmond/databasez).
 
 This will help spreading the word about the tool and how helpful has been.
 

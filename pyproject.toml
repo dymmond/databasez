@@ -50,11 +50,11 @@ keywords = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/tarsil/databasez"
+Homepage = "https://github.com/dymmond/databasez"
 Documentation = "https://databasez.tarsild/"
-Changelog = "https://databasez.tarsild.io/release-notes/"
+Changelog = "https://databasez.dymmond.com/release-notes/"
 Funding = "https://github.com/sponsors/tarsil"
-Source = "https://github.com/tarsil/databasez"
+Source = "https://github.com/dymmond/databasez"
 
 [project.optional-dependencies]
 test = [

@@ -1,7 +1,7 @@
 # Databasez
 
 <p align="center">
-  <a href="https://databasez.tarsild.io"><img src="https://res.cloudinary.com/dymmond/image/upload/v1680611626/databasez/logo-cmp_luizb0.png" alt='databasez'></a>
+  <a href="https://databasez.dymmond.com"><img src="https://res.cloudinary.com/dymmond/image/upload/v1680611626/databasez/logo-cmp_luizb0.png" alt='databasez'></a>
 </p>
 
 <p align="center">
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/tarsil/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" target="_blank">
-    <img src="https://github.com/tarsil/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" alt="Test Suite">
+<a href="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" target="_blank">
+    <img src="https://github.com/dymmond/databasez/workflows/Test%20Suite/badge.svg?event=push&branch=main" alt="Test Suite">
 </a>
 
 <a href="https://pypi.org/project/databasez" target="_blank">
@@ -24,9 +24,9 @@
 
 ---
 
-**Documentation**: [https://databasez.tarsild.io](https://databasez.tarsild.io) 📚
+**Documentation**: [https://databasez.dymmond.com](https://databasez.dymmond.com) 📚
 
-**Source Code**: [https://github.com/tarsil/databasez](https://github.com/tarsil/databasez)
+**Source Code**: [https://github.com/dymmond/databasez](https://github.com/dymmond/databasez)
 
 ---
 
@@ -184,7 +184,7 @@ rows = await database.fetch_all(query=query)
 print("High Scores:", rows)
 ```
 
-Check out the documentation on [making database queries](https://databasez.tarsild.io/queries/)
+Check out the documentation on [making database queries](https://databasez.dymmond.com/queries/)
 for examples of how to start using databasez together with SQLAlchemy core expressions.
 
 

@@ -28,8 +28,8 @@ theme:
         - search.highlight
         - content.tabs.link
 
-repo_name: tarsil/databasez
-repo_url: https://github.com/tarsil/databasez
+repo_name: dymmond/databasez
+repo_url: https://github.com/dymmond/databasez
 edit_uri: ""
 plugins:
     - search
