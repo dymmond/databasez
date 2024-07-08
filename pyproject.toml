@@ -136,7 +136,7 @@ module = "docs_src.*"
 ignore_errors = true
 
 [tool.pytest.ini_options]
-addopts = ["--strict-config", "--strict-markers"]
+addopts = ["--strict-config", "--strict-markers", "--pdbcls=IPython.terminal.debugger:Pdb"]
 xfail_strict = true
 junit_family = "xunit2"
 
@@ -150,6 +150,10 @@ extra-dependencies = [
     "ipdb>=0.13.13",
     "pre-commit>=2.17.0,<4.0.0",
 ]
+
+[tool.hatch.envs.default.scripts]
+clean_pyc = "find . -type f -name \"*.pyc\" -delete"
+clean_pycache = "find . -type d -name \"*__pycache__*\" -delete"
 
 [tool.hatch.envs.docs]
 dependencies = [
@@ -182,6 +186,7 @@ check_types = "mypy -p databasez"
 features = ["all"]
 
 extra-dependencies = [
+    "ipdb>=0.13.13",
     "sqlalchemy_utils>=0.40.0",
     "esmerald>=1.1.0",
     "mypy>=1.1.0,<2.0.0",

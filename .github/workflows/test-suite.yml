@@ -56,8 +56,24 @@ jobs:
           --health-retries 3
 
     steps:
-      - uses: "actions/checkout@v3"
-      - uses: "actions/setup-python@v4"
+      - uses: "actions/checkout@v4"
+      - uses: "dorny/paths-filter@v3"
+        id: filters
+        with:
+          filters: |
+            docs_src:
+              - 'docs_src/**'
+              - 'pyproject.toml'
+            src:
+              - 'databasez/**'
+              - 'tests/**'
+              - 'scripts/**'
+              - 'docker-compose.yml'
+              - 'pyproject.toml'
+            workflows:
+              - '.github/workflows/**'
+
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
           allow-prereleases: true
@@ -65,15 +81,15 @@ jobs:
         run: |
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
           sudo apt-get install -y unixodbc-dev
-
-      - name: "Install dependencies"
-        run: "scripts/install"
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
-        run: pip install build twine
-      - name: "Run linting checks"
-        run: "scripts/check"
-      - name: "Build package & docs"
-        run: "scripts/build"
+        run: pip install hatch
+      - name: "Run linting"
+        if: steps.filters.outputs.src == 'true'
+        run: "hatch fmt"
+      - name: "Run mypy"
+        if: steps.filters.outputs.src == 'true'
+        run: "hatch run test:check_types"
       - name: "Run tests"
-        run: "scripts/test"
+        if: steps.filters.outputs.src == 'true' || steps.filters.outputs.workflows == 'true' || github.event.schedule != ''
+        run: hatch test
