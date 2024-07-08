@@ -14,7 +14,7 @@ from tests.test_databases import DATABASE_URLS, async_adapter
 
 
 def test_postgres_pool_size():
-    backend = PostgresBackend("postgres+psycopg://localhost/database?min_size=1&max_size=20")
+    backend = PostgresBackend("postgres://localhost/database?min_size=1&max_size=20")
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"min_size": 1, "max_size": 20}
 
