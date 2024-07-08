@@ -13,9 +13,8 @@ from sqlalchemy.sql.ddl import DDLElement
 
 from databasez.backends.common.records import Record, Row, create_column_maps
 from databasez.core import LOG_EXTRA, DatabaseURL
-from databasez.interfaces import ConnectionBackend, DatabaseBackend
+from databasez.interfaces import ConnectionBackend, DatabaseBackend, TransactionBackend
 from databasez.interfaces import Record as RecordInterface
-from databasez.interfaces import TransactionBackend
 
 logger = logging.getLogger("databasez")
 
@@ -86,9 +85,9 @@ class MSSQLBackend(DatabaseBackend):
         timeout = kwargs.pop("timeout")
 
         if port:
-            dsn = f"Driver={driver};Database={database};Server={hostname},{port};UID={user};PWD={password};Connection+Timeout={timeout}"
+            dsn = f"Driver={driver};Database={database};Server={hostname},{port};UID={user};PWD={password};Connection+Timeout={timeout}"  # noqa: E501
         else:
-            dsn = f"Driver={driver};Database={database};Server={hostname},{port};UID={user};PWD={password};Connection+Timeout={timeout}"
+            dsn = f"Driver={driver};Database={database};Server={hostname},{port};UID={user};PWD={password};Connection+Timeout={timeout}"  # noqa: E501
 
         self._pool = await aioodbc.create_pool(
             dsn=dsn,
@@ -126,29 +125,6 @@ class MSSQLConnection(ConnectionBackend):
         assert self._database._pool is not None, "DatabaseBackend is not running"
         await self._database._pool.release(self._connection)
         self._connection = None
-
-    async def fetch_all(self, query: ClauseElement) -> typing.List["RecordInterface"]:
-        assert self._connection is not None, "Connection is not acquired"
-        query_str, args, result_columns, context = self._compile(query)
-        column_maps = create_column_maps(result_columns)
-        dialect = self._dialect
-        cursor = await self._connection.cursor()
-        try:
-            await cursor.execute(query_str, args)
-            rows = await cursor.fetchall()
-            metadata = CursorResultMetaData(context, cursor.description)
-            rows = [
-                Row(
-                    metadata,
-                    metadata._effective_processors,
-                    metadata._key_to_index,
-                    row,
-                )
-                for row in rows
-            ]
-            return [Record(row, result_columns, dialect, column_maps) for row in rows]
-        finally:
-            await cursor.close()
 
     async def fetch_one(self, query: ClauseElement) -> typing.Optional[RecordInterface]:
         assert self._connection is not None, "Connection is not acquired"

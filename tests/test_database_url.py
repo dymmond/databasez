@@ -33,6 +33,7 @@ def test_database_url_properties():
         "postgresql://username:password@/mydatabase?host=/var/run/postgresql/.s.PGSQL.5432"
     )
     assert u.dialect == "postgresql"
+    assert u.driver == "psycopg"
     assert u.username == "username"
     assert u.password == "password"
     assert u.hostname == "/var/run/postgresql/.s.PGSQL.5432"
@@ -81,7 +82,7 @@ def test_replace_database_url_components():
     assert new.database == "test_mydatabase"
     assert str(new) == "postgresql://localhost/test_mydatabase"
 
-    assert u.driver == ""
+    assert u.driver == "psycopg"
     new = u.replace(driver="asyncpg")
     assert new.driver == "asyncpg"
     assert str(new) == "postgresql+asyncpg://localhost/mydatabase"

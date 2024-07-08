@@ -67,7 +67,6 @@ class Database:
 
     SUPPORTED_BACKENDS = {
         "postgresql": "databasez.backends.postgres:PostgresBackend",
-        "postgresql+aiopg": "databasez.backends.aiopg:AiopgBackend",
         "postgres": "databasez.backends.postgres:PostgresBackend",
         "mysql": "databasez.backends.mysql:MySQLBackend",
         "mysql+asyncmy": "databasez.backends.asyncmy:AsyncMyBackend",
@@ -258,8 +257,7 @@ class Database:
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
     ) -> typing.List[Record]:
-        async with self.connection() as connection:
-            return await connection.fetch_all(query, values)
+        return [record async for record in self.iterate(query, values)]
 
     async def fetch_one(
         self,
@@ -588,6 +586,9 @@ class DatabaseURL:
     @property
     def driver(self) -> str:
         if "+" not in self.components.scheme:
+            # upgrade to psycopg3
+            if "postgres" in self.components.scheme:
+                return "psycopg"
             return ""
         return self.components.scheme.split("+", 1)[1]
 
@@ -675,6 +676,8 @@ class DatabaseURL:
         if "dialect" in kwargs or "driver" in kwargs:
             dialect = kwargs.pop("dialect", self.dialect)
             driver = kwargs.pop("driver", self.driver)
+            if dialect == "postgresql" and not driver:
+                driver = "psycopg"
             kwargs["scheme"] = f"{dialect}+{driver}" if driver else dialect
 
         if not kwargs.get("netloc", self.netloc):

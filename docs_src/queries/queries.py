@@ -1,3 +1,5 @@
+import sqlalchemy
+
 from databasez import Database
 
 database = Database("postgresql+asyncpg://localhost/example")
@@ -5,6 +7,17 @@ database = Database("postgresql+asyncpg://localhost/example")
 
 # Establish the connection pool
 await database.connect()
+
+
+metadata = sqlalchemy.MetaData()
+# Define your table(s)
+users = sqlalchemy.Table(
+    "users",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("name", sqlalchemy.String(length=150)),
+    sqlalchemy.Column("address", sqlalchemy.String(length=500)),
+)
 
 # Execute
 query = users.insert()

@@ -27,11 +27,9 @@ class SQLiteBackend(DatabaseBackend):
         self._dialect.supports_native_decimal = False
         self._pool = SQLitePool(self._database_url, **self._options)
 
-    async def connect(self) -> None:
-        ...
+    async def connect(self) -> None: ...
 
-    async def disconnect(self) -> None:
-        ...
+    async def disconnect(self) -> None: ...
 
     def connection(self) -> "SQLiteConnection":
         return SQLiteConnection(self._pool, self._dialect)
@@ -72,26 +70,6 @@ class SQLiteConnection(ConnectionBackend):
         assert self._connection is not None, "Connection is not acquired"
         connection, self._connection = self._connection, None
         await self._pool.release(connection)
-
-    async def fetch_all(self, query: ClauseElement) -> typing.List[Record]:
-        assert self._connection is not None, "Connection is not acquired"
-        query_str, args, result_columns, context = self._compile(query)
-        column_maps = create_column_maps(result_columns)
-        dialect = self._dialect
-
-        async with self._connection.execute(query_str, args) as cursor:
-            rows = await cursor.fetchall()
-            metadata = CursorResultMetaData(context, cursor.description)
-            rows = [
-                Row(
-                    metadata,
-                    metadata._effective_processors,
-                    metadata._key_to_index,
-                    row,
-                )
-                for row in rows
-            ]
-            return [Record(row, result_columns, dialect, column_maps) for row in rows]
 
     async def fetch_one(self, query: ClauseElement) -> typing.Optional[Record]:
         assert self._connection is not None, "Connection is not acquired"

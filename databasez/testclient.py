@@ -129,7 +129,7 @@ class DatabaseTestClient(Database):
             url = _set_url_database(url, database="master")
         elif dialect_name == "cockroachdb":
             url = _set_url_database(url, database="defaultdb")
-        elif not dialect_name == "sqlite":
+        elif dialect_name != "sqlite":
             url = _set_url_database(url, database=None)
 
         if (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
@@ -182,7 +182,7 @@ class DatabaseTestClient(Database):
             url = _set_url_database(url, database="master")
         elif dialect_name == "cockroachdb":
             url = _set_url_database(url, database="defaultdb")
-        elif not dialect_name == "sqlite":
+        elif dialect_name != "sqlite":
             url = _set_url_database(url, database=None)
 
         if dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}:
@@ -210,9 +210,7 @@ class DatabaseTestClient(Database):
                 FROM pg_stat_activity
                 WHERE pg_stat_activity.datname = '{database}'
                 AND {pid_column} <> pg_backend_pid();
-                """.format(
-                    pid_column=pid_column, database=database
-                )
+                """.format(pid_column=pid_column, database=database)
                 await conn.execute(sa.text(text))
 
                 # Drop the database.

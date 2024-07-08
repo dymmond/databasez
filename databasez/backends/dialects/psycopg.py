@@ -13,8 +13,7 @@ from sqlalchemy.engine import processors
 from sqlalchemy.types import Float, Numeric
 
 
-class PGExecutionContext_psycopg(PGExecutionContext):
-    ...
+class PGExecutionContext_psycopg(PGExecutionContext): ...
 
 
 class PGNumeric(Numeric):

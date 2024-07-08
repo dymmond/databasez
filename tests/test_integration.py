@@ -1,16 +1,15 @@
 import pytest
 import sqlalchemy
-from esmerald import Gateway
+from esmerald import Gateway, Request, route
 from esmerald import JSONResponse as EsmeraldJSONResponse
-from esmerald import Request, route
 from esmerald.applications import Esmerald
 from esmerald.testclient import EsmeraldTestClient
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.testclient import TestClient
-from tests.test_databases import DATABASE_URLS
 
 from databasez import Database, DatabaseURL
+from tests.test_databases import DATABASE_URLS
 
 metadata = sqlalchemy.MetaData()
 
@@ -31,7 +30,6 @@ def create_test_database():
         if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
             url = str(database_url.replace(driver="pymysql"))
         elif database_url.scheme in [
-            "postgresql+aiopg",
             "sqlite+aiosqlite",
             "postgresql+asyncpg",
         ]:
@@ -54,7 +52,6 @@ def create_test_database():
         if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
             url = str(database_url.replace(driver="pymysql"))
         elif database_url.scheme in [
-            "postgresql+aiopg",
             "sqlite+aiosqlite",
             "postgresql+asyncpg",
         ]:

@@ -6,9 +6,9 @@ from enum import Enum
 
 import pytest
 import saffier
-from databasez.testclient import DatabaseTestClient
 from saffier.db.models import fields
 
+from databasez.testclient import DatabaseTestClient
 from tests.settings import DATABASE_URL
 
 database = DatabaseTestClient(DATABASE_URL, drop_database=True)

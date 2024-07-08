@@ -1,4 +1,5 @@
 import sqlalchemy
+
 from databasez import Database
 
 database = Database("postgresql+asyncpg://localhost/example")

@@ -1,20 +1,20 @@
 """
 Unit tests for the backend connection arguments.
 """
+
 import sys
 
 import pytest
-from tests.test_databases import DATABASE_URLS, async_adapter
 
-from databasez.backends.aiopg import AiopgBackend
 from databasez.backends.asyncmy import AsyncMyBackend
 from databasez.backends.mysql import MySQLBackend
 from databasez.backends.postgres import PostgresBackend
 from databasez.core import DatabaseURL
+from tests.test_databases import DATABASE_URLS, async_adapter
 
 
 def test_postgres_pool_size():
-    backend = PostgresBackend("postgres://localhost/database?min_size=1&max_size=20")
+    backend = PostgresBackend("postgres+psycopg://localhost/database?min_size=1&max_size=20")
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"min_size": 1, "max_size": 20}
 
@@ -30,25 +30,25 @@ async def test_postgres_pool_size_connect():
 
 
 def test_postgres_explicit_pool_size():
-    backend = PostgresBackend("postgres://localhost/database", min_size=1, max_size=20)
+    backend = PostgresBackend("postgres+psycopg://localhost/database", min_size=1, max_size=20)
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"min_size": 1, "max_size": 20}
 
 
 def test_postgres_ssl():
-    backend = PostgresBackend("postgres://localhost/database?ssl=true")
+    backend = PostgresBackend("postgres+psycopg://localhost/database?ssl=true")
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"ssl": True}
 
 
 def test_postgres_explicit_ssl():
-    backend = PostgresBackend("postgres://localhost/database", ssl=True)
+    backend = PostgresBackend("postgres+psycopg://localhost/database", ssl=True)
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"ssl": True}
 
 
 def test_postgres_no_extra_options():
-    backend = PostgresBackend("postgres://localhost/database")
+    backend = PostgresBackend("postgres+psycopg://localhost/database")
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {}
 
@@ -149,30 +149,6 @@ def test_asyncmy_pool_recycle():
     backend = AsyncMyBackend("mysql+asyncmy://localhost/database?pool_recycle=20")
     kwargs = backend._get_connection_kwargs()
     assert kwargs == {"pool_recycle": 20}
-
-
-def test_aiopg_pool_size():
-    backend = AiopgBackend("postgresql+aiopg://localhost/database?min_size=1&max_size=20")
-    kwargs = backend._get_connection_kwargs()
-    assert kwargs == {"minsize": 1, "maxsize": 20}
-
-
-def test_aiopg_explicit_pool_size():
-    backend = AiopgBackend("postgresql+aiopg://localhost/database", min_size=1, max_size=20)
-    kwargs = backend._get_connection_kwargs()
-    assert kwargs == {"minsize": 1, "maxsize": 20}
-
-
-def test_aiopg_ssl():
-    backend = AiopgBackend("postgresql+aiopg://localhost/database?ssl=true")
-    kwargs = backend._get_connection_kwargs()
-    assert kwargs == {"ssl": True}
-
-
-def test_aiopg_explicit_ssl():
-    backend = AiopgBackend("postgresql+aiopg://localhost/database", ssl=True)
-    kwargs = backend._get_connection_kwargs()
-    assert kwargs == {"ssl": True}
 
 
 @pytest.mark.skipif(sys.version_info >= (3, 10), reason="requires python3.9 or lower")

@@ -8,6 +8,7 @@ from typing import MutableMapping
 from unittest.mock import MagicMock, patch
 from urllib.parse import parse_qsl, urlsplit
 
+import pyodbc
 import pytest
 import sqlalchemy
 from sqlalchemy.engine import URL, make_url
@@ -18,6 +19,8 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
+if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
+    DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 DATABASE_CONFIG_URLS = []
 for value in DATABASE_URLS:
@@ -110,7 +113,6 @@ def create_test_database():
         if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
             url = str(database_url.replace(driver="pymysql"))
         elif database_url.scheme in [
-            "postgresql+aiopg",
             "sqlite+aiosqlite",
             "postgresql+asyncpg",
             "mssql+pyodbc",
@@ -129,7 +131,6 @@ def create_test_database():
         if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
             url = str(database_url.replace(driver="pymysql"))
         elif database_url.scheme in [
-            "postgresql+aiopg",
             "sqlite+aiosqlite",
             "postgresql+asyncpg",
             "mssql+pyodbc",
@@ -484,18 +485,10 @@ async def test_execute_return_val(database_url):
             values = {"text": "example1", "completed": True}
             pk = await database.execute(query, values)
             assert isinstance(pk, int)
-
-            # Apparently for `aiopg` it's OID that will always 0 in this case
-            # As it's only one action within this cursor life cycle
-            # It's recommended to use the `RETURNING` clause
-            # For obtaining the record id
-            if database.url.scheme == "postgresql+aiopg":
-                assert pk == 0
-            else:
-                query = notes.select().where(notes.c.id == pk)
-                result = await database.fetch_one(query)
-                assert result["text"] == "example1"
-                assert result["completed"] is True
+            query = notes.select().where(notes.c.id == pk)
+            result = await database.fetch_one(query)
+            assert result["text"] == "example1"
+            assert result["completed"] is True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -1025,7 +1018,6 @@ async def test_queries_with_expose_backend_connection(database_url):
                     "mysql",
                     "mysql+asyncmy",
                     "mysql+aiomysql",
-                    "postgresql+aiopg",
                 ]:
                     insert_query = "INSERT INTO notes (text, completed) VALUES (%s, %s)"
                 elif database.url.scheme in [
@@ -1043,7 +1035,6 @@ async def test_queries_with_expose_backend_connection(database_url):
                 if database.url.scheme in [
                     "mysql",
                     "mysql+aiomysql",
-                    "postgresql+aiopg",
                     "mssql",
                     "mssql+pyodbc",
                     "mssql+aioodbc",
@@ -1067,11 +1058,6 @@ async def test_queries_with_expose_backend_connection(database_url):
                 elif database.url.scheme == "mysql+asyncmy":
                     async with raw_connection.cursor() as cursor:
                         await cursor.executemany(insert_query, values)
-                elif database.url.scheme == "postgresql+aiopg":
-                    cursor = await raw_connection.cursor()
-                    # No async support for `executemany`
-                    for value in values:
-                        await cursor.execute(insert_query, value)
                 elif database.url.scheme in ["mssql", "mssql+aioodbc", "mssql+pyodbc"]:
                     cursor = await raw_connection.cursor()
                     for value in values:
@@ -1086,7 +1072,6 @@ async def test_queries_with_expose_backend_connection(database_url):
                 if database.url.scheme in [
                     "mysql",
                     "mysql+aiomysql",
-                    "postgresql+aiopg",
                     "mssql",
                     "mssql+pyodbc",
                     "mssql+aioodbc",
