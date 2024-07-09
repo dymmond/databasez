@@ -1,6 +1,6 @@
 version: "3.8"
 services:
-  db:
+  postgres:
     restart: always
     image: postgres:16
     environment:
@@ -12,7 +12,7 @@ services:
     ports:
       - "5432:5432"
 
-  mysql:
+  mariadb:
     restart: always
     image: mariadb:11
     environment:
