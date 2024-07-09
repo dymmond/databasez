@@ -580,6 +580,15 @@ class DatabaseURL:
             self._components = _components
         return self._components
 
+    @staticmethod
+    def get_url(splitted: SplitResult) -> str:
+        url = f"{splitted.scheme}://{splitted.netloc}{splitted.path}"
+        if splitted.query:
+            url = f"{url}?{splitted.query}"
+        if splitted.fragment:
+            url = f"{url}#{splitted.fragment}"
+        return url
+
     @property
     def scheme(self) -> str:
         return self.components.scheme
@@ -693,7 +702,7 @@ class DatabaseURL:
             kwargs["netloc"] = _EmptyNetloc()
 
         components = self.components._replace(**kwargs)
-        return self.__class__(components.geturl())
+        return self.__class__(self.get_url(components))
 
     @property
     def obscure_password(self) -> str:
@@ -702,10 +711,7 @@ class DatabaseURL:
         return str(self)
 
     def __str__(self) -> str:
-        url = self.components.geturl()
-        if not self.components.netloc and not self.components.path.startswith("//"):
-            url = url.replace(":", "://", 1)
-        return url
+        return self.get_url(self.components)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({repr(self.obscure_password)})"
