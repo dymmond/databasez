@@ -291,7 +291,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.AsyncGenerator[typing.Mapping, None]:
+    ) -> typing.AsyncGenerator[Record, None]:
         async with self.connection() as connection:
             async for record in connection.iterate(query, values):
                 yield record
