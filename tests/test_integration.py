@@ -44,6 +44,8 @@ def create_test_database():
             "mssql+pymssql",
         ]:
             url = str(database_url.replace(driver="pyodbc"))
+        else:
+            url = str(database_url)
         engine = sqlalchemy.create_engine(url)
         metadata.create_all(engine)
 
@@ -66,6 +68,8 @@ def create_test_database():
             "mssql+pymssql",
         ]:
             url = str(database_url.replace(driver="pyodbc"))
+        else:
+            url = str(database_url)
         engine = sqlalchemy.create_engine(url)
         metadata.drop_all(engine)
 

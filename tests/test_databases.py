@@ -119,6 +119,8 @@ def create_test_database():
             "mssql+aioodbc",
         ]:
             url = str(database_url.replace(driver=None))
+        else:
+            url = str(database_url)
         engine = sqlalchemy.create_engine(url)
         metadata.create_all(engine)
 
@@ -137,6 +139,8 @@ def create_test_database():
             "mssql+aioodbc",
         ]:
             url = str(database_url.replace(driver=None))
+        else:
+            url = str(database_url)
         engine = sqlalchemy.create_engine(url)
         metadata.drop_all(engine)
 
@@ -780,7 +784,7 @@ async def test_decimal_field(database_url):
             results = await database.fetch_all(query=query)
             assert len(results) == 1
             if database_url.startswith("sqlite"):
-                # aiosqlite does not support native decimals --> a roud-off error is expected
+                # aiosqlite does not support native decimals --> a round-off error is expected
                 assert results[0]["price"] == pytest.approx(price)
             else:
                 assert results[0]["price"] == price

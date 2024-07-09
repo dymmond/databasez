@@ -65,14 +65,13 @@ class Database:
     }
     """
 
+    # allow overwrites for single drivers
     SUPPORTED_BACKENDS = {
         "postgresql": "databasez.backends.postgres:PostgresBackend",
         "postgres": "databasez.backends.postgres:PostgresBackend",
         "mysql": "databasez.backends.mysql:MySQLBackend",
         "mysql+asyncmy": "databasez.backends.asyncmy:AsyncMyBackend",
         "mssql": "databasez.backends.mssql:MSSQLBackend",
-        "mssql+pyodbc": "databasez.backends.mssql:MSSQLBackend",
-        "mssql+aioodbc": "databasez.backends.mssql:MSSQLBackend",
         "sqlite": "databasez.backends.sqlite:SQLiteBackend",
     }
     DIRECT_URL_SCHEME = {"sqlite"}
@@ -113,9 +112,9 @@ class Database:
         self._global_transaction: typing.Optional[Transaction] = None
 
     @property
-    def allowed_url_schemes(self) -> typing.Set[str]:
+    def allowed_dialects(self) -> typing.Set[str]:
         schemes = {
-            value
+            value.split("+", 1)[0]
             for value in self.SUPPORTED_BACKENDS.keys()
             if value not in self.DIRECT_URL_SCHEME
         }
@@ -572,7 +571,13 @@ class DatabaseURL:
         if not hasattr(self, "_components"):
             url = make_url(self._url)
             self.password = url.password
-            self._components = urlsplit(url.render_as_string(hide_password=False))
+            _components = urlsplit(url.render_as_string(hide_password=False))
+            # upgrade
+            if "postgres" in _components.scheme and "+" not in _components.scheme:
+                _components = _components._replace(scheme=f"{_components.scheme}+psycopg")
+            if _components.path.startswith("///"):
+                _components = _components._replace(path=f"//{_components.path.lstrip('/')}")
+            self._components = _components
         return self._components
 
     @property
@@ -587,7 +592,7 @@ class DatabaseURL:
     def driver(self) -> str:
         if "+" not in self.components.scheme:
             # upgrade to psycopg3
-            if "postgres" in self.components.scheme:
+            if self.components.scheme.startswith("postgres"):
                 return "psycopg"
             return ""
         return self.components.scheme.split("+", 1)[1]
@@ -671,12 +676,14 @@ class DatabaseURL:
             kwargs["netloc"] = netloc
 
         if "database" in kwargs:
+            # pathes should begin with /
             kwargs["path"] = "/" + kwargs.pop("database")
 
         if "dialect" in kwargs or "driver" in kwargs:
             dialect = kwargs.pop("dialect", self.dialect)
             driver = kwargs.pop("driver", self.driver)
-            if dialect == "postgresql" and not driver:
+            # upgrade
+            if dialect.startswith("postgres") and not driver:
                 driver = "psycopg"
             kwargs["scheme"] = f"{dialect}+{driver}" if driver else dialect
 
@@ -692,10 +699,13 @@ class DatabaseURL:
     def obscure_password(self) -> str:
         if self.password:
             return self.replace(password="********")._url
-        return self._url
+        return str(self)
 
     def __str__(self) -> str:
-        return self._url
+        url = self.components.geturl()
+        if not self.components.netloc and not self.components.path.startswith("//"):
+            url = url.replace(":", "://", 1)
+        return url
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({repr(self.obscure_password)})"

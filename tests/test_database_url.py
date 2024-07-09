@@ -7,16 +7,16 @@ from databasez import DatabaseURL
 
 def test_database_url_repr():
     u = DatabaseURL("postgresql://localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql://localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql+psycopg://localhost/name')"
 
     u = DatabaseURL("postgresql://username@localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql://username@localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql+psycopg://username@localhost/name')"
 
     u = DatabaseURL("postgresql://username:password@localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql://username:********@localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql+psycopg://username:********@localhost/name')"
 
-    u = DatabaseURL(f"postgresql://username:{quote('[password')}@localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql://username:********@localhost/name')"
+    u = DatabaseURL(f"postgres://username:{quote('[password')}@localhost/name")
+    assert repr(u) == "DatabaseURL('postgres+psycopg://username:********@localhost/name')"
 
 
 def test_database_url_properties():
@@ -80,7 +80,7 @@ def test_replace_database_url_components():
     assert u.database == "mydatabase"
     new = u.replace(database="test_" + u.database)
     assert new.database == "test_mydatabase"
-    assert str(new) == "postgresql://localhost/test_mydatabase"
+    assert str(new) == "postgresql+psycopg://localhost/test_mydatabase"
 
     assert u.driver == "psycopg"
     new = u.replace(driver="asyncpg")
@@ -90,7 +90,7 @@ def test_replace_database_url_components():
     assert u.port is None
     new = u.replace(port=123)
     assert new.port == 123
-    assert str(new) == "postgresql://localhost:123/mydatabase"
+    assert str(new) == "postgresql+psycopg://localhost:123/mydatabase"
 
     assert u.username is None
     assert u.userinfo is None
