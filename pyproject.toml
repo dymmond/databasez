@@ -67,7 +67,7 @@ mysql = ["asyncmy"]
 postgresql = ["asyncpg"]
 sqlite = ["aiosqlite"]
 
-all = ["databasez[mysql,aiomysql,postgresql,sqlite]"]
+all = ["databasez[mysql,aiomysql,odbc,postgresql,sqlite]"]
 
 [tool.hatch.version]
 path = "databasez/__init__.py"
