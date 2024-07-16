@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import functools
@@ -12,8 +14,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.sql import ClauseElement
 
+from databasez import interfaces
 from databasez.importer import import_from_string
-from databasez.interfaces import DatabaseBackend, Record, TransactionBackend
 
 if typing.TYPE_CHECKING:
     from databasez.types import DictAny
@@ -37,8 +39,8 @@ logger = logging.getLogger("databasez")
 
 
 ACTIVE_TRANSACTIONS: ContextVar[
-    typing.Optional["weakref.WeakKeyDictionary['Transaction', 'TransactionBackend']"]
-] = ContextVar("databasez:active_transactions", default=None)
+    typing.Optional[weakref.WeakKeyDictionary[Transaction, interfaces.TransactionBackend]]
+] = ContextVar("ACTIVE_TRANSACTIONS", default=None)
 
 
 class Database:
@@ -76,11 +78,11 @@ class Database:
     }
     DIRECT_URL_SCHEME = {"sqlite"}
     MANDATORY_FIELDS = ["host", "port", "user", "database"]
-    _connection_map: "weakref.WeakKeyDictionary[asyncio.Task, 'Connection']"
+    _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
 
     def __init__(
         self,
-        url: typing.Optional[typing.Union[str, "DatabaseURL"]] = None,
+        url: typing.Optional[typing.Union[str, DatabaseURL]] = None,
         *,
         force_rollback: bool = False,
         config: typing.Optional["DictAny"] = None,
@@ -88,7 +90,7 @@ class Database:
     ):
         assert config is None or url is None, "Use either 'url' or 'config', not both."
 
-        _url: typing.Optional[typing.Union[str, "DatabaseURL"]] = None
+        _url: typing.Optional[typing.Union[str, DatabaseURL]] = None
         if not config:
             _url = url
         else:
@@ -103,7 +105,7 @@ class Database:
 
         backend_str = self._get_backend()
         backend_cls = import_from_string(backend_str)
-        assert issubclass(backend_cls, DatabaseBackend)
+        assert issubclass(backend_cls, interfaces.DatabaseBackend)
         self._backend = backend_cls(self.url, **self.options)
 
         # When `force_rollback=True` is used, we use a single global
@@ -255,14 +257,15 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.List[Record]:
-        return [record async for record in self.iterate(query, values)]
+    ) -> typing.List[interfaces.Record]:
+        async with self.connection() as connection:
+            return await connection.fetch_all(query, values)
 
     async def fetch_one(
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.Optional[Record]:
+    ) -> typing.Optional[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values)
 
@@ -291,7 +294,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.AsyncGenerator[Record, None]:
+    ) -> typing.AsyncGenerator[interfaces.Record, None]:
         async with self.connection() as connection:
             async for record in connection.iterate(query, values):
                 yield record
@@ -323,7 +326,7 @@ class Database:
 
 
 class Connection:
-    def __init__(self, database: Database, backend: DatabaseBackend) -> None:
+    def __init__(self, database: Database, backend: interfaces.DatabaseBackend) -> None:
         self._database = database
         self._backend = backend
 
@@ -336,7 +339,7 @@ class Connection:
 
         self._query_lock = asyncio.Lock()
 
-    async def __aenter__(self) -> "Connection":
+    async def __aenter__(self) -> Connection:
         async with self._connection_lock:
             self._connection_counter += 1
             try:
@@ -364,7 +367,7 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.List[Record]:
+    ) -> typing.List[interfaces.Record]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_all(built_query)
@@ -373,7 +376,7 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.Optional[Record]:
+    ) -> typing.Optional[interfaces.Record]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_one(built_query)
@@ -452,12 +455,12 @@ class Transaction:
         self._extra_options = kwargs
 
     @property
-    def _connection(self) -> "Connection":
+    def _connection(self) -> Connection:
         # Returns the same connection if called multiple times
         return self._connection_callable()
 
     @property
-    def _transaction(self) -> typing.Optional["TransactionBackend"]:
+    def _transaction(self) -> typing.Optional[interfaces.TransactionBackend]:
         transactions = ACTIVE_TRANSACTIONS.get()
         if transactions is None:
             return None
@@ -466,8 +469,8 @@ class Transaction:
 
     @_transaction.setter
     def _transaction(
-        self, transaction: typing.Optional["TransactionBackend"]
-    ) -> typing.Optional["TransactionBackend"]:
+        self, transaction: typing.Optional[interfaces.TransactionBackend]
+    ) -> typing.Optional[interfaces.TransactionBackend]:
         transactions = ACTIVE_TRANSACTIONS.get()
         if transactions is None:
             transactions = weakref.WeakKeyDictionary()
@@ -482,7 +485,7 @@ class Transaction:
         ACTIVE_TRANSACTIONS.set(transactions)
         return transactions.get(self, None)
 
-    async def __aenter__(self) -> "Transaction":
+    async def __aenter__(self) -> Transaction:
         """
         Called when entering `async with database.transaction()`
         """
@@ -503,7 +506,7 @@ class Transaction:
         else:
             await self.commit()
 
-    def __await__(self) -> typing.Generator[None, None, "Transaction"]:
+    def __await__(self) -> typing.Generator[None, None, Transaction]:
         """
         Called if using the low-level `transaction = await database.transaction()`
         """
@@ -521,7 +524,7 @@ class Transaction:
 
         return wrapper  # type: ignore
 
-    async def start(self) -> "Transaction":
+    async def start(self) -> Transaction:
         self._transaction = self._connection._connection.transaction()
 
         async with self._connection._transaction_lock:
