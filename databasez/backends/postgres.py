@@ -94,6 +94,14 @@ class PostgresConnection(ConnectionBackend):
         connection, self._connection = self._connection, None
         self._connection = await self._database._pool.release(connection)
 
+    async def fetch_all(self, query: ClauseElement) -> typing.List[RecordInterface]:
+        assert self._connection is not None, "Connection is not acquired"
+        query_str, args, result_columns = self._compile(query)
+        rows = await self._connection.fetch(query_str, *args)
+        dialect = self._dialect
+        column_maps = create_column_maps(result_columns)
+        return [Record(row, result_columns, dialect, column_maps) for row in rows]
+
     async def fetch_one(self, query: ClauseElement) -> typing.Optional[RecordInterface]:
         assert self._connection is not None, "Connection is not acquired"
         query_str, args, result_columns = self._compile(query)

@@ -126,6 +126,29 @@ class MSSQLConnection(ConnectionBackend):
         await self._database._pool.release(self._connection)
         self._connection = None
 
+    async def fetch_all(self, query: ClauseElement) -> typing.List["RecordInterface"]:
+        assert self._connection is not None, "Connection is not acquired"
+        query_str, args, result_columns, context = self._compile(query)
+        column_maps = create_column_maps(result_columns)
+        dialect = self._dialect
+        cursor = await self._connection.cursor()
+        try:
+            await cursor.execute(query_str, args)
+            rows = await cursor.fetchall()
+            metadata = CursorResultMetaData(context, cursor.description)
+            rows = [
+                Row(
+                    metadata,
+                    metadata._effective_processors,
+                    metadata._key_to_index,
+                    row,
+                )
+                for row in rows
+            ]
+            return [Record(row, result_columns, dialect, column_maps) for row in rows]
+        finally:
+            await cursor.close()
+
     async def fetch_one(self, query: ClauseElement) -> typing.Optional[RecordInterface]:
         assert self._connection is not None, "Connection is not acquired"
         query_str, args, result_columns, context = self._compile(query)
