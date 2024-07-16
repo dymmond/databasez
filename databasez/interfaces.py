@@ -38,6 +38,7 @@ class ConnectionBackend(ABC):
     async def release(self) -> None: ...
 
     async def fetch_all(self, query: ClauseElement) -> typing.List[Record]:
+        # fallback, when a db doesn't provide fetch_all iterate is used
         return [record async for record in self.iterate(query)]
 
     @abstractmethod
