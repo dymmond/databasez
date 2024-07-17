@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `batched_iterate`
+
 ### Changed
 
 - Use psycopg3 by default. Autoupgrade `postgres://` to `postgres+psycopg://`. Note: this behavior differs from sqlalchemy which still uses psycopg2 by default
-- `fetch_all` uses now iterate
+- `fetch_all` uses now iterate as fallback
 - `hatch` is now used for release management, cleaning, ...
 - Use mariadb for tests instead of mysql (resource problems)
 

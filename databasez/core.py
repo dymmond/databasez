@@ -18,7 +18,7 @@ from databasez import interfaces
 from databasez.importer import import_from_string
 
 if typing.TYPE_CHECKING:
-    from databasez.types import DictAny
+    from databasez.types import BatchCallable, BatchCallableResult, DictAny
 
 try:  # pragma: no cover
     import click
@@ -298,6 +298,22 @@ class Database:
         async with self.connection() as connection:
             async for record in connection.iterate(query, values):
                 yield record
+
+    async def batched_iterate(
+        self,
+        query: typing.Union[ClauseElement, str],
+        values: typing.Optional[dict] = None,
+        batch_size: int = 500,
+        batch_wrapper: typing.Union[BatchCallable] = tuple,
+    ) -> typing.AsyncGenerator[BatchCallableResult, None]:
+        batched_args: typing.List[interfaces.Record] = []
+        async for record in self.iterate(query, values):
+            batched_args.append(record)
+            if len(batched_args) >= batch_size:
+                yield batch_wrapper(batched_args)
+                batched_args = []
+        if batched_args:
+            yield batch_wrapper(batched_args)
 
     def connection(self) -> "Connection":
         if self._global_connection is not None:
