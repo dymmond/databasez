@@ -1,6 +1,24 @@
 # Release Notes
 
-### 0.7.2
+## Unreleased
+
+### Changed
+
+- Use psycopg3 by default. Autoupgrade `postgres://` to `postgres+psycopg://`. Note: this behavior differs from sqlalchemy which still uses psycopg2 by default
+- `fetch_all` uses now iterate
+- `hatch` is now used for release management, cleaning, ...
+- Use mariadb for tests instead of mysql (resource problems)
+
+### Removed
+
+- `aiopg` support (no update for 2 years and better alternatives available)
+- Remove Makefile and other scripts
+
+### Fixed
+
+- `docker compose` doesn't uses that much resources anymore
+
+## 0.7.2
 
 ### Fixed
 

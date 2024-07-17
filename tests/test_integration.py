@@ -1,16 +1,18 @@
+import contextlib
+
 import pytest
 import sqlalchemy
-from esmerald import Gateway
+from esmerald import Gateway, Request, route
 from esmerald import JSONResponse as EsmeraldJSONResponse
-from esmerald import Request, route
 from esmerald.applications import Esmerald
 from esmerald.testclient import EsmeraldTestClient
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
-from tests.test_databases import DATABASE_URLS
 
 from databasez import Database, DatabaseURL
+from tests.test_databases import DATABASE_URLS
 
 metadata = sqlalchemy.MetaData()
 
@@ -31,7 +33,6 @@ def create_test_database():
         if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
             url = str(database_url.replace(driver="pymysql"))
         elif database_url.scheme in [
-            "postgresql+aiopg",
             "sqlite+aiosqlite",
             "postgresql+asyncpg",
         ]:
@@ -43,6 +44,8 @@ def create_test_database():
             "mssql+pymssql",
         ]:
             url = str(database_url.replace(driver="pyodbc"))
+        else:
+            url = str(database_url)
         engine = sqlalchemy.create_engine(url)
         metadata.create_all(engine)
 
@@ -54,7 +57,6 @@ def create_test_database():
         if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
             url = str(database_url.replace(driver="pymysql"))
         elif database_url.scheme in [
-            "postgresql+aiopg",
             "sqlite+aiosqlite",
             "postgresql+asyncpg",
         ]:
@@ -66,23 +68,20 @@ def create_test_database():
             "mssql+pymssql",
         ]:
             url = str(database_url.replace(driver="pyodbc"))
+        else:
+            url = str(database_url)
         engine = sqlalchemy.create_engine(url)
         metadata.drop_all(engine)
 
 
 def get_app(database_url):
     database = Database(database_url, force_rollback=True)
-    app = Starlette()
 
-    @app.on_event("startup")
-    async def startup():
-        await database.connect()
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        async with database:
+            yield
 
-    @app.on_event("shutdown")
-    async def shutdown():
-        await database.disconnect()
-
-    @app.route("/notes", methods=["GET"])
     async def list_notes(request):
         query = notes.select()
         results = await database.fetch_all(query)
@@ -91,12 +90,19 @@ def get_app(database_url):
         ]
         return JSONResponse(content)
 
-    @app.route("/notes", methods=["POST"])
     async def add_note(request):
         data = await request.json()
         query = notes.insert().values(text=data["text"], completed=data["completed"])
         await database.execute(query)
         return JSONResponse({"text": data["text"], "completed": data["completed"]})
+
+    app = Starlette(
+        lifespan=lifespan,
+        routes=[
+            Route("/notes", endpoint=list_notes, methods=["GET"]),
+            Route("/notes", endpoint=add_note, methods=["POST"]),
+        ],
+    )
 
     return app
 

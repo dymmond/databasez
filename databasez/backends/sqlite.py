@@ -27,11 +27,9 @@ class SQLiteBackend(DatabaseBackend):
         self._dialect.supports_native_decimal = False
         self._pool = SQLitePool(self._database_url, **self._options)
 
-    async def connect(self) -> None:
-        ...
+    async def connect(self) -> None: ...
 
-    async def disconnect(self) -> None:
-        ...
+    async def disconnect(self) -> None: ...
 
     def connection(self) -> "SQLiteConnection":
         return SQLiteConnection(self._pool, self._dialect)

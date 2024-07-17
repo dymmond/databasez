@@ -1,26 +1,25 @@
 version: "3.8"
 services:
-  db:
+  postgres:
     restart: always
-    image: postgres:14
+    image: postgres:16
     environment:
-      POSTGRES_HOST_AUTH_METHOD: trust
-      POSTGRES_USER: "postgres@123*#"
-      POSTGRES_PASSWORD: "passwsss*1348394#"
-      POSTGRES_DB: "testsuite"
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: passwsss*1348394#
+      POSTGRES_DB: testsuite
     expose:
       - "5432"
     ports:
       - "5432:5432"
 
-  mysql:
+  mariadb:
     restart: always
-    image: mysql:5.7
+    image: mariadb:11
     environment:
-      MYSQL_USER: "mysql@123*#"
-      MYSQL_PASSWORD: "passwsss*1348394#"
-      MYSQL_DATABASE: "testsuite"
-      MYSQL_ROOT_PASSWORD: "password"
+      MYSQL_USER: username
+      MYSQL_PASSWORD: passwsss*1348394#
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: testsuite
     expose:
       - "3306"
     ports:
@@ -31,9 +30,9 @@ services:
     restart: always
     image: mcr.microsoft.com/mssql/server:2019-GA-ubuntu-16.04
     environment:
-      MSSQL_SA_PASSWORD: "Mssql123mssql-"
+      MSSQL_SA_PASSWORD: Mssql123mssql-
       ACCEPT_EULA: "Y"
-      MSSQL_PID: "Developer"
+      MSSQL_PID: Developer
     expose:
       - "1433"
     ports:

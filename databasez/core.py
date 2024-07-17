@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import functools
@@ -12,8 +14,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.sql import ClauseElement
 
+from databasez import interfaces
 from databasez.importer import import_from_string
-from databasez.interfaces import DatabaseBackend, Record, TransactionBackend
 
 if typing.TYPE_CHECKING:
     from databasez.types import DictAny
@@ -37,8 +39,8 @@ logger = logging.getLogger("databasez")
 
 
 ACTIVE_TRANSACTIONS: ContextVar[
-    typing.Optional["weakref.WeakKeyDictionary['Transaction', 'TransactionBackend']"]
-] = ContextVar("databasez:active_transactions", default=None)
+    typing.Optional[weakref.WeakKeyDictionary[Transaction, interfaces.TransactionBackend]]
+] = ContextVar("ACTIVE_TRANSACTIONS", default=None)
 
 
 class Database:
@@ -65,24 +67,22 @@ class Database:
     }
     """
 
+    # allow overwrites for single drivers
     SUPPORTED_BACKENDS = {
         "postgresql": "databasez.backends.postgres:PostgresBackend",
-        "postgresql+aiopg": "databasez.backends.aiopg:AiopgBackend",
         "postgres": "databasez.backends.postgres:PostgresBackend",
         "mysql": "databasez.backends.mysql:MySQLBackend",
         "mysql+asyncmy": "databasez.backends.asyncmy:AsyncMyBackend",
         "mssql": "databasez.backends.mssql:MSSQLBackend",
-        "mssql+pyodbc": "databasez.backends.mssql:MSSQLBackend",
-        "mssql+aioodbc": "databasez.backends.mssql:MSSQLBackend",
         "sqlite": "databasez.backends.sqlite:SQLiteBackend",
     }
     DIRECT_URL_SCHEME = {"sqlite"}
     MANDATORY_FIELDS = ["host", "port", "user", "database"]
-    _connection_map: "weakref.WeakKeyDictionary[asyncio.Task, 'Connection']"
+    _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
 
     def __init__(
         self,
-        url: typing.Optional[typing.Union[str, "DatabaseURL"]] = None,
+        url: typing.Optional[typing.Union[str, DatabaseURL]] = None,
         *,
         force_rollback: bool = False,
         config: typing.Optional["DictAny"] = None,
@@ -90,7 +90,7 @@ class Database:
     ):
         assert config is None or url is None, "Use either 'url' or 'config', not both."
 
-        _url: typing.Optional[typing.Union[str, "DatabaseURL"]] = None
+        _url: typing.Optional[typing.Union[str, DatabaseURL]] = None
         if not config:
             _url = url
         else:
@@ -105,7 +105,7 @@ class Database:
 
         backend_str = self._get_backend()
         backend_cls = import_from_string(backend_str)
-        assert issubclass(backend_cls, DatabaseBackend)
+        assert issubclass(backend_cls, interfaces.DatabaseBackend)
         self._backend = backend_cls(self.url, **self.options)
 
         # When `force_rollback=True` is used, we use a single global
@@ -114,9 +114,9 @@ class Database:
         self._global_transaction: typing.Optional[Transaction] = None
 
     @property
-    def allowed_url_schemes(self) -> typing.Set[str]:
+    def allowed_dialects(self) -> typing.Set[str]:
         schemes = {
-            value
+            value.split("+", 1)[0]
             for value in self.SUPPORTED_BACKENDS.keys()
             if value not in self.DIRECT_URL_SCHEME
         }
@@ -257,7 +257,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.List[Record]:
+    ) -> typing.List[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_all(query, values)
 
@@ -265,7 +265,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.Optional[Record]:
+    ) -> typing.Optional[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values)
 
@@ -294,7 +294,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.AsyncGenerator[typing.Mapping, None]:
+    ) -> typing.AsyncGenerator[interfaces.Record, None]:
         async with self.connection() as connection:
             async for record in connection.iterate(query, values):
                 yield record
@@ -326,7 +326,7 @@ class Database:
 
 
 class Connection:
-    def __init__(self, database: Database, backend: DatabaseBackend) -> None:
+    def __init__(self, database: Database, backend: interfaces.DatabaseBackend) -> None:
         self._database = database
         self._backend = backend
 
@@ -339,7 +339,7 @@ class Connection:
 
         self._query_lock = asyncio.Lock()
 
-    async def __aenter__(self) -> "Connection":
+    async def __aenter__(self) -> Connection:
         async with self._connection_lock:
             self._connection_counter += 1
             try:
@@ -367,7 +367,7 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.List[Record]:
+    ) -> typing.List[interfaces.Record]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_all(built_query)
@@ -376,7 +376,7 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.Optional[Record]:
+    ) -> typing.Optional[interfaces.Record]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_one(built_query)
@@ -455,12 +455,12 @@ class Transaction:
         self._extra_options = kwargs
 
     @property
-    def _connection(self) -> "Connection":
+    def _connection(self) -> Connection:
         # Returns the same connection if called multiple times
         return self._connection_callable()
 
     @property
-    def _transaction(self) -> typing.Optional["TransactionBackend"]:
+    def _transaction(self) -> typing.Optional[interfaces.TransactionBackend]:
         transactions = ACTIVE_TRANSACTIONS.get()
         if transactions is None:
             return None
@@ -469,8 +469,8 @@ class Transaction:
 
     @_transaction.setter
     def _transaction(
-        self, transaction: typing.Optional["TransactionBackend"]
-    ) -> typing.Optional["TransactionBackend"]:
+        self, transaction: typing.Optional[interfaces.TransactionBackend]
+    ) -> typing.Optional[interfaces.TransactionBackend]:
         transactions = ACTIVE_TRANSACTIONS.get()
         if transactions is None:
             transactions = weakref.WeakKeyDictionary()
@@ -485,7 +485,7 @@ class Transaction:
         ACTIVE_TRANSACTIONS.set(transactions)
         return transactions.get(self, None)
 
-    async def __aenter__(self) -> "Transaction":
+    async def __aenter__(self) -> Transaction:
         """
         Called when entering `async with database.transaction()`
         """
@@ -506,7 +506,7 @@ class Transaction:
         else:
             await self.commit()
 
-    def __await__(self) -> typing.Generator[None, None, "Transaction"]:
+    def __await__(self) -> typing.Generator[None, None, Transaction]:
         """
         Called if using the low-level `transaction = await database.transaction()`
         """
@@ -524,7 +524,7 @@ class Transaction:
 
         return wrapper  # type: ignore
 
-    async def start(self) -> "Transaction":
+    async def start(self) -> Transaction:
         self._transaction = self._connection._connection.transaction()
 
         async with self._connection._transaction_lock:
@@ -574,8 +574,23 @@ class DatabaseURL:
         if not hasattr(self, "_components"):
             url = make_url(self._url)
             self.password = url.password
-            self._components = urlsplit(url.render_as_string(hide_password=False))
+            _components = urlsplit(url.render_as_string(hide_password=False))
+            # upgrade
+            if "postgres" in _components.scheme and "+" not in _components.scheme:
+                _components = _components._replace(scheme=f"{_components.scheme}+psycopg")
+            if _components.path.startswith("///"):
+                _components = _components._replace(path=f"//{_components.path.lstrip('/')}")
+            self._components = _components
         return self._components
+
+    @staticmethod
+    def get_url(splitted: SplitResult) -> str:
+        url = f"{splitted.scheme}://{splitted.netloc}{splitted.path}"
+        if splitted.query:
+            url = f"{url}?{splitted.query}"
+        if splitted.fragment:
+            url = f"{url}#{splitted.fragment}"
+        return url
 
     @property
     def scheme(self) -> str:
@@ -588,6 +603,9 @@ class DatabaseURL:
     @property
     def driver(self) -> str:
         if "+" not in self.components.scheme:
+            # upgrade to psycopg3
+            if self.components.scheme.startswith("postgres"):
+                return "psycopg"
             return ""
         return self.components.scheme.split("+", 1)[1]
 
@@ -670,11 +688,15 @@ class DatabaseURL:
             kwargs["netloc"] = netloc
 
         if "database" in kwargs:
+            # pathes should begin with /
             kwargs["path"] = "/" + kwargs.pop("database")
 
         if "dialect" in kwargs or "driver" in kwargs:
             dialect = kwargs.pop("dialect", self.dialect)
             driver = kwargs.pop("driver", self.driver)
+            # upgrade
+            if dialect.startswith("postgres") and not driver:
+                driver = "psycopg"
             kwargs["scheme"] = f"{dialect}+{driver}" if driver else dialect
 
         if not kwargs.get("netloc", self.netloc):
@@ -683,16 +705,16 @@ class DatabaseURL:
             kwargs["netloc"] = _EmptyNetloc()
 
         components = self.components._replace(**kwargs)
-        return self.__class__(components.geturl())
+        return self.__class__(self.get_url(components))
 
     @property
     def obscure_password(self) -> str:
         if self.password:
             return self.replace(password="********")._url
-        return self._url
+        return str(self)
 
     def __str__(self) -> str:
-        return self._url
+        return self.get_url(self.components)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({repr(self.obscure_password)})"

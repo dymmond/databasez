@@ -116,7 +116,7 @@ Databasez expects a python dictionary like object with the following structure.
 
 "connection": {
     "credentials": {
-        "scheme": 'sqlite', "postgres", "postgres+aiopg"...
+        "scheme": 'sqlite', "postgres" ...
         "host": ...,
         "port": ...,
         "user": ...,
@@ -139,7 +139,7 @@ from databasez import Database
 CONFIG = {
     "connection": {
         "credentials": {
-             "scheme": 'sqlite', "postgres", "postgres+aiopg"...
+             "scheme": 'sqlite', "postgres" ...
              "host": ...,
              "port": ...,
              "user": ...,
