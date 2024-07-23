@@ -163,8 +163,8 @@ def async_adapter(wrapped_func):
 @async_adapter
 async def test_queries(database_url):
     """
-    Test that the basic `execute()`, `execute_many()`, `fetch_all()``, and
-    `fetch_one()` interfaces are all supported (using SQLAlchemy core).
+    Test that the basic `execute()`, `execute_many()`, `fetch_all()``,
+    `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
     database_url = database_url[0]
     if isinstance(database_url, str):
@@ -238,6 +238,19 @@ async def test_queries(database_url):
             assert iterate_results[1]["completed"] is False
             assert iterate_results[2]["text"] == "example3"
             assert iterate_results[2]["completed"] is True
+
+            # batched_iterate()
+            query = notes.select()
+            batched_iterate_results = []
+            async for result in database.batched_iterate(query=query, batch_size=2):
+                batched_iterate_results.append(result)
+            assert len(batched_iterate_results) == 2
+            assert batched_iterate_results[0][0]["text"] == "example1"
+            assert batched_iterate_results[0][0]["completed"] is True
+            assert batched_iterate_results[0][1]["text"] == "example2"
+            assert batched_iterate_results[0][1]["completed"] is False
+            assert batched_iterate_results[1][0]["text"] == "example3"
+            assert batched_iterate_results[1][0]["completed"] is True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
