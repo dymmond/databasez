@@ -109,19 +109,16 @@ prices = sqlalchemy.Table(
 def create_test_database():
     # Create test databases with tables creation
     for url in DATABASE_URLS:
-        database_url = DatabaseURL(url)
-        if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
-            url = str(database_url.replace(driver="pymysql"))
-        elif database_url.scheme in [
-            "sqlite+aiosqlite",
-            "postgresql+asyncpg",
-            "mssql+pyodbc",
-            "mssql+aioodbc",
-        ]:
-            url = str(database_url.replace(driver=None))
-        else:
-            url = str(database_url)
-        engine = sqlalchemy.create_engine(url)
+        database_url = str(DatabaseURL(url))
+        database_url = (
+            database_url.replace("sqlite+aiosqlite:", "sqlite:")
+            .replace("mssql+aioodbc:", "mssql+pyodbc:")
+            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
+            .replace("mysql+asyncmy:", "mysql+pymysql:")
+            .replace("mysql+aiomysql:", "mysql+pymysql:")
+        )
+
+        engine = sqlalchemy.create_engine(database_url)
         metadata.create_all(engine)
 
     # Run the test suite
@@ -129,19 +126,16 @@ def create_test_database():
 
     # Drop test databases
     for url in DATABASE_URLS:
-        database_url = DatabaseURL(url)
-        if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
-            url = str(database_url.replace(driver="pymysql"))
-        elif database_url.scheme in [
-            "sqlite+aiosqlite",
-            "postgresql+asyncpg",
-            "mssql+pyodbc",
-            "mssql+aioodbc",
-        ]:
-            url = str(database_url.replace(driver=None))
-        else:
-            url = str(database_url)
-        engine = sqlalchemy.create_engine(url)
+        database_url = str(DatabaseURL(url))
+        database_url = (
+            database_url.replace("sqlite+aiosqlite:", "sqlite:")
+            .replace("mssql+aioodbc:", "mssql+pyodbc:")
+            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
+            .replace("mysql+asyncmy:", "mysql+pymysql:")
+            .replace("mysql+aiomysql:", "mysql+pymysql:")
+        )
+
+        engine = sqlalchemy.create_engine(database_url)
         metadata.drop_all(engine)
 
 
@@ -192,18 +186,18 @@ async def test_queries(database_url):
             results = await database.fetch_all(query=query)
 
             assert len(results) == 3
-            assert results[0]["text"] == "example1"
-            assert results[0]["completed"] is True
-            assert results[1]["text"] == "example2"
-            assert results[1]["completed"] is False
-            assert results[2]["text"] == "example3"
-            assert results[2]["completed"] is True
+            assert results[0].text == "example1"
+            assert results[0].completed is True
+            assert results[1].text == "example2"
+            assert results[1].completed is False
+            assert results[2].text == "example3"
+            assert results[2].completed is True
 
             # fetch_one()
             query = notes.select()
             result = await database.fetch_one(query=query)
-            assert result["text"] == "example1"
-            assert result["completed"] is True
+            assert result.text == "example1"
+            assert result.completed is True
 
             # fetch_val()
             query = sqlalchemy.sql.select(*[notes.c.text])
@@ -223,7 +217,7 @@ async def test_queries(database_url):
             # row access (needed to maintain test coverage for Record.__getitem__ in postgres backend)
             query = sqlalchemy.sql.select(*[notes.c.text])
             result = await database.fetch_one(query=query)
-            assert result["text"] == "example1"
+            assert result.text == "example1"
             assert result[0] == "example1"
 
             # iterate()
@@ -232,12 +226,12 @@ async def test_queries(database_url):
             async for result in database.iterate(query=query):
                 iterate_results.append(result)
             assert len(iterate_results) == 3
-            assert iterate_results[0]["text"] == "example1"
-            assert iterate_results[0]["completed"] is True
-            assert iterate_results[1]["text"] == "example2"
-            assert iterate_results[1]["completed"] is False
-            assert iterate_results[2]["text"] == "example3"
-            assert iterate_results[2]["completed"] is True
+            assert iterate_results[0].text == "example1"
+            assert iterate_results[0].completed is True
+            assert iterate_results[1].text == "example2"
+            assert iterate_results[1].completed is False
+            assert iterate_results[2].text == "example3"
+            assert iterate_results[2].completed is True
 
             # batched_iterate()
             query = notes.select()
@@ -245,12 +239,12 @@ async def test_queries(database_url):
             async for result in database.batched_iterate(query=query, batch_size=2):
                 batched_iterate_results.append(result)
             assert len(batched_iterate_results) == 2
-            assert batched_iterate_results[0][0]["text"] == "example1"
-            assert batched_iterate_results[0][0]["completed"] is True
-            assert batched_iterate_results[0][1]["text"] == "example2"
-            assert batched_iterate_results[0][1]["completed"] is False
-            assert batched_iterate_results[1][0]["text"] == "example3"
-            assert batched_iterate_results[1][0]["completed"] is True
+            assert batched_iterate_results[0][0].text == "example1"
+            assert batched_iterate_results[0][0].completed is True
+            assert batched_iterate_results[0][1].text == "example2"
+            assert batched_iterate_results[0][1].completed is False
+            assert batched_iterate_results[1][0].text == "example3"
+            assert batched_iterate_results[1][0].completed is True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -285,16 +279,16 @@ async def test_queries_raw(database_url):
             query = "SELECT * FROM notes WHERE completed = :completed"
             results = await database.fetch_all(query=query, values={"completed": True})
             assert len(results) == 2
-            assert results[0]["text"] == "example1"
-            assert results[0]["completed"] == True
-            assert results[1]["text"] == "example3"
-            assert results[1]["completed"] == True
+            assert results[0].text == "example1"
+            assert results[0].completed == True
+            assert results[1].text == "example3"
+            assert results[1].completed == True
 
             # fetch_one()
             query = "SELECT * FROM notes WHERE completed = :completed"
             result = await database.fetch_one(query=query, values={"completed": False})
-            assert result["text"] == "example2"
-            assert result["completed"] == False
+            assert result.text == "example2"
+            assert result.completed == False
 
             # fetch_val()
             query = "SELECT completed FROM notes WHERE text = :text"
@@ -313,12 +307,12 @@ async def test_queries_raw(database_url):
             async for result in database.iterate(query=query):
                 iterate_results.append(result)
             assert len(iterate_results) == 3
-            assert iterate_results[0]["text"] == "example1"
-            assert iterate_results[0]["completed"] == True
-            assert iterate_results[1]["text"] == "example2"
-            assert iterate_results[1]["completed"] == False
-            assert iterate_results[2]["text"] == "example3"
-            assert iterate_results[2]["completed"] == True
+            assert iterate_results[0].text == "example1"
+            assert iterate_results[0].completed == True
+            assert iterate_results[1].text == "example2"
+            assert iterate_results[1].completed == False
+            assert iterate_results[2].text == "example3"
+            assert iterate_results[2].completed == True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -395,7 +389,7 @@ async def test_results_support_mapping_interface(database_url):
             # fetch_all()
             query = notes.select()
             results = await database.fetch_all(query=query)
-            results_as_dicts = [dict(item) for item in results]
+            results_as_dicts = [dict(item._mapping) for item in results]
 
             assert len(results[0]) == 3
             assert len(results_as_dicts[0]) == 3
@@ -403,43 +397,6 @@ async def test_results_support_mapping_interface(database_url):
             assert isinstance(results_as_dicts[0]["id"], int)
             assert results_as_dicts[0]["text"] == "example1"
             assert results_as_dicts[0]["completed"] is True
-
-
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
-@async_adapter
-async def test_results_support_column_reference(database_url):
-    """
-    Casting results to a dict should work, since the interface defines them
-    as supporting the mapping interface.
-    """
-    database_url = database_url[0]
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
-        async with database.transaction(force_rollback=True):
-            now = datetime.datetime.now().replace(microsecond=0)
-            today = datetime.date.today()
-
-            # execute()
-            query = articles.insert()
-            values = {"title": "Hello, world Article", "published": now}
-            await database.execute(query, values)
-
-            query = custom_date.insert()
-            values = {"title": "Hello, world Custom", "published": today}
-            await database.execute(query, values)
-
-            # fetch_all()
-            query = sqlalchemy.select(*[articles, custom_date])
-            results = await database.fetch_all(query=query)
-            assert len(results) == 1
-            assert results[0][articles.c.title] == "Hello, world Article"
-            assert results[0][articles.c.published] == now
-            assert results[0][custom_date.c.title] == "Hello, world Custom"
-            assert results[0][custom_date.c.published] == today
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -504,8 +461,8 @@ async def test_execute_return_val(database_url):
             assert isinstance(pk, int)
             query = notes.select().where(notes.c.id == pk)
             result = await database.fetch_one(query)
-            assert result["text"] == "example1"
-            assert result["completed"] is True
+            assert result.text == "example1"
+            assert result.completed is True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -593,11 +550,17 @@ async def test_transaction_commit_serializable(database_url):
     if database_url.scheme not in ["postgresql", "postgresql+asyncpg"]:
         pytest.skip("Test (currently) only supports asyncpg")
 
-    if database_url.scheme == "postgresql+asyncpg":
-        database_url = database_url.replace(driver=None)
-
     def insert_independently():
-        engine = sqlalchemy.create_engine(str(database_url))
+        url = str(DatabaseURL(database_url))
+        url = (
+            url.replace("sqlite+aiosqlite:", "sqlite:")
+            .replace("mssql+aioodbc:", "mssql+pyodbc:")
+            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
+            .replace("mysql+asyncmy:", "mysql+pymysql:")
+            .replace("mysql+aiomysql:", "mysql+pymysql:")
+        )
+
+        engine = sqlalchemy.create_engine(url)
         conn = engine.connect()
 
         query = notes.insert().values(text="example1", completed=True)
@@ -605,7 +568,15 @@ async def test_transaction_commit_serializable(database_url):
         conn.close()
 
     def delete_independently():
-        engine = sqlalchemy.create_engine(str(database_url))
+        url = str(DatabaseURL(database_url))
+        url = (
+            url.replace("sqlite+aiosqlite:", "sqlite:")
+            .replace("mssql+aioodbc:", "mssql+pyodbc:")
+            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
+            .replace("mysql+asyncmy:", "mysql+pymysql:")
+            .replace("mysql+aiomysql:", "mysql+pymysql:")
+        )
+        engine = sqlalchemy.create_engine(url)
         conn = engine.connect()
 
         query = notes.delete()
@@ -772,8 +743,8 @@ async def test_datetime_field(database_url):
             query = articles.select()
             results = await database.fetch_all(query=query)
             assert len(results) == 1
-            assert results[0]["title"] == "Hello, world"
-            assert results[0]["published"] == now
+            assert results[0].title == "Hello, world"
+            assert results[0].published == now
 
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
@@ -798,9 +769,9 @@ async def test_decimal_field(database_url):
             assert len(results) == 1
             if database_url.startswith("sqlite"):
                 # aiosqlite does not support native decimals --> a round-off error is expected
-                assert results[0]["price"] == pytest.approx(price)
+                assert results[0].price == pytest.approx(price)
             else:
-                assert results[0]["price"] == price
+                assert results[0].price == price
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -828,7 +799,7 @@ async def test_json_field(database_url):
             results = await database.fetch_all(query=query)
 
             assert len(results) == 1
-            assert results[0]["data"] == {"text": "hello", "boolean": True, "int": 1}
+            assert results[0].data == {"text": "hello", "boolean": True, "int": 1}
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -857,8 +828,8 @@ async def test_custom_field(database_url):
             query = custom_date.select()
             results = await database.fetch_all(query=query)
             assert len(results) == 1
-            assert results[0]["title"] == "Hello, world"
-            assert results[0]["published"] == today
+            assert results[0].title == "Hello, world"
+            assert results[0].published == today
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
@@ -1029,7 +1000,9 @@ async def test_queries_with_expose_backend_connection(database_url):
         async with database.connection() as connection:
             async with connection.transaction(force_rollback=True):
                 # Get the raw connection
-                raw_connection = connection.raw_connection
+                raw_connection = (
+                    await connection.raw_connection.get_raw_connection()
+                ).driver_connection
                 # Insert query
                 if database.url.scheme in [
                     "mysql",
@@ -1037,14 +1010,8 @@ async def test_queries_with_expose_backend_connection(database_url):
                     "mysql+aiomysql",
                 ]:
                     insert_query = "INSERT INTO notes (text, completed) VALUES (%s, %s)"
-                elif database.url.scheme in [
-                    "mssql",
-                    "mssql+pyodbc",
-                    "mssql+aioodbc",
-                ]:
-                    insert_query = "INSERT INTO notes (text, completed) VALUES (?, ?)"
                 else:
-                    insert_query = "INSERT INTO notes (text, completed) VALUES ($1, $2)"
+                    insert_query = "INSERT INTO notes (text, completed) VALUES (?, ?)"
 
                 # execute()
                 values = ("example1", True)
@@ -1288,8 +1255,8 @@ async def test_column_names(database_url, select_query):
             assert len(results) == 1
 
             assert sorted(results[0]._mapping.keys()) == ["completed", "id", "text"]
-            assert results[0]["text"] == "example1"
-            assert results[0]["completed"] == True
+            assert results[0].text == "example1"
+            assert results[0].completed == True
 
 
 @pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])

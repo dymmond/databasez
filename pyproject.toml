@@ -47,6 +47,7 @@ keywords = [
     "asyncio",
     "esmerald",
     "saffier",
+    "jdbc"
 ]
 
 [project.urls]
@@ -61,6 +62,7 @@ aiomysql = ["aiomysql"]
 aioodbc = ["aioodbc"]
 aiosqlite = ["aiosqlite"]
 asyncpg = ["asyncpg"]
+jdbc = ["jpype"]
 # without aio, async prefix
 odbc = ["aioodbc"]
 mysql = ["asyncmy"]

@@ -29,48 +29,32 @@ notes = sqlalchemy.Table(
 def create_test_database():
     # Create test databases
     for url in DATABASE_URLS:
-        database_url = DatabaseURL(url)
-        if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
-            url = str(database_url.replace(driver="pymysql"))
-        elif database_url.scheme in [
-            "sqlite+aiosqlite",
-            "postgresql+asyncpg",
-        ]:
-            url = str(database_url.replace(driver=None))
-        elif database_url.scheme in [
-            "mssql",
-            "mssql+pyodbc",
-            "mssql+aioodbc",
-            "mssql+pymssql",
-        ]:
-            url = str(database_url.replace(driver="pyodbc"))
-        else:
-            url = str(database_url)
-        engine = sqlalchemy.create_engine(url)
+        database_url = str(DatabaseURL(url))
+        database_url = (
+            database_url.replace("sqlite+aiosqlite:", "sqlite:")
+            .replace("mssql+aioodbc:", "mssql+pyodbc:")
+            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
+            .replace("mysql+asyncmy:", "mysql+pymysql:")
+            .replace("mysql+aiomysql:", "mysql+pymysql:")
+        )
+
+        engine = sqlalchemy.create_engine(database_url)
         metadata.create_all(engine)
 
     # Run the test suite
     yield
 
     for url in DATABASE_URLS:
-        database_url = DatabaseURL(url)
-        if database_url.scheme in ["mysql", "mysql+aiomysql", "mysql+asyncmy"]:
-            url = str(database_url.replace(driver="pymysql"))
-        elif database_url.scheme in [
-            "sqlite+aiosqlite",
-            "postgresql+asyncpg",
-        ]:
-            url = str(database_url.replace(driver=None))
-        elif database_url.scheme in [
-            "mssql",
-            "mssql+pyodbc",
-            "mssql+aioodbc",
-            "mssql+pymssql",
-        ]:
-            url = str(database_url.replace(driver="pyodbc"))
-        else:
-            url = str(database_url)
-        engine = sqlalchemy.create_engine(url)
+        database_url = str(DatabaseURL(url))
+        database_url = (
+            database_url.replace("sqlite+aiosqlite:", "sqlite:")
+            .replace("mssql+aioodbc:", "mssql+pyodbc:")
+            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
+            .replace("mysql+asyncmy:", "mysql+pymysql:")
+            .replace("mysql+aiomysql:", "mysql+pymysql:")
+        )
+
+        engine = sqlalchemy.create_engine(database_url)
         metadata.drop_all(engine)
 
 
@@ -85,9 +69,7 @@ def get_app(database_url):
     async def list_notes(request):
         query = notes.select()
         results = await database.fetch_all(query)
-        content = [
-            {"text": result["text"], "completed": result["completed"]} for result in results
-        ]
+        content = [{"text": result.text, "completed": result.completed} for result in results]
         return JSONResponse(content)
 
     async def add_note(request):
@@ -114,9 +96,7 @@ def get_esmerald_app(database_url):
     async def list_notes(request: Request) -> EsmeraldJSONResponse:
         query = notes.select()
         results = await database.fetch_all(query)
-        content = [
-            {"text": result["text"], "completed": result["completed"]} for result in results
-        ]
+        content = [{"text": result.text, "completed": result.completed} for result in results]
         return EsmeraldJSONResponse(content)
 
     @route("/notes", methods=["POST"])

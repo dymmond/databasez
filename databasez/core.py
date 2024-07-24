@@ -15,7 +15,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.sql import ClauseElement
 
 from databasez import interfaces
-from databasez.importer import import_from_string
+from databasez.sqlalchemy import SQLAlchemyBackend, SQLAlchemyConnection, SQLAlchemyTransaction
 
 if typing.TYPE_CHECKING:
     from databasez.types import BatchCallable, BatchCallableResult, DictAny
@@ -67,17 +67,6 @@ class Database:
     }
     """
 
-    # allow overwrites for single drivers
-    SUPPORTED_BACKENDS = {
-        "postgresql": "databasez.backends.postgres:PostgresBackend",
-        "postgres": "databasez.backends.postgres:PostgresBackend",
-        "mysql": "databasez.backends.mysql:MySQLBackend",
-        "mysql+asyncmy": "databasez.backends.asyncmy:AsyncMyBackend",
-        "mssql": "databasez.backends.mssql:MSSQLBackend",
-        "sqlite": "databasez.backends.sqlite:SQLiteBackend",
-    }
-    DIRECT_URL_SCHEME = {"sqlite"}
-    MANDATORY_FIELDS = ["host", "port", "user", "database"]
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
 
     def __init__(
@@ -90,84 +79,27 @@ class Database:
     ):
         assert config is None or url is None, "Use either 'url' or 'config', not both."
 
-        _url: typing.Optional[typing.Union[str, DatabaseURL]] = None
-        if not config:
-            _url = url
-        else:
-            _url = self._build_url(config)
-
-        self.url = DatabaseURL(_url)  # type: ignore
+        url = DatabaseURL(url)
+        if config and "connection" in config:
+            connection_config = config["connection"]
+            if "credentials" in connection_config:
+                connection_config = connection_config["credentials"]
+                url = url.replace(**connection_config)
+        self.url = url  # type: ignore
         self.options = options
         self.is_connected = False
         self._connection_map = weakref.WeakKeyDictionary()
 
         self._force_rollback = force_rollback
 
-        backend_str = self._get_backend()
-        backend_cls = import_from_string(backend_str)
-        assert issubclass(backend_cls, interfaces.DatabaseBackend)
-        self._backend = backend_cls(self.url, **self.options)
+        self._backend = SQLAlchemyBackend(
+            connection_class=SQLAlchemyConnection, transaction_class=SQLAlchemyTransaction
+        )
 
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
         self._global_transaction: typing.Optional[Transaction] = None
-
-    @property
-    def allowed_dialects(self) -> typing.Set[str]:
-        schemes = {
-            value.split("+", 1)[0]
-            for value in self.SUPPORTED_BACKENDS.keys()
-            if value not in self.DIRECT_URL_SCHEME
-        }
-        return schemes
-
-    def _build_url(self, config: "DictAny") -> str:
-        assert "connection" in config, "connection not found in the database configuration"
-        connection = config["connection"]
-
-        assert "credentials" in connection, "credetials not found in connection"
-        credentials = connection["credentials"]
-
-        assert (
-            "scheme" in credentials
-        ), "scheme is missing from credentials. Use postgres or mysql instead"
-
-        scheme = credentials["scheme"]
-        if not scheme or scheme is None:
-            raise ValueError("scheme cannot be None")
-
-        database = credentials["database"]
-
-        scheme = scheme.lower()
-        if scheme.lower() in self.DIRECT_URL_SCHEME:
-            return self._build_url_for_direct_url_scheme(scheme, database)
-
-        for value in self.MANDATORY_FIELDS:
-            if not value or value is None:
-                raise ValueError(f"{value} is required in the credentials")
-
-        user = credentials["user"]
-        password = credentials.get("password", None)
-        host = credentials["host"]
-        port = credentials["port"]
-
-        if "password" not in credentials:
-            connection_string = f"{scheme}://{user}@{host}:{port}/{database}"
-        else:
-            connection_string = f"{scheme}://{user}:{password}@{host}:{port}/{database}"
-
-        options = credentials.get("options", None)
-
-        if options is None or not options:
-            return connection_string
-        return f"{connection_string}?{urlencode(options)}"
-
-    def _build_url_for_direct_url_scheme(self, scheme: str, database: str) -> str:
-        """Builds the URL for direct url schemes that do not support user, password and other
-        parameters. Example: SQLite.
-        """
-        return f"{scheme}:///{database}"
 
     @property
     def _current_task(self) -> asyncio.Task:
@@ -201,7 +133,7 @@ class Database:
             logger.debug("Already connected, skipping connection")
             return None
 
-        await self._backend.connect()
+        await self._backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
         self.is_connected = True
 
@@ -294,26 +226,28 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
+        chunk_size: typing.Optional[int] = None,
+        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[interfaces.Record, None]:
         async with self.connection() as connection:
-            async for record in connection.iterate(query, values):
+            async for record in connection.iterate(
+                query, values, chunk_size, with_transaction=with_transaction
+            ):
                 yield record
 
     async def batched_iterate(
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-        batch_size: int = 500,
+        batch_size: typing.Optional[int] = None,
         batch_wrapper: typing.Union[BatchCallable] = tuple,
+        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[BatchCallableResult, None]:
-        batched_args: typing.List[interfaces.Record] = []
-        async for record in self.iterate(query, values):
-            batched_args.append(record)
-            if len(batched_args) >= batch_size:
-                yield batch_wrapper(batched_args)
-                batched_args = []
-        if batched_args:
-            yield batch_wrapper(batched_args)
+        async with self.connection() as connection:
+            async for records in connection.batched_iterate(
+                query, values, batch_size, with_transaction=with_transaction
+            ):
+                yield batch_wrapper(records)
 
     def connection(self) -> "Connection":
         if self._global_connection is not None:
@@ -411,7 +345,7 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.Any:
+    ) -> int:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.execute(built_query)
@@ -425,12 +359,35 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
+        batch_size: typing.Optional[int] = None,
+        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[typing.Any, None]:
         built_query = self._build_query(query, values)
-        async with self.transaction():
-            async with self._query_lock:
-                async for record in self._connection.iterate(built_query):
+        async with self._query_lock:
+            if with_transaction:
+                async with self.transaction():
+                    async for record in self._connection.iterate(built_query, batch_size):
+                        yield record
+            else:
+                async for record in self._connection.iterate(built_query, batch_size):
                     yield record
+
+    async def batched_iterate(
+        self,
+        query: typing.Union[ClauseElement, str],
+        values: typing.Optional[dict] = None,
+        batch_size: typing.Optional[int] = None,
+        with_transaction: bool = True,
+    ) -> typing.AsyncGenerator[typing.Any, None]:
+        built_query = self._build_query(query, values)
+        async with self._query_lock:
+            if with_transaction:
+                async with self.transaction():
+                    async for records in self._connection.batched_iterate(built_query, batch_size):
+                        yield records
+            else:
+                async for records in self._connection.batched_iterate(built_query, batch_size):
+                    yield records
 
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         def connection_callable() -> Connection:
@@ -556,6 +513,7 @@ class Transaction:
             self._connection._transaction_stack.pop()
             assert self._transaction is not None
             await self._transaction.commit()
+            await self._transaction.close()
             await self._connection.__aexit__()
             self._transaction = None
 
@@ -565,6 +523,7 @@ class Transaction:
             self._connection._transaction_stack.pop()
             assert self._transaction is not None
             await self._transaction.rollback()
+            await self._transaction.close()
             await self._connection.__aexit__()
             self._transaction = None
 
@@ -575,15 +534,30 @@ class _EmptyNetloc(str):
 
 
 class DatabaseURL:
-    def __init__(self, url: typing.Union[str, "DatabaseURL"]):
+    def __init__(self, url: typing.Union[str, "DatabaseURL", None] = None):
         if isinstance(url, DatabaseURL):
             self._url: str = url._url
         elif isinstance(url, str):
             self._url = url
+        elif url is None:
+            self._url = "invalid://localhost"
         else:
             raise TypeError(
                 f"Invalid type for DatabaseURL. Expected str or DatabaseURL, got {type(url)}"
             )
+
+    @classmethod
+    def upgrade_scheme(cls, scheme: str) -> str:
+        if "+" not in scheme:
+            if scheme.startswith("postgres"):
+                return "postgresql+psycopg"
+            if scheme == "sqlite":
+                return "sqlite+aiosqlite"
+            if scheme == "mssql":
+                return "mssql+aioodbc"
+            if scheme == "mysql":
+                return "mysql+asyncmy"
+        return scheme
 
     @property
     def components(self) -> SplitResult:
@@ -591,17 +565,16 @@ class DatabaseURL:
             url = make_url(self._url)
             self.password = url.password
             _components = urlsplit(url.render_as_string(hide_password=False))
-            # upgrade
-            if "postgres" in _components.scheme and "+" not in _components.scheme:
-                _components = _components._replace(scheme=f"{_components.scheme}+psycopg")
+            # upgrade, regardless if scheme has an upgrade
+            _components._replace(scheme=self.upgrade_scheme(_components.scheme))
             if _components.path.startswith("///"):
                 _components = _components._replace(path=f"//{_components.path.lstrip('/')}")
             self._components = _components
         return self._components
 
-    @staticmethod
-    def get_url(splitted: SplitResult) -> str:
-        url = f"{splitted.scheme}://{splitted.netloc}{splitted.path}"
+    @classmethod
+    def get_url(cls, splitted: SplitResult) -> str:
+        url = f"{cls.upgrade_scheme(splitted.scheme)}://{splitted.netloc}{splitted.path}"
         if splitted.query:
             url = f"{url}?{splitted.query}"
         if splitted.fragment:
@@ -610,20 +583,15 @@ class DatabaseURL:
 
     @property
     def scheme(self) -> str:
-        return self.components.scheme
+        return self.upgrade_scheme(self.components.scheme)
 
     @property
     def dialect(self) -> str:
-        return self.components.scheme.split("+")[0]
+        return self.scheme.split("+")[0]
 
     @property
     def driver(self) -> str:
-        if "+" not in self.components.scheme:
-            # upgrade to psycopg3
-            if self.components.scheme.startswith("postgres"):
-                return "psycopg"
-            return ""
-        return self.components.scheme.split("+", 1)[1]
+        return self.scheme.split("+", 1)[1]
 
     @property
     def userinfo(self) -> typing.Optional[bytes]:
@@ -683,13 +651,15 @@ class DatabaseURL:
     def replace(self, **kwargs: typing.Any) -> "DatabaseURL":
         if (
             "username" in kwargs
+            or "user" in kwargs
             or "password" in kwargs
             or "hostname" in kwargs
+            or "host" in kwargs
             or "port" in kwargs
         ):
-            hostname = kwargs.pop("hostname", self.hostname)
+            hostname = kwargs.pop("hostname", kwargs.pop("host", self.hostname))
             port = kwargs.pop("port", self.port)
-            username = kwargs.pop("username", self.components.username)
+            username = kwargs.pop("username", kwargs.pop("user", self.components.username))
             password = kwargs.pop("password", self.components.password)
 
             netloc = hostname
@@ -710,15 +680,17 @@ class DatabaseURL:
         if "dialect" in kwargs or "driver" in kwargs:
             dialect = kwargs.pop("dialect", self.dialect)
             driver = kwargs.pop("driver", self.driver)
-            # upgrade
-            if dialect.startswith("postgres") and not driver:
-                driver = "psycopg"
             kwargs["scheme"] = f"{dialect}+{driver}" if driver else dialect
+
+        if "scheme" in kwargs:
+            kwargs["scheme"] = self.upgrade_scheme(kwargs["scheme"])
 
         if not kwargs.get("netloc", self.netloc):
             # Using an empty string that evaluates as True means we end up
             # with URLs like `sqlite:///database` instead of `sqlite:/database`
             kwargs["netloc"] = _EmptyNetloc()
+        if "options" in kwargs:
+            kwargs["query"] = kwargs.pop("options")
 
         components = self.components._replace(**kwargs)
         return self.__class__(self.get_url(components))

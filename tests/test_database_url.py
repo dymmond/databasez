@@ -16,7 +16,7 @@ def test_database_url_repr():
     assert repr(u) == "DatabaseURL('postgresql+psycopg://username:********@localhost/name')"
 
     u = DatabaseURL(f"postgres://username:{quote('[password')}@localhost/name")
-    assert repr(u) == "DatabaseURL('postgres+psycopg://username:********@localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql+psycopg://username:********@localhost/name')"
 
 
 def test_database_url_properties():
@@ -99,10 +99,10 @@ def test_replace_database_url_components():
     assert u.database == "mydatabase"
     new = u.replace(database="test_" + u.database)
     assert new.database == "test_mydatabase"
-    assert str(new) == "sqlite:///test_mydatabase"
+    assert str(new) == "sqlite+aiosqlite:///test_mydatabase"
 
     u = DatabaseURL("sqlite:////absolute/path")
     assert u.database == "/absolute/path"
     new = u.replace(database=u.database + "_test")
     assert new.database == "/absolute/path_test"
-    assert str(new) == "sqlite:////absolute/path_test"
+    assert str(new) == "sqlite+aiosqlite:////absolute/path_test"
