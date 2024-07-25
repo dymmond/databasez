@@ -999,10 +999,8 @@ async def test_queries_with_expose_backend_connection(database_url):
     async with Database(**data) as database:
         async with database.connection() as connection:
             async with connection.transaction(force_rollback=True):
-                # Get the raw connection
-                raw_connection = (
-                    await connection.raw_connection.get_raw_connection()
-                ).driver_connection
+                # Get the driver connection
+                raw_connection = (await connection.get_raw_connection()).driver_connection
                 # Insert query
                 if database.url.scheme in [
                     "mysql",

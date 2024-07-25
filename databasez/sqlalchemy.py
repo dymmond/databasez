@@ -102,10 +102,13 @@ class SQLAlchemyConnection(ConnectionBackend):
             with await connection.execute(stmt):
                 pass
 
+    async def get_raw_connection(self) -> typing.Any:
+        return await self.raw_connection.get_raw_connection()
+
 
 class SQLAlchemyBackend(DatabaseBackend):
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:
-        self.engine = create_async_engine(str(database_url), **options)
+        self.engine = create_async_engine(str(self.reformat_query(database_url)), **options)
 
     async def disconnect(self) -> None:
         await self.engine.dispose()

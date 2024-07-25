@@ -11,6 +11,8 @@ if typing.TYPE_CHECKING:
     from sqlalchemy import AsyncEngine
     from sqlalchemy.sql import ClauseElement
 
+    from databasez.core.databaseurl import DatabaseURL
+
 
 class Record(Sequence):
     @property
@@ -47,6 +49,10 @@ class ConnectionBackend(ABC):
 
     def __init__(self, database: DatabaseBackend):
         self.database = database
+
+    @abstractmethod
+    async def get_raw_connection(self) -> typing.Any:
+        """Get underlying connection."""
 
     @abstractmethod
     async def acquire(self) -> None: ...
@@ -118,10 +124,14 @@ class DatabaseBackend(ABC):
         self.transaction_class = transaction_class
 
     @abstractmethod
-    async def connect(self) -> None: ...
+    async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None: ...
 
     @abstractmethod
     async def disconnect(self) -> None: ...
+
+    def reformat_query(self, database_url: DatabaseURL) -> DatabaseURL:
+        """Reformat query options"""
+        return database_url
 
     def connection(self) -> ConnectionBackend:
         return self.connection_class(database=self)
