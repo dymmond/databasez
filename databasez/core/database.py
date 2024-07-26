@@ -6,10 +6,10 @@ import importlib
 import logging
 import typing
 import weakref
+from functools import lru_cache
 from types import TracebackType
 
 from databasez import interfaces
-from databasez.sqlalchemy import SQLAlchemyBackend, SQLAlchemyConnection, SQLAlchemyTransaction
 
 from .connection import Connection
 from .databaseurl import DatabaseURL
@@ -37,6 +37,23 @@ except ImportError:  # pragma: no cover
 
 
 logger = logging.getLogger("databasez")
+
+
+@lru_cache(1)
+def init() -> None:
+    """Lazy init global defaults and register sqlalchemy dialects."""
+    global default_database, default_connection, default_transaction
+    from sqlalchemy.dialects import registry
+
+    registry.register("adbapi2", "databasez.dialects.adbapi2", "dialect")
+    registry.register("jdbc", "databasez.dialects.jdbc", "dialect")
+
+    default_database, default_connection, default_transaction = Database.get_backends(
+        overwrite_paths=["databasez.sqlalchemy"],
+        database_name="SQLAlchemyDatabase",
+        connection_name="SQLAlchemyConnection",
+        transaction_name="SQLAlchemyTransaction",
+    )
 
 
 class Database:
@@ -74,6 +91,7 @@ class Database:
         config: typing.Optional["DictAny"] = None,
         **options: typing.Any,
     ):
+        init()
         assert config is None or url is None, "Use either 'url' or 'config', not both."
 
         url = DatabaseURL(url)
@@ -88,8 +106,16 @@ class Database:
         self._connection_map = weakref.WeakKeyDictionary()
 
         self._force_rollback = force_rollback
+        database_class, connection_class, transaction_class = self.get_backends(
+            self.url.scheme,
+            database_class=default_database,
+            connection_class=default_connection,
+            transaction_class=default_transaction,
+        )
 
-        self.backend = self.get_backend(self.url.scheme)
+        self.backend = database_class(
+            connection_class=connection_class, transaction_class=transaction_class
+        )
 
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
@@ -267,6 +293,10 @@ class Database:
             self._connection = Connection(self, self.backend)
         return self._connection
 
+    @property
+    def engine(self):
+        return self.connection.engine
+
     @contextlib.contextmanager
     def force_rollback(self) -> typing.Iterator[None]:
         initial = self._force_rollback
@@ -277,29 +307,42 @@ class Database:
             self._force_rollback = initial
 
     @classmethod
-    def get_backend(
-        cls, scheme: str, overwrite_path="databasez.overwrites"
-    ) -> interfaces.DatabaseBackend:
+    def get_backends(
+        cls,
+        # let scheme empty for direct imports
+        scheme: str = "",
+        *,
+        overwrite_paths: typing.Sequence[str] = ["databasez.overwrites"],
+        database_name: str = "Database",
+        connection_name: str = "Connection",
+        transaction_name: str = "Transaction",
+        database_class: typing.Optional[typing.Type[interfaces.DatabaseBackend]] = None,
+        connection_class: typing.Optional[typing.Type[interfaces.ConnectionBackend]] = None,
+        transaction_class: typing.Optional[typing.Type[interfaces.DatabaseBackend]] = None,
+    ) -> typing.Tuple[
+        interfaces.DatabaseBackend, interfaces.ConnectionBackend, interfaces.TransactionBackend
+    ]:
         scheme = scheme.replace("+", "_")
-        database_class: typing.Type[interfaces.DatabaseBackend] = SQLAlchemyBackend
-        connection_class: typing.Type[interfaces.ConnectionBackend] = SQLAlchemyConnection
-        transaction_class: typing.Type[interfaces.TransactionBackend] = SQLAlchemyTransaction
-
         module: typing.Any = None
-        try:
-            module = importlib.import_module(f"{overwrite_path}.{scheme.replace('+', '_')}")
-        except ImportError:
-            if "+" in scheme:
-                try:
-                    module = importlib.import_module(f"{overwrite_path}.{scheme.split('+', 1)[0]}")
-                except ImportError:
-                    pass
-        database_class = getattr(module, "Database", database_class)
+        for overwrite_path in overwrite_paths:
+            try:
+                module = importlib.import_module(
+                    f"{overwrite_path}.{scheme.replace('+', '_')}" if scheme else overwrite_path
+                )
+            except ImportError:
+                if "+" in scheme:
+                    try:
+                        module = importlib.import_module(
+                            f"{overwrite_path}.{scheme.split('+', 1)[0]}"
+                        )
+                    except ImportError:
+                        pass
+            if module is not None:
+                break
+        database_class = getattr(module, database_name, database_class)
         assert issubclass(database_class, interfaces.DatabaseBackend)
-        connection_class = getattr(module, "Connection", connection_class)
+        connection_class = getattr(module, connection_name, connection_class)
         assert issubclass(connection_class, interfaces.ConnectionBackend)
-        transaction_class = getattr(module, "Transaction", transaction_class)
+        transaction_class = getattr(module, transaction_name, transaction_class)
         assert issubclass(transaction_class, interfaces.TransactionBackend)
-        return database_class(
-            connection_class=connection_class, transaction_class=transaction_class
-        )
+        return database_class, connection_class, transaction_class

@@ -129,9 +129,17 @@ class DatabaseBackend(ABC):
     @abstractmethod
     async def disconnect(self) -> None: ...
 
-    def reformat_query(self, database_url: DatabaseURL) -> DatabaseURL:
-        """Reformat query options"""
-        return database_url
+    @abstractmethod
+    def extract_options(
+        self,
+        database_url: DatabaseURL,
+        **options: typing.Dict[str, typing.Any],
+    ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
+        """
+        Extract options from query.
+
+        Return reformated query for creating engine+options.
+        """
 
     def connection(self) -> ConnectionBackend:
         return self.connection_class(database=self)

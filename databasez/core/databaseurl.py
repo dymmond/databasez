@@ -1,5 +1,5 @@
 import typing
-from urllib.parse import SplitResult, parse_qsl, quote, unquote, urlsplit
+from urllib.parse import SplitResult, parse_qsl, quote, unquote, urlencode, urlsplit
 
 from sqlalchemy.engine import make_url
 
@@ -166,7 +166,7 @@ class DatabaseURL:
             # with URLs like `sqlite:///database` instead of `sqlite:/database`
             kwargs["netloc"] = _EmptyNetloc()
         if "options" in kwargs:
-            kwargs["query"] = kwargs.pop("options")
+            kwargs["query"] = urlencode(kwargs.pop("options"), doseq=True)
 
         components = self.components._replace(**kwargs)
         return self.__class__(self.get_url(components))

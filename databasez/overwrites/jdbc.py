@@ -1,17 +1,15 @@
 import typing
 
-import jpype.dbapi2
-from jpype import shutdownJVM, startJVM
+from jpype import isStarted, startJVM
 
-from databasez.interfaces import DatabaseBackend
+from databasez.sqlalchemy import SQLAlchemyDatabase
 
 if typing.TYPE_CHECKING:
     from databasez.core.databaseurl import DatabaseURL
 
 
-class Database(DatabaseBackend):
+class Database(SQLAlchemyDatabase):
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:
-        startJVM(classpath=self._database_url.options.get("classpath"))
-
-    async def disconnect(self) -> None:
-        shutdownJVM()
+        if not isStarted():
+            startJVM()
+        await super().connect(database_url, **options)

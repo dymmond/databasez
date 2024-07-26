@@ -106,9 +106,22 @@ class SQLAlchemyConnection(ConnectionBackend):
         return await self.raw_connection.get_raw_connection()
 
 
-class SQLAlchemyBackend(DatabaseBackend):
+class SQLAlchemyDatabase(DatabaseBackend):
+    def extract_options(
+        self,
+        database_url: DatabaseURL,
+        **options: typing.Dict[str, typing.Any],
+    ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
+        new_query_options = dict(database_url.options)
+        if "ssl" in new_query_options:
+            assert "ssl" not in options
+            ssl = new_query_options.pop("ssl")
+            options["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
+        return database_url.replace(options=new_query_options), options
+
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:
-        self.engine = create_async_engine(str(self.reformat_query(database_url)), **options)
+        reformated_url, refactored_options = self.extract_options(database_url, **options)
+        self.engine = create_async_engine(str(reformated_url), **refactored_options)
 
     async def disconnect(self) -> None:
         await self.engine.dispose()
