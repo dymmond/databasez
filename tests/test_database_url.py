@@ -7,16 +7,16 @@ from databasez import DatabaseURL
 
 def test_database_url_repr():
     u = DatabaseURL("postgresql://localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql+psycopg://localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql://localhost/name')"
 
     u = DatabaseURL("postgresql://username@localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql+psycopg://username@localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql://username@localhost/name')"
 
     u = DatabaseURL("postgresql://username:password@localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql+psycopg://username:********@localhost/name')"
+    assert repr(u) == "DatabaseURL('postgresql://username:********@localhost/name')"
 
     u = DatabaseURL(f"postgres://username:{quote('[password')}@localhost/name")
-    assert repr(u) == "DatabaseURL('postgresql+psycopg://username:********@localhost/name')"
+    assert repr(u) == "DatabaseURL('postgres://username:********@localhost/name')"
 
 
 def test_database_url_properties():
@@ -33,7 +33,7 @@ def test_database_url_properties():
         "postgresql://username:password@/mydatabase?host=/var/run/postgresql/.s.PGSQL.5432"
     )
     assert u.dialect == "postgresql"
-    assert u.driver == "psycopg"
+    assert u.driver is None
     assert u.username == "username"
     assert u.password == "password"
     assert u.hostname == "/var/run/postgresql/.s.PGSQL.5432"
@@ -80,9 +80,9 @@ def test_replace_database_url_components():
     assert u.database == "mydatabase"
     new = u.replace(database="test_" + u.database)
     assert new.database == "test_mydatabase"
-    assert str(new) == "postgresql+psycopg://localhost/test_mydatabase"
+    assert str(new) == "postgresql://localhost/test_mydatabase"
 
-    assert u.driver == "psycopg"
+    assert u.driver is None
     new = u.replace(driver="asyncpg")
     assert new.driver == "asyncpg"
     assert str(new) == "postgresql+asyncpg://localhost/mydatabase"
@@ -90,7 +90,7 @@ def test_replace_database_url_components():
     assert u.port is None
     new = u.replace(port=123)
     assert new.port == 123
-    assert str(new) == "postgresql+psycopg://localhost:123/mydatabase"
+    assert str(new) == "postgresql://localhost:123/mydatabase"
 
     assert u.username is None
     assert u.userinfo is None
@@ -99,10 +99,10 @@ def test_replace_database_url_components():
     assert u.database == "mydatabase"
     new = u.replace(database="test_" + u.database)
     assert new.database == "test_mydatabase"
-    assert str(new) == "sqlite+aiosqlite:///test_mydatabase"
+    assert str(new) == "sqlite:///test_mydatabase"
 
     u = DatabaseURL("sqlite:////absolute/path")
     assert u.database == "/absolute/path"
     new = u.replace(database=u.database + "_test")
     assert new.database == "/absolute/path_test"
-    assert str(new) == "sqlite+aiosqlite:////absolute/path_test"
+    assert str(new) == "sqlite:////absolute/path_test"

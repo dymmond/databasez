@@ -17,9 +17,15 @@ class AsyncWrapper:
     _async_wrapped: typing.Any
     _async_pool: typing.Any
     _async_exclude_attrs: typing.Dict[str, typing.Any]
-    _async_exclude_types: typing.Tuple[typing.Any, ...]
+    _async_exclude_types: typing.Tuple[typing.Type[typing.Any], ...]
 
-    def __init__(self, wrapped, pool, exclude_attrs=None, exclude_types=default_exclude_types):
+    def __init__(
+        self,
+        wrapped: typing.Any,
+        pool: typing.Any,
+        exclude_attrs: typing.Optional[typing.Dict[str, typing.Any]] = None,
+        exclude_types: typing.Tuple[typing.Type[typing.Any], ...] = default_exclude_types,
+    ) -> None:
         self._async_wrapped = wrapped
         self._async_pool = pool
         self._async_exclude_attrs = exclude_attrs or {}
@@ -39,7 +45,7 @@ class AsyncWrapper:
         attr = self._async_wrapped.__getattribute__(name)
         if inspect.ismethod(attr):
 
-            async def fn(*args, **kwargs):
+            async def fn(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
                     self._async_pool, partial(attr, *args, **kwargs)

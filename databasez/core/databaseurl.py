@@ -1,12 +1,9 @@
 import typing
+from functools import cached_property
 from urllib.parse import SplitResult, parse_qsl, quote, unquote, urlencode, urlsplit
 
+from sqlalchemy import URL
 from sqlalchemy.engine import make_url
-
-
-class _EmptyNetloc(str):
-    def __bool__(self) -> bool:
-        return True
 
 
 class DatabaseURL:
@@ -22,35 +19,17 @@ class DatabaseURL:
                 f"Invalid type for DatabaseURL. Expected str or DatabaseURL, got {type(url)}"
             )
 
-    @classmethod
-    def upgrade_scheme(cls, scheme: str) -> str:
-        if "+" not in scheme:
-            if scheme.startswith("postgres"):
-                return "postgresql+psycopg"
-            if scheme == "sqlite":
-                return "sqlite+aiosqlite"
-            if scheme == "mssql":
-                return "mssql+aioodbc"
-            if scheme == "mysql":
-                return "mysql+asyncmy"
-        return scheme
-
-    @property
+    @cached_property
     def components(self) -> SplitResult:
-        if not hasattr(self, "_components"):
-            url = make_url(self._url)
-            self.password = url.password
-            _components = urlsplit(url.render_as_string(hide_password=False))
-            # upgrade, regardless if scheme has an upgrade
-            _components._replace(scheme=self.upgrade_scheme(_components.scheme))
-            if _components.path.startswith("///"):
-                _components = _components._replace(path=f"//{_components.path.lstrip('/')}")
-            self._components = _components
-        return self._components
+        url = make_url(self._url)
+        _components = urlsplit(url.render_as_string(hide_password=False))
+        if _components.path.startswith("///"):
+            _components = _components._replace(path=f"//{_components.path.lstrip('/')}")
+        return _components
 
     @classmethod
     def get_url(cls, splitted: SplitResult) -> str:
-        url = f"{cls.upgrade_scheme(splitted.scheme)}://{splitted.netloc}{splitted.path}"
+        url = f"{splitted.scheme}://{splitted.netloc or  ""}{splitted.path}"
         if splitted.query:
             url = f"{url}?{splitted.query}"
         if splitted.fragment:
@@ -59,15 +38,18 @@ class DatabaseURL:
 
     @property
     def scheme(self) -> str:
-        return self.upgrade_scheme(self.components.scheme)
+        return self.components.scheme
 
     @property
     def dialect(self) -> str:
         return self.scheme.split("+")[0]
 
     @property
-    def driver(self) -> str:
-        return self.scheme.split("+", 1)[1]
+    def driver(self) -> typing.Optional[str]:
+        splitted = self.scheme.split("+", 1)
+        if len(splitted) == 1:
+            return None
+        return splitted[1]
 
     @property
     def userinfo(self) -> typing.Optional[bytes]:
@@ -86,16 +68,9 @@ class DatabaseURL:
 
     @property
     def password(self) -> typing.Optional[str]:
-        if self.components.password is None and getattr(self, "_password", None) is None:
+        if self.components.password is None:
             return None
-
-        if getattr(self, "_password", None) is None:
-            return self.components.password
-        return typing.cast(str, self._password)
-
-    @password.setter
-    def password(self, value: typing.Any) -> None:
-        self._password = value
+        return self.components.password
 
     @property
     def hostname(self) -> typing.Optional[str]:
@@ -158,13 +133,8 @@ class DatabaseURL:
             driver = kwargs.pop("driver", self.driver)
             kwargs["scheme"] = f"{dialect}+{driver}" if driver else dialect
 
-        if "scheme" in kwargs:
-            kwargs["scheme"] = self.upgrade_scheme(kwargs["scheme"])
-
         if not kwargs.get("netloc", self.netloc):
-            # Using an empty string that evaluates as True means we end up
-            # with URLs like `sqlite:///database` instead of `sqlite:/database`
-            kwargs["netloc"] = _EmptyNetloc()
+            kwargs["netloc"] = ""
         if "options" in kwargs:
             kwargs["query"] = urlencode(kwargs.pop("options"), doseq=True)
 
@@ -177,6 +147,15 @@ class DatabaseURL:
             return self.replace(password="********")._url
         return str(self)
 
+    @cached_property
+    def sqla_url(self) -> URL:
+        return make_url(str(self))
+
+    def upgrade(self, **extra_options: typing.Any) -> "DatabaseURL":
+        from .database import Database
+
+        return Database.apply_database_url_and_options(self, **extra_options)[1]
+
     def __str__(self) -> str:
         return self.get_url(self.components)
 
@@ -184,4 +163,7 @@ class DatabaseURL:
         return f"{self.__class__.__name__}({repr(self.obscure_password)})"
 
     def __eq__(self, other: typing.Any) -> bool:
+        # fix encoding
+        if isinstance(other, str):
+            other = DatabaseURL(other)
         return str(self) == str(other)

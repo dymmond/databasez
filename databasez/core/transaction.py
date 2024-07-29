@@ -102,31 +102,41 @@ class Transaction:
         return wrapper  # type: ignore
 
     async def start(self) -> Transaction:
-        self._transaction = self.connection._connection.transaction()
-
         async with self.connection._transaction_lock:
             is_root = not self.connection._transaction_stack
+            _transaction = self.connection._connection.transaction()
             await self.connection.__aenter__()
-            await self._transaction.start(is_root=is_root, extra_options=self._extra_options)
+            await _transaction.start(is_root=is_root, extra_options=self._extra_options)
+            self._transaction = _transaction
             self.connection._transaction_stack.append(self)
         return self
 
     async def commit(self) -> None:
         async with self.connection._transaction_lock:
-            assert self.connection._transaction_stack[-1] is self
-            self.connection._transaction_stack.pop()
-            assert self._transaction is not None
-            await self._transaction.commit()
-            await self._transaction.close()
-            await self.connection.__aexit__()
-            self._transaction = None
+            _transaction = self._transaction
+            if _transaction is not None:
+                self._transaction = None
+                assert self.connection._transaction_stack[-1] is self
+                self.connection._transaction_stack.pop()
+                await _transaction.commit()
+                await self.connection.__aexit__()
 
     async def rollback(self) -> None:
         async with self.connection._transaction_lock:
-            assert self.connection._transaction_stack[-1] is self
-            self.connection._transaction_stack.pop()
-            assert self._transaction is not None
-            await self._transaction.rollback()
-            await self._transaction.close()
-            await self.connection.__aexit__()
-            self._transaction = None
+            _transaction = self._transaction
+            if _transaction is not None:
+                self._transaction = None
+                assert self.connection._transaction_stack[-1] is self
+                self.connection._transaction_stack.pop()
+                await _transaction.rollback()
+                await self.connection.__aexit__()
+
+    async def close(self) -> None:
+        async with self.connection._transaction_lock:
+            _transaction = self._transaction
+            if _transaction is not None:
+                self._transaction = None
+                assert self.connection._transaction_stack[-1] is self
+                self.connection._transaction_stack.pop()
+                await _transaction.close()
+                await self.connection.__aexit__()

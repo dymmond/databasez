@@ -17,6 +17,7 @@ from .transaction import Transaction
 
 if typing.TYPE_CHECKING:
     from sqlalchemy import MetaData
+    from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.sql import ClauseElement
 
     from databasez.types import BatchCallable, BatchCallableResult, DictAny
@@ -37,6 +38,10 @@ except ImportError:  # pragma: no cover
 
 
 logger = logging.getLogger("databasez")
+
+default_database: typing.Type[interfaces.DatabaseBackend]
+default_connection: typing.Type[interfaces.ConnectionBackend]
+default_transaction: typing.Type[interfaces.TransactionBackend]
 
 
 @lru_cache(1)
@@ -100,23 +105,11 @@ class Database:
             if "credentials" in connection_config:
                 connection_config = connection_config["credentials"]
                 url = url.replace(**connection_config)
-        self.url = url
-        self.options = options
+        self.backend, self.url, self.options = self.apply_database_url_and_options(url, **options)
         self.is_connected = False
         self._connection_map = weakref.WeakKeyDictionary()
 
         self._force_rollback = force_rollback
-        database_class, connection_class, transaction_class = self.get_backends(
-            self.url.scheme,
-            database_class=default_database,
-            connection_class=default_connection,
-            transaction_class=default_transaction,
-        )
-
-        self.backend = database_class(
-            connection_class=connection_class, transaction_class=transaction_class
-        )
-
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
@@ -130,13 +123,11 @@ class Database:
         return task
 
     @property
-    def _connection(self) -> typing.Optional["Connection"]:
+    def _connection(self) -> typing.Optional[Connection]:
         return self._connection_map.get(self._current_task)
 
     @_connection.setter
-    def _connection(
-        self, connection: typing.Optional["Connection"]
-    ) -> typing.Optional["Connection"]:
+    def _connection(self, connection: typing.Optional[Connection]) -> typing.Optional[Connection]:
         task = self._current_task
 
         if connection is None:
@@ -218,6 +209,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
+        pos: int = 0,
     ) -> typing.Optional[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values)
@@ -227,9 +219,10 @@ class Database:
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
         column: typing.Any = 0,
+        pos: int = 0,
     ) -> typing.Any:
         async with self.connection() as connection:
-            return await connection.fetch_val(query, values, column=column)
+            return await connection.fetch_val(query, values, column=column, pos=pos)
 
     async def execute(
         self,
@@ -248,12 +241,9 @@ class Database:
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
         chunk_size: typing.Optional[int] = None,
-        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[interfaces.Record, None]:
         async with self.connection() as connection:
-            async for record in connection.iterate(
-                query, values, chunk_size, with_transaction=with_transaction
-            ):
+            async for record in connection.iterate(query, values, chunk_size):
                 yield record
 
     async def batched_iterate(
@@ -262,30 +252,27 @@ class Database:
         values: typing.Optional[dict] = None,
         batch_size: typing.Optional[int] = None,
         batch_wrapper: typing.Union[BatchCallable] = tuple,
-        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[BatchCallableResult, None]:
         async with self.connection() as connection:
-            async for records in connection.batched_iterate(
-                query, values, batch_size, with_transaction=with_transaction
-            ):
+            async for records in connection.batched_iterate(query, values, batch_size):
                 yield batch_wrapper(records)
 
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
-    async def run_sync(self, fn: typing.Callable, **kwargs: typing.Any) -> None:
+    async def run_sync(self, fn: typing.Callable, **kwargs: typing.Any) -> typing.Any:
         async with self.connection() as connection:
             return connection.run_sync(fn, **kwargs)
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
-            connection.create_all(meta, **kwargs)
+            await connection.create_all(meta, **kwargs)
 
     async def drop_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
-            connection.drop_all(meta, **kwargs)
+            await connection.drop_all(meta, **kwargs)
 
-    def connection(self) -> "Connection":
+    def connection(self) -> Connection:
         if self._global_connection is not None:
             return self._global_connection
 
@@ -294,8 +281,8 @@ class Database:
         return self._connection
 
     @property
-    def engine(self):
-        return self.connection.engine
+    def engine(self) -> typing.Optional[AsyncEngine]:
+        return self.backend.engine
 
     @contextlib.contextmanager
     def force_rollback(self) -> typing.Iterator[None]:
@@ -318,9 +305,11 @@ class Database:
         transaction_name: str = "Transaction",
         database_class: typing.Optional[typing.Type[interfaces.DatabaseBackend]] = None,
         connection_class: typing.Optional[typing.Type[interfaces.ConnectionBackend]] = None,
-        transaction_class: typing.Optional[typing.Type[interfaces.DatabaseBackend]] = None,
+        transaction_class: typing.Optional[typing.Type[interfaces.TransactionBackend]] = None,
     ) -> typing.Tuple[
-        interfaces.DatabaseBackend, interfaces.ConnectionBackend, interfaces.TransactionBackend
+        typing.Type[interfaces.DatabaseBackend],
+        typing.Type[interfaces.ConnectionBackend],
+        typing.Type[interfaces.TransactionBackend],
     ]:
         scheme = scheme.replace("+", "_")
         module: typing.Any = None
@@ -340,9 +329,36 @@ class Database:
             if module is not None:
                 break
         database_class = getattr(module, database_name, database_class)
-        assert issubclass(database_class, interfaces.DatabaseBackend)
+        assert database_class is not None and issubclass(
+            database_class, interfaces.DatabaseBackend
+        )
         connection_class = getattr(module, connection_name, connection_class)
-        assert issubclass(connection_class, interfaces.ConnectionBackend)
+        assert connection_class is not None and issubclass(
+            connection_class, interfaces.ConnectionBackend
+        )
         transaction_class = getattr(module, transaction_name, transaction_class)
-        assert issubclass(transaction_class, interfaces.TransactionBackend)
+        assert transaction_class is not None and issubclass(
+            transaction_class, interfaces.TransactionBackend
+        )
         return database_class, connection_class, transaction_class
+
+    @classmethod
+    def apply_database_url_and_options(
+        cls, url: typing.Union[DatabaseURL, str], **options: typing.Any
+    ) -> typing.Tuple[interfaces.DatabaseBackend, DatabaseURL, typing.Dict[str, typing.Any]]:
+        url = DatabaseURL(url)
+        database_class, connection_class, transaction_class = cls.get_backends(
+            url.scheme,
+            database_class=default_database,
+            connection_class=default_connection,
+            transaction_class=default_transaction,
+        )
+
+        backend = database_class(
+            connection_class=connection_class, transaction_class=transaction_class
+        )
+        url, options = backend.extract_options(url, **options)
+
+        assert url.sqla_url.get_dialect(True).is_async, f'Dialect: "{url.scheme}" is not async.'
+
+        return backend, url, options

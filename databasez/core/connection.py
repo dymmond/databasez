@@ -69,20 +69,22 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
+        pos: int = 0,
     ) -> typing.Optional[interfaces.Record]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
-            return await self._connection.fetch_one(built_query)
+            return await self._connection.fetch_one(built_query, pos=pos)
 
     async def fetch_val(
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
         column: typing.Any = 0,
+        pos: int = 0,
     ) -> typing.Any:
         built_query = self._build_query(query, values)
         async with self._query_lock:
-            return await self._connection.fetch_val(built_query, column)
+            return await self._connection.fetch_val(built_query, column, pos=pos)
 
     async def execute(
         self,
@@ -103,38 +105,26 @@ class Connection:
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
         batch_size: typing.Optional[int] = None,
-        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[typing.Any, None]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
-            if with_transaction:
-                async with self.transaction():
-                    async for record in self._connection.iterate(built_query, batch_size):
-                        yield record
-            else:
-                async for record in self._connection.iterate(built_query, batch_size):
-                    yield record
+            async for record in self._connection.iterate(built_query, batch_size):
+                yield record
 
     async def batched_iterate(
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
         batch_size: typing.Optional[int] = None,
-        with_transaction: bool = True,
     ) -> typing.AsyncGenerator[typing.Any, None]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
-            if with_transaction:
-                async with self.transaction():
-                    async for records in self._connection.batched_iterate(built_query, batch_size):
-                        yield records
-            else:
-                async for records in self._connection.batched_iterate(built_query, batch_size):
-                    yield records
+            async for records in self._connection.batched_iterate(built_query, batch_size):
+                yield records
 
     async def run_sync(self, fn: typing.Callable, **kwargs: typing.Any) -> typing.Any:
         async with self._query_lock:
-            return self.raw_connection.run_sync(partial(fn, **kwargs))
+            return self._connection.run_sync(partial(fn, **kwargs))
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         await self.run_sync(meta.create_all, **kwargs)
@@ -149,8 +139,13 @@ class Connection:
         return Transaction(connection_callable, force_rollback, **kwargs)
 
     @property
-    def raw_connection(self) -> typing.Any:
-        return self._connection.raw_connection
+    def async_connection(self) -> typing.Any:
+        """The first layer (sqlalchemy)."""
+        return self._connection.async_connection
+
+    async def get_raw_connection(self) -> typing.Any:
+        """The real raw connection (driver)."""
+        return await self.async_connection.get_raw_connection()
 
     @staticmethod
     def _build_query(

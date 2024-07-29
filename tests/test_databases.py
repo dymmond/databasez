@@ -43,6 +43,10 @@ for value in DATABASE_URLS:
     )
 
 
+MIXED_DATABASE_CONFIG_URLS = [*DATABASE_URLS, *DATABASE_CONFIG_URLS]
+MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATABASE_URLS)]
+
+
 class AsyncMock(MagicMock):
     async def __call__(self, *args, **kwargs):
         return super().__call__(*args, **kwargs)
@@ -153,14 +157,15 @@ def async_adapter(wrapped_func):
     return run_sync
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_queries(database_url):
     """
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``,
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -247,14 +252,15 @@ async def test_queries(database_url):
             assert batched_iterate_results[1][0].completed is True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_queries_raw(database_url):
     """
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``, and
     `fetch_one()` interfaces are all supported (raw queries).
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -315,14 +321,15 @@ async def test_queries_raw(database_url):
             assert iterate_results[2].completed == True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_ddl_queries(database_url):
     """
     Test that the built-in DDL elements such as `DropTable()`,
     `CreateTable()` are supported (using SQLAlchemy core).
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -340,13 +347,14 @@ async def test_ddl_queries(database_url):
 
 
 @pytest.mark.parametrize("exception", [Exception, asyncio.CancelledError])
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_queries_after_error(database_url, exception):
     """
     Test that the basic `execute()` works after a previous error.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -366,14 +374,13 @@ async def test_queries_after_error(database_url, exception):
         await database.fetch_all(query)
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_results_support_mapping_interface(database_url):
     """
     Casting results to a dict should work, since the interface defines them
     as supporting the mapping interface.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -399,14 +406,13 @@ async def test_results_support_mapping_interface(database_url):
             assert results_as_dicts[0]["completed"] is True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_result_values_allow_duplicate_names(database_url):
     """
     The values of a result should respect when two columns are selected
     with the same name.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -421,13 +427,12 @@ async def test_result_values_allow_duplicate_names(database_url):
             assert list(row._mapping.values()) == [1, 2]
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_fetch_one_returning_no_results(database_url):
     """
     fetch_one should return `None` when no results match.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -441,13 +446,12 @@ async def test_fetch_one_returning_no_results(database_url):
             assert result is None
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_execute_return_val(database_url):
     """
     Test using return value from `execute()` to get an inserted primary key.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -465,13 +469,12 @@ async def test_execute_return_val(database_url):
             assert result.completed is True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_rollback_isolation(database_url):
     """
     Ensure that `database.transaction(force_rollback=True)` provides strict isolation.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -489,13 +492,12 @@ async def test_rollback_isolation(database_url):
         assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_rollback_isolation_with_contextmanager(database_url):
     """
     Ensure that `database.force_rollback()` provides strict isolation.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -516,19 +518,14 @@ async def test_rollback_isolation_with_contextmanager(database_url):
             assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_transaction_commit(database_url):
     """
     Ensure that transaction commit is supported.
     """
-    database_url = database_url[0]
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
 
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             async with database.transaction():
                 query = notes.insert().values(text="example1", completed=True)
@@ -598,13 +595,12 @@ async def test_transaction_commit_serializable(database_url):
             delete_independently()
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_transaction_rollback(database_url):
     """
     Ensure that transaction rollback is supported.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -625,13 +621,12 @@ async def test_transaction_rollback(database_url):
             assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_transaction_commit_low_level(database_url):
     """
     Ensure that an explicit `await transaction.commit()` is supported.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -682,13 +677,12 @@ async def test_transaction_rollback_low_level(database_url):
             assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_transaction_decorator(database_url):
     """
     Ensure that @database.transaction() is supported.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -718,13 +712,12 @@ async def test_transaction_decorator(database_url):
         assert len(results) == 1
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_datetime_field(database_url):
     """
     Test DataTime columns, to ensure records are coerced to/from proper Python types.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -774,13 +767,12 @@ async def test_decimal_field(database_url):
                 assert results[0].price == price
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_json_field(database_url):
     """
     Test JSON columns, to ensure correct cross-database support.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -802,19 +794,13 @@ async def test_json_field(database_url):
             assert results[0].data == {"text": "hello", "boolean": True, "int": 1}
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_custom_field(database_url):
     """
     Test custom column types.
     """
-    database_url = database_url[0]
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             today = datetime.date.today()
 
@@ -832,7 +818,9 @@ async def test_custom_field(database_url):
             assert results[0].published == today
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_connections_isolation(database_url):
     """
@@ -840,7 +828,6 @@ async def test_connections_isolation(database_url):
     To check this we have to not create a transaction, so that
     each query ends up on a different connection from the pool.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -859,7 +846,7 @@ async def test_connections_isolation(database_url):
             await database.execute(query)
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_commit_on_root_transaction(database_url):
     """
@@ -868,7 +855,6 @@ async def test_commit_on_root_transaction(database_url):
 
     Deal with this here, and delete the records rather than rolling back.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -888,13 +874,14 @@ async def test_commit_on_root_transaction(database_url):
             await database.execute(query)
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_connect_and_disconnect(database_url):
     """
     Test explicit connect() and disconnect().
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -917,13 +904,14 @@ async def test_connect_and_disconnect(database_url):
     assert not database.is_connected
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_connection_context(database_url):
     """
     Test connection contexts are task-local.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -964,13 +952,12 @@ async def test_connection_context(database_url):
         await task_2
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_connection_context_with_raw_connection(database_url):
     """
     Test connection contexts with respect to the raw connection.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -980,17 +967,18 @@ async def test_connection_context_with_raw_connection(database_url):
         async with database.connection() as connection_1:
             async with database.connection() as connection_2:
                 assert connection_1 is connection_2
-                assert connection_1.raw_connection is connection_2.raw_connection
+                assert connection_1.async_connection is connection_2.async_connection
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_queries_with_expose_backend_connection(database_url):
     """
     Replication of `execute()`, `execute_many()`, `fetch_all()``, and
     `fetch_one()` using the raw driver interface.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -1103,13 +1091,14 @@ async def test_queries_with_expose_backend_connection(database_url):
                 assert result[2] == True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize(
+    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
+)
 @async_adapter
 async def test_database_url_interface(database_url):
     """
     Test that Database instances expose a `.url` attribute.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -1229,14 +1218,13 @@ async def test_iterate_outside_transaction_with_temp_table(database_url):
         assert len(iterate_results) == 5
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.parametrize("select_query", [notes.select(), "SELECT * FROM notes"])
 @async_adapter
 async def test_column_names(database_url, select_query):
     """
     Test that column names are exposed correctly through `._mapping.keys()` on each row.
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -1257,13 +1245,12 @@ async def test_column_names(database_url, select_query):
             assert results[0].completed == True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_postcompile_queries(database_url):
     """
     Since SQLAlchemy 1.4, IN operators needs to do render_postcompile
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
@@ -1280,19 +1267,22 @@ async def test_postcompile_queries(database_url):
         assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_result_named_access(database_url):
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
         data = {"config": database_url}
 
-    async with Database(**data) as database:
+    async with Database(**data, isolation_level="AUTOCOMMIT") as database:
         query = notes.insert()
         values = {"text": "example1", "completed": True}
-        await database.execute(query, values)
+        result = await database.execute(query, values)
+        assert result in {1, -1}
+        result = await database.fetch_one(query=notes.select())
+        assert result.text == "example1"
+        assert result.completed is True
 
         query = notes.select().where(notes.c.text == "example1")
         result = await database.fetch_one(query=query)
@@ -1301,13 +1291,12 @@ async def test_result_named_access(database_url):
         assert result.completed is True
 
 
-@pytest.mark.parametrize("database_url", [DATABASE_URLS, DATABASE_CONFIG_URLS])
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_mapping_property_interface(database_url):
     """
     Test that all connections implement interface with `_mapping` property
     """
-    database_url = database_url[0]
     if isinstance(database_url, str):
         data = {"url": database_url}
     else:
