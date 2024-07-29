@@ -22,14 +22,21 @@ logger = logging.getLogger("databasez")
 
 class SQLAlchemyTransaction(TransactionBackend):
     _transaction: typing.Optional[typing.Any] = None
+    old_transaction_level: str = ""
 
-    async def start(self, is_root: bool, extra_options: typing.Dict[str, typing.Any]) -> None:
+    async def start(self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]) -> None:
         connection = self.connection.async_connection
         assert connection is not None, "Connection is not acquired"
         assert self._transaction is None, "Transaction is already initialized"
-        self.connection.async_connection = connection = await connection.execution_options(
-            **extra_options
-        )
+        self.old_transaction_level = await connection.get_isolation_level()
+        if "isolation_level" not in extra_options:
+            isolation_level = self.get_default_transaction_isolation_level(
+                is_root, **extra_options
+            )
+            extra_options["isolation_level"] = isolation_level
+        if extra_options["isolation_level"] is None:
+            extra_options.pop("isolation_level", None)
+        await connection.execution_options(**extra_options)
         assert (
             await connection.get_isolation_level() != "AUTOCOMMIT"
         ), "transactions doesn't work with AUTOCOMMIT. Please specify another transaction level."
@@ -38,15 +45,24 @@ class SQLAlchemyTransaction(TransactionBackend):
         else:
             self._transaction = await connection.begin_nested()
 
+    async def _close(self):
+        await self._transaction.close()
+        connection = self.connection.async_connection
+        if connection is not None and self.old_transaction_level:
+            await connection.execution_options(isolation_level=self.old_transaction_level)
+
     async def commit(self) -> None:
         assert self._transaction is not None, "Transaction is not initialized"
         await self._transaction.commit()
-        await self._transaction.close()
+        await self._close()
 
     async def rollback(self) -> None:
         assert self._transaction is not None, "Transaction is not initialized"
         await self._transaction.rollback()
-        await self._transaction.close()
+        await self._close()
+
+    def get_default_transaction_isolation_level(self, is_root: bool, **extra_options):
+        return "SERIALIZABLE"
 
 
 class SQLAlchemyConnection(ConnectionBackend):
@@ -63,19 +79,15 @@ class SQLAlchemyConnection(ConnectionBackend):
         await connection.close()
 
     async def fetch_all(self, query: ClauseElement) -> typing.List[Record]:
-        connection = self.async_connection
-        assert connection is not None, "Connection is not acquired"
-        with await connection.execute(query) as result:
+        with await self.execute_raw(query) as result:
             return result.fetchall()
 
     async def fetch_one(self, query: ClauseElement, pos: int = 0) -> typing.Optional[Record]:
-        connection = self.async_connection
-        assert connection is not None, "Connection is not acquired"
         if pos > 0:
             query = query.offset(pos)
         if pos >= 0 and hasattr(query, "limit"):
             query = query.limit(1)
-        with await connection.execute(query) as result:
+        with await self.execute_raw(query) as result:
             if pos >= 0:
                 return result.first()
             elif pos == -1:
@@ -103,6 +115,20 @@ class SQLAlchemyConnection(ConnectionBackend):
         connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
         return await connection.execute(stmt)
+
+    async def execute(self, stmt: typing.Any) -> int:
+        """
+        Executes statement and returns the last row id (query) or the row count of updates.
+
+        Warning: can return -1 (e.g. psycopg) in case the result is unknown
+
+        """
+        with await self.execute_raw(stmt) as result:
+            try:
+                return typing.cast(int, result.lastrowid)
+            except AttributeError:
+                assert result.is_insert is False, "could not retrieve lastrowid"
+                return typing.cast(int, result.rowcount)
 
     async def execute_many(self, stmts: typing.List[typing.Any]) -> None:
         connection = self.async_connection
@@ -132,11 +158,14 @@ class SQLAlchemyConnection(ConnectionBackend):
 
 
 class SQLAlchemyDatabase(DatabaseBackend):
+    default_isolation_level: str = "AUTOCOMMIT"
+
     def extract_options(
         self,
         database_url: DatabaseURL,
         **options: typing.Dict[str, typing.Any],
     ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
+        options.setdefault("isolation_level", self.default_isolation_level)
         new_query_options = dict(database_url.options)
         if "ssl" in new_query_options:
             assert "ssl" not in options

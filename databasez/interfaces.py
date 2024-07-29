@@ -27,13 +27,28 @@ class TransactionBackend(ABC):
         self.connection = connection
 
     @abstractmethod
-    async def start(self, is_root: bool, extra_options: typing.Dict[str, typing.Any]) -> None: ...
+    async def start(
+        self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]
+    ) -> None: ...
 
     @abstractmethod
     async def commit(self) -> None: ...
 
     @abstractmethod
     async def rollback(self) -> None: ...
+
+    @abstractmethod
+    def get_default_transaction_isolation_level(
+        self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]
+    ): ...
+
+    @property
+    def database(self) -> DatabaseBackend:
+        return self.engine.database
+
+    @property
+    def engine(self) -> typing.Optional[AsyncEngine]:
+        return self.database.engine
 
 
 class ConnectionBackend(ABC):
@@ -90,6 +105,7 @@ class ConnectionBackend(ABC):
     @abstractmethod
     async def execute_raw(self, stmt: typing.Any) -> typing.Any: ...
 
+    @abstractmethod
     async def execute(self, stmt: typing.Any) -> int:
         """
         Executes statement and returns the last row id (query) or the row count of updates.
@@ -97,11 +113,6 @@ class ConnectionBackend(ABC):
         Warning: can return -1 (e.g. psycopg) in case the result is unknown
 
         """
-        with await self.execute_raw(stmt) as result:
-            try:
-                return typing.cast(int, result.lastrowid)
-            except AttributeError:
-                return typing.cast(int, result.rowcount)
 
     @abstractmethod
     async def execute_many(self, stmts: typing.List[typing.Any]) -> None: ...

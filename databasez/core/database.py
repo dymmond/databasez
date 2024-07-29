@@ -311,7 +311,6 @@ class Database:
         typing.Type[interfaces.ConnectionBackend],
         typing.Type[interfaces.TransactionBackend],
     ]:
-        scheme = scheme.replace("+", "_")
         module: typing.Any = None
         for overwrite_path in overwrite_paths:
             try:
@@ -344,7 +343,11 @@ class Database:
 
     @classmethod
     def apply_database_url_and_options(
-        cls, url: typing.Union[DatabaseURL, str], **options: typing.Any
+        cls,
+        url: typing.Union[DatabaseURL, str],
+        *,
+        overwrite_paths: typing.Sequence[str] = ["databasez.overwrites"],
+        **options: typing.Any,
     ) -> typing.Tuple[interfaces.DatabaseBackend, DatabaseURL, typing.Dict[str, typing.Any]]:
         url = DatabaseURL(url)
         database_class, connection_class, transaction_class = cls.get_backends(
@@ -352,6 +355,7 @@ class Database:
             database_class=default_database,
             connection_class=default_connection,
             transaction_class=default_transaction,
+            overwrite_paths=overwrite_paths,
         )
 
         backend = database_class(

@@ -106,7 +106,7 @@ class Transaction:
             is_root = not self.connection._transaction_stack
             _transaction = self.connection._connection.transaction()
             await self.connection.__aenter__()
-            await _transaction.start(is_root=is_root, extra_options=self._extra_options)
+            await _transaction.start(is_root=is_root, **self._extra_options)
             self._transaction = _transaction
             self.connection._transaction_stack.append(self)
         return self

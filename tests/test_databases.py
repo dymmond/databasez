@@ -157,9 +157,7 @@ def async_adapter(wrapped_func):
     return run_sync
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_queries(database_url):
     """
@@ -252,9 +250,7 @@ async def test_queries(database_url):
             assert batched_iterate_results[1][0].completed is True
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_queries_raw(database_url):
     """
@@ -321,9 +317,7 @@ async def test_queries_raw(database_url):
             assert iterate_results[2].completed == True
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_ddl_queries(database_url):
     """
@@ -347,9 +341,7 @@ async def test_ddl_queries(database_url):
 
 
 @pytest.mark.parametrize("exception", [Exception, asyncio.CancelledError])
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_queries_after_error(database_url, exception):
     """
@@ -452,20 +444,22 @@ async def test_execute_return_val(database_url):
     """
     Test using return value from `execute()` to get an inserted primary key.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             query = notes.insert()
             values = {"text": "example1", "completed": True}
-            pk = await database.execute(query, values)
-            assert isinstance(pk, int)
-            query = notes.select().where(notes.c.id == pk)
+            pk1 = await database.execute(query, values)
+            values = {"text": "example2", "completed": True}
+            pk2 = await database.execute(query, values)
+            assert isinstance(pk1, int) and pk1 > 0
+            query = notes.select().where(notes.c.id == pk1)
             result = await database.fetch_one(query)
             assert result.text == "example1"
+            assert result.completed is True
+            assert isinstance(pk2, int) and pk2 > 0
+            query = notes.select().where(notes.c.id == pk2)
+            result = await database.fetch_one(query)
+            assert result.text == "example2"
             assert result.completed is True
 
 
@@ -818,9 +812,7 @@ async def test_custom_field(database_url):
             assert results[0].published == today
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_connections_isolation(database_url):
     """
@@ -904,9 +896,7 @@ async def test_connect_and_disconnect(database_url):
     assert not database.is_connected
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_connection_context(database_url):
     """
@@ -970,9 +960,7 @@ async def test_connection_context_with_raw_connection(database_url):
                 assert connection_1.async_connection is connection_2.async_connection
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_queries_with_expose_backend_connection(database_url):
     """
@@ -1212,8 +1200,9 @@ async def test_iterate_outside_transaction_with_temp_table(database_url):
 
         iterate_results = []
 
-        async for result in database.iterate(query=query):
-            iterate_results.append(result)
+        async with database.transaction():
+            async for result in database.iterate(query=query):
+                iterate_results.append(result)
 
         assert len(iterate_results) == 5
 
@@ -1270,12 +1259,7 @@ async def test_postcompile_queries(database_url):
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @async_adapter
 async def test_result_named_access(database_url):
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data, isolation_level="AUTOCOMMIT") as database:
+    async with Database(database_url) as database:
         query = notes.insert()
         values = {"text": "example1", "completed": True}
         result = await database.execute(query, values)

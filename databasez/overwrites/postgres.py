@@ -1,3 +1,3 @@
-from .postgresql import Database
+from .postgresql import Connection, Database
 
-__all__ = ["Database"]
+__all__ = ["Database", "Connection"]
