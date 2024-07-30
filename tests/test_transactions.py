@@ -134,102 +134,6 @@ async def test_transaction_context_child_task_inheritance(database_url):
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
-async def test_transaction_context_child_task_inheritance_example(database_url):
-    """
-    Ensure that child tasks may influence inherited transactions.
-    """
-    # This is an practical example of the above test.
-    db = Database(database_url)
-    if db.url.dialect == "mssql":
-        return
-
-    async with Database(database_url) as database:
-        async with database.transaction():
-            # Create a note
-            await database.execute(notes.insert().values(id=1, text="setup", completed=True))
-
-            # Change the note from the same task
-            await database.execute(notes.update().where(notes.c.id == 1).values(text="prior"))
-
-            # Confirm the change
-            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
-            assert result.text == "prior"
-
-            async def run_update_from_child_task(connection):
-                # Change the note from a child task
-                await connection.execute(notes.update().where(notes.c.id == 1).values(text="test"))
-
-            await asyncio.create_task(run_update_from_child_task(database.connection()))
-
-            # Confirm the child's change
-            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
-            assert result.text == "test"
-
-
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
-@pytest.mark.asyncio
-async def test_transaction_context_sibling_task_isolation(database_url):
-    """
-    Ensure that transactions are isolated between sibling tasks.
-    """
-    start = asyncio.Event()
-    end = asyncio.Event()
-
-    async with Database(database_url) as database:
-
-        async def check_transaction(transaction):
-            await start.wait()
-            # Parent task is now in a transaction, we should not
-            # see its transaction backend since this task was
-            # _started_ in a context where no transaction was active.
-            assert transaction._transaction is None
-            end.set()
-
-        transaction = database.transaction()
-        assert transaction._transaction is None
-        task = asyncio.create_task(check_transaction(transaction))
-
-        async with transaction:
-            start.set()
-            assert transaction._transaction is not None
-            await end.wait()
-
-        # Cleanup for "Task not awaited" warning
-        await task
-
-
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
-@pytest.mark.asyncio
-async def test_transaction_context_sibling_task_isolation_example(database_url):
-    """
-    Ensure that transactions are running in sibling tasks are isolated from eachother.
-    """
-    # This is an practical example of the above test.
-    db = Database(database_url)
-    if db.url.dialect == "mssql":
-        return
-    setup = asyncio.Event()
-    done = asyncio.Event()
-
-    async def tx1(connection):
-        async with connection.transaction():
-            await db.execute(notes.insert(), values={"id": 1, "text": "tx1", "completed": False})
-            setup.set()
-            await done.wait()
-
-    async def tx2(connection):
-        async with connection.transaction():
-            await setup.wait()
-            result = await db.fetch_all(notes.select())
-            assert result == [], result
-            done.set()
-
-    async with Database(database_url) as db:
-        await asyncio.gather(tx1(db), tx2(db))
-
-
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
-@pytest.mark.asyncio
 async def test_connection_cleanup_contextmanager(database_url):
     """
     Ensure that task connections are not persisted unecessarily.
@@ -582,13 +486,8 @@ async def test_transaction_rollback_low_level(database_url):
     """
     Ensure that an explicit `await transaction.rollback()` is supported.
     """
-    database_url = database_url[0]
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
 
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             transaction = await database.transaction()
             try:
@@ -638,3 +537,102 @@ async def test_transaction_decorator(database_url):
         query = notes.select()
         results = await database.fetch_all(query=query)
         assert len(results) == 1
+
+
+# highly default isolation level specific
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_transaction_context_sibling_task_isolation_example(database_url):
+    """
+    Ensure that transactions are running in sibling tasks are isolated from eachother.
+    """
+    # This is an practical example of the above test.
+    db = Database(database_url)
+    if db.url.dialect == "mssql":
+        pytest.skip()
+    setup = asyncio.Event()
+    done = asyncio.Event()
+
+    async def tx1(connection):
+        async with connection.transaction():
+            await db.execute(notes.insert(), values={"id": 1, "text": "tx1", "completed": False})
+            setup.set()
+            await done.wait()
+
+    async def tx2(connection):
+        async with connection.transaction():
+            await setup.wait()
+            result = await db.fetch_all(notes.select())
+            assert result == [], result
+            done.set()
+
+    async with Database(database_url) as db:
+        await asyncio.gather(tx1(db), tx2(db))
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_transaction_context_child_task_inheritance_example(database_url):
+    """
+    Ensure that child tasks may influence inherited transactions.
+    """
+    # This is an practical example of the above test.
+    db = Database(database_url)
+    if db.url.dialect == "mssql":
+        return
+
+    async with Database(database_url) as database:
+        async with database.transaction():
+            # Create a note
+            await database.execute(notes.insert().values(id=1, text="setup", completed=True))
+
+            # Change the note from the same task
+            await database.execute(notes.update().where(notes.c.id == 1).values(text="prior"))
+
+            # Confirm the change
+            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
+            assert result.text == "prior"
+
+            async def run_update_from_child_task(connection):
+                # Change the note from a child task
+                await connection.execute(notes.update().where(notes.c.id == 1).values(text="test"))
+
+            await asyncio.create_task(run_update_from_child_task(database.connection()))
+
+            # Confirm the child's change
+            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
+            assert result.text == "test"
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_transaction_context_sibling_task_isolation(database_url):
+    """
+    Ensure that transactions are isolated between sibling tasks.
+    """
+    start = asyncio.Event()
+    end = asyncio.Event()
+
+    async with Database(database_url) as database:
+
+        async def check_transaction(transaction):
+            await start.wait()
+            # Parent task is now in a transaction, we should not
+            # see its transaction backend since this task was
+            # _started_ in a context where no transaction was active.
+            assert transaction._transaction is None
+            end.set()
+
+        transaction = database.transaction()
+        assert transaction._transaction is None
+        task = asyncio.create_task(check_transaction(transaction))
+
+        async with transaction:
+            start.set()
+            assert transaction._transaction is not None
+            await end.wait()
+
+        # Cleanup for "Task not awaited" warning
+        await task

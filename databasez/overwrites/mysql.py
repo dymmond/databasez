@@ -1,9 +1,14 @@
 import typing
 
-from databasez.sqlalchemy import SQLAlchemyDatabase
+from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction
 
 if typing.TYPE_CHECKING:
     from databasez.core.databaseurl import DatabaseURL
+
+
+class Transaction(SQLAlchemyTransaction):
+    def get_default_transaction_isolation_level(self, is_root: bool, **extra_options):
+        return "READ COMMITTED"
 
 
 class Database(SQLAlchemyDatabase):
