@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-__all__ = ["DatabaseBackend", "ConnectionBackend", "TransactionBackend"]
+__all__ = ["Record", "DatabaseBackend", "ConnectionBackend", "TransactionBackend"]
 
 
 import typing
+import weakref
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Mapping, Sequence
 
 if typing.TYPE_CHECKING:
-    from sqlalchemy import AsyncEngine
+    from sqlalchemy import AsyncEngine, Transaction
     from sqlalchemy.sql import ClauseElement
 
+    from databasez.core.database import Connection as RootConnection
+    from databasez.core.database import Database as RootDatabase
     from databasez.core.databaseurl import DatabaseURL
+    from databasez.core.transaction import Transaction as RootTransaction
 
 
 class Record(Sequence):
@@ -21,10 +25,37 @@ class Record(Sequence):
 
 
 class TransactionBackend(ABC):
-    connection: ConnectionBackend
+    raw_transaction: typing.Optional[Transaction]
 
-    def __init__(self, connection: ConnectionBackend):
+    def __init__(
+        self,
+        connection: ConnectionBackend,
+        existing_transaction: typing.Optional[Transaction] = None,
+    ):
         self.connection = connection
+        self.raw_transaction = existing_transaction
+
+    @property
+    def connection(self) -> typing.Optional[ConnectionBackend]:
+        result = self.__dict__.get("connection")
+        if result is not None:
+            return result()
+        return result
+
+    @connection.setter
+    def connection(self, value: ConnectionBackend):
+        self.__dict__["connection"] = weakref.ref(value)
+
+    @property
+    def owner(self) -> typing.Optional[RootTransaction]:
+        result = self.__dict__.get("owner")
+        if result is not None:
+            return result()
+        return result
+
+    @owner.setter
+    def owner(self, value: RootTransaction):
+        self.__dict__["owner"] = weakref.ref(value)
 
     @abstractmethod
     async def start(
@@ -43,12 +74,25 @@ class TransactionBackend(ABC):
     ): ...
 
     @property
-    def database(self) -> DatabaseBackend:
-        return self.engine.database
+    def database(self) -> typing.Optional[DatabaseBackend]:
+        conn = self.connection
+        if conn is None:
+            return None
+        return conn.database
 
     @property
     def engine(self) -> typing.Optional[AsyncEngine]:
-        return self.database.engine
+        database = self.database
+        if database is None:
+            return None
+        return database.engine
+
+    @property
+    def root(self) -> typing.Optional[RootDatabase]:
+        database = self.database
+        if database is None:
+            return None
+        return database.root
 
 
 class ConnectionBackend(ABC):
@@ -58,6 +102,28 @@ class ConnectionBackend(ABC):
     def __init__(self, database: DatabaseBackend):
         self.database = database
 
+    @property
+    def database(self) -> typing.Optional[DatabaseBackend]:
+        result = self.__dict__.get("database")
+        if result is not None:
+            return result()
+        return result
+
+    @database.setter
+    def database(self, value: DatabaseBackend):
+        self.__dict__["database"] = weakref.ref(value)
+
+    @property
+    def owner(self) -> typing.Optional[RootConnection]:
+        result = self.__dict__.get("owner")
+        if result is not None:
+            return result()
+        return result
+
+    @owner.setter
+    def owner(self, value: RootConnection):
+        self.__dict__["owner"] = weakref.ref(value)
+
     @abstractmethod
     async def get_raw_connection(self) -> typing.Any:
         """
@@ -66,7 +132,7 @@ class ConnectionBackend(ABC):
         """
 
     @abstractmethod
-    async def acquire(self) -> None: ...
+    async def acquire(self) -> typing.Optional[typing.Any]: ...
 
     @abstractmethod
     async def release(self) -> None: ...
@@ -121,20 +187,19 @@ class ConnectionBackend(ABC):
     def in_transaction(self) -> bool:
         """Is a transaction active?"""
 
-    @abstractmethod
-    async def commit(self) -> None:
-        """Sometimes connections are wrapped in a transaction."""
-
-    @abstractmethod
-    async def rollback(self) -> None:
-        """Sometimes connections are wrapped in a transaction."""
-
-    def transaction(self) -> TransactionBackend:
-        return self.database.transaction_class(self)
+    def transaction(
+        self, existing_transaction: typing.Optional[typing.Any] = None
+    ) -> TransactionBackend:
+        database = self.database
+        assert database is not None
+        return database.transaction_class(self, existing_transaction)
 
     @property
     def engine(self) -> typing.Optional[AsyncEngine]:
-        return self.database.engine
+        database = self.database
+        if database is None:
+            return None
+        return database.engine
 
 
 class DatabaseBackend(ABC):
@@ -150,10 +215,21 @@ class DatabaseBackend(ABC):
         self.connection_class = connection_class
         self.transaction_class = transaction_class
 
+    @property
+    def owner(self) -> typing.Optional[RootDatabase]:
+        result = self.__dict__.get("root")
+        if result is not None:
+            return result()
+        return result
+
+    @owner.setter
+    def owner(self, value: RootDatabase):
+        self.__dict__["root"] = weakref.ref(value)
+
     @abstractmethod
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:
         """
-        Start the database backend.
+        Set root and start the database backend.
 
         Note: database_url and options are expected to be sanitized already.
         """

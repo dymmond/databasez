@@ -1,6 +1,6 @@
 import typing
 from functools import cached_property
-from urllib.parse import SplitResult, parse_qsl, quote, unquote, urlencode, urlsplit
+from urllib.parse import SplitResult, parse_qs, quote, unquote, urlencode, urlsplit
 
 from sqlalchemy import URL
 from sqlalchemy.engine import make_url
@@ -21,7 +21,7 @@ class DatabaseURL:
 
     @cached_property
     def components(self) -> SplitResult:
-        url = make_url(self._url)
+        url = self.sqla_url
         _components = urlsplit(url.render_as_string(hide_password=False))
         if _components.path.startswith("///"):
             _components = _components._replace(path=f"//{_components.path.lstrip('/')}")
@@ -29,7 +29,7 @@ class DatabaseURL:
 
     @classmethod
     def get_url(cls, splitted: SplitResult) -> str:
-        url = f"{splitted.scheme}://{splitted.netloc or  ""}{splitted.path}"
+        url = f"{splitted.scheme}://{(splitted.netloc or '')}{splitted.path}"
         if splitted.query:
             url = f"{url}?{splitted.query}"
         if splitted.fragment:
@@ -54,9 +54,9 @@ class DatabaseURL:
     @property
     def userinfo(self) -> typing.Optional[bytes]:
         if self.components.username:
-            info = self.components.username
+            info = quote(self.components.username, safe="+")
             if self.password:
-                info += ":" + quote(self.password)
+                info += ":" + quote(self.password, safe="+")
             return info.encode("utf-8")
         return None
 
@@ -70,13 +70,16 @@ class DatabaseURL:
     def password(self) -> typing.Optional[str]:
         if self.components.password is None:
             return None
-        return self.components.password
+        return unquote(self.components.password)
 
     @property
     def hostname(self) -> typing.Optional[str]:
-        return (
-            self.components.hostname or self.options.get("host") or self.options.get("unix_sock")
-        )
+        host = self.components.hostname or self.options.get("host")
+        if isinstance(host, list):
+            if len(host) > 0:
+                return host[0]
+        else:
+            return host
 
     @property
     def port(self) -> typing.Optional[int]:
@@ -93,11 +96,15 @@ class DatabaseURL:
             path = path[1:]
         return unquote(path)
 
-    @property
-    def options(self) -> dict:
-        if not hasattr(self, "_options"):
-            self._options = dict(parse_qsl(self.components.query))
-        return self._options
+    @cached_property
+    def options(self) -> typing.Dict[str, typing.Union[str, typing.List[str]]]:
+        result: typing.Dict[str, typing.Union[str, typing.List[str]]] = {}
+        for key, val in parse_qs(self.components.query).items():
+            if len(val) == 1:
+                result[key] = val[0]
+            else:
+                result[key] = val
+        return result
 
     def replace(self, **kwargs: typing.Any) -> "DatabaseURL":
         if (
@@ -117,9 +124,9 @@ class DatabaseURL:
             if port is not None:
                 netloc += f":{port}"
             if username is not None:
-                userpass = username
+                userpass = quote(username, safe="+")
                 if password is not None:
-                    userpass += f":{password}"
+                    userpass += f":{quote(password, safe='+')}"
                 netloc = f"{userpass}@{netloc}"
 
             kwargs["netloc"] = netloc
@@ -141,15 +148,13 @@ class DatabaseURL:
         components = self.components._replace(**kwargs)
         return self.__class__(self.get_url(components))
 
-    @property
+    @cached_property
     def obscure_password(self) -> str:
-        if self.password:
-            return self.replace(password="********")._url
-        return str(self)
+        return self.sqla_url.render_as_string(hide_password=True)
 
     @cached_property
     def sqla_url(self) -> URL:
-        return make_url(str(self))
+        return make_url(self._url)
 
     def upgrade(self, **extra_options: typing.Any) -> "DatabaseURL":
         from .database import Database

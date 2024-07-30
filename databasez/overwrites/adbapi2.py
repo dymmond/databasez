@@ -3,7 +3,7 @@ import typing
 from databasez.sqlalchemy import SQLAlchemyDatabase
 
 if typing.TYPE_CHECKING:
-    from databasez.core.databaseurl import DatabaseURL
+    pass
 
 
 class Database(SQLAlchemyDatabase):

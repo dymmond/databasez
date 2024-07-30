@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import typing
+import weakref
 from functools import partial
 from types import TracebackType
 
@@ -25,19 +26,26 @@ class Connection:
 
         self._connection_lock = asyncio.Lock()
         self._connection = self._backend.connection()
+        self._connection.owner = self
         self._connection_counter = 0
 
         self._transaction_lock = asyncio.Lock()
         self._transaction_stack: typing.List[Transaction] = []
 
         self._query_lock = asyncio.Lock()
+        self.connection_transaction: typing.Optional[interfaces.TransactionBackend] = None
 
     async def __aenter__(self) -> Connection:
         async with self._connection_lock:
             self._connection_counter += 1
             try:
                 if self._connection_counter == 1:
-                    await self._connection.acquire()
+                    raw_transaction = await self._connection.acquire()
+                    if raw_transaction is not None:
+                        self.connection_transaction = self.transaction(
+                            existing_transaction=raw_transaction
+                        )
+                        # we don't need to call __aenter__ of connection_transaction
             except BaseException as e:
                 self._connection_counter -= 1
                 raise e
@@ -53,8 +61,12 @@ class Connection:
             assert self._connection is not None
             self._connection_counter -= 1
             if self._connection_counter == 0:
-                await self._connection.release()
-                self._database._connection = None
+                try:
+                    if self.connection_transaction:
+                        await self.connection_transaction.__aexit__(exc_type, exc_value, traceback)
+                finally:
+                    await self._connection.release()
+                    self._database._connection = None
 
     async def fetch_all(
         self,
@@ -133,10 +145,7 @@ class Connection:
         await self.run_sync(meta.drop_all, **kwargs)
 
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
-        def connection_callable() -> Connection:
-            return self
-
-        return Transaction(connection_callable, force_rollback, **kwargs)
+        return Transaction(weakref.ref(self), force_rollback, **kwargs)
 
     @property
     def async_connection(self) -> typing.Any:

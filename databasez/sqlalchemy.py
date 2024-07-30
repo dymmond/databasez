@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import typing
 
+import orjson
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.sql import ClauseElement
 
@@ -21,44 +22,52 @@ logger = logging.getLogger("databasez")
 
 
 class SQLAlchemyTransaction(TransactionBackend):
-    _transaction: typing.Optional[typing.Any] = None
+    raw_transaction: typing.Optional[typing.Any] = None
     old_transaction_level: str = ""
 
     async def start(self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]) -> None:
         connection = self.connection.async_connection
         assert connection is not None, "Connection is not acquired"
-        assert self._transaction is None, "Transaction is already initialized"
+        assert self.raw_transaction is None, "Transaction is already initialized"
+        in_transaction = connection.in_transaction()
+
         self.old_transaction_level = await connection.get_isolation_level()
-        if "isolation_level" not in extra_options:
+        if "isolation_level" not in extra_options and not in_transaction:
             isolation_level = self.get_default_transaction_isolation_level(
                 is_root, **extra_options
             )
             extra_options["isolation_level"] = isolation_level
-        if extra_options["isolation_level"] is None:
+
+        if (
+            extra_options.get("isolation_level") is None
+            or extra_options["isolation_level"] == self.old_transaction_level
+        ):
             extra_options.pop("isolation_level", None)
-        await connection.execution_options(**extra_options)
+            self.old_transaction_level = ""
+        if extra_options:
+            await connection.execution_options(**extra_options)
         assert (
             await connection.get_isolation_level() != "AUTOCOMMIT"
         ), "transactions doesn't work with AUTOCOMMIT. Please specify another transaction level."
-        if not connection.in_transaction():
-            self._transaction = await connection.begin()
+        if in_transaction:
+            self.raw_transaction = await connection.begin_nested()
         else:
-            self._transaction = await connection.begin_nested()
+            self.raw_transaction = await connection.begin()
 
     async def _close(self):
-        await self._transaction.close()
+        await self.raw_transaction.close()
         connection = self.connection.async_connection
         if connection is not None and self.old_transaction_level:
             await connection.execution_options(isolation_level=self.old_transaction_level)
 
     async def commit(self) -> None:
-        assert self._transaction is not None, "Transaction is not initialized"
-        await self._transaction.commit()
+        assert self.raw_transaction is not None, "Transaction is not initialized"
+        await self.raw_transaction.commit()
         await self._close()
 
     async def rollback(self) -> None:
-        assert self._transaction is not None, "Transaction is not initialized"
-        await self._transaction.rollback()
+        assert self.raw_transaction is not None, "Transaction is not initialized"
+        await self.raw_transaction.rollback()
         await self._close()
 
     def get_default_transaction_isolation_level(self, is_root: bool, **extra_options):
@@ -68,10 +77,11 @@ class SQLAlchemyTransaction(TransactionBackend):
 class SQLAlchemyConnection(ConnectionBackend):
     async_connection: typing.Optional[AsyncConnection] = None
 
-    async def acquire(self) -> None:
+    async def acquire(self) -> typing.Optional[typing.Any]:
         assert self.engine is not None, "Database is not started"
         assert self.async_connection is None, "Connection is already acquired"
         self.async_connection = await self.engine.connect()
+        return self.async_connection.get_transaction()
 
     async def release(self) -> None:
         assert self.async_connection is not None, "Connection is not acquired"
@@ -146,16 +156,6 @@ class SQLAlchemyConnection(ConnectionBackend):
         assert connection is not None, "Connection is not acquired"
         return connection.in_transaction()
 
-    async def commit(self) -> None:
-        connection = self.async_connection
-        assert connection is not None, "Connection is not acquired"
-        await connection.commit()
-
-    async def rollback(self) -> None:
-        connection = self.async_connection
-        assert connection is not None, "Connection is not acquired"
-        await connection.rollback()
-
 
 class SQLAlchemyDatabase(DatabaseBackend):
     default_isolation_level: str = "AUTOCOMMIT"
@@ -173,7 +173,15 @@ class SQLAlchemyDatabase(DatabaseBackend):
             options["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
         return database_url.replace(options=new_query_options), options
 
+    def json_serializer(self, inp: dict) -> str:
+        return orjson.dumps(inp).decode("utf8")
+
+    def json_deserializer(self, inp: typing.Union[str, bytes]) -> dict:
+        return orjson.loads(inp)
+
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:
+        options.setdefault("json_serializer", self.json_serializer)
+        options.setdefault("json_deserializer", self.json_deserializer)
         self.engine = create_async_engine(database_url.sqla_url, **options)
 
     async def disconnect(self) -> None:

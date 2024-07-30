@@ -38,7 +38,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Internet :: WWW/HTTP",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1"]
+dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson"]
 keywords = [
     "mysql",
     "postgres",
@@ -142,6 +142,9 @@ ignore_errors = true
 addopts = ["--strict-config", "--strict-markers", "--pdbcls=IPython.terminal.debugger:Pdb"]
 xfail_strict = true
 junit_family = "xunit2"
+setup_timeout = 2
+execution_timeout = 20
+teardown_timeout = 5
 
 [tool.hatch.build.targets.sdist]
 include = ["/databasez"]
@@ -195,7 +198,9 @@ extra-dependencies = [
     "starlette>=0.26.1",
     "httpx",
     "psycopg[binary]",
-    "pyodbc"
+    "pyodbc",
+    "pytest-timeouts",
+    "pytest-asyncio"
 ]
 
 [tool.hatch.envs.hatch-test.env-vars]

@@ -1,6 +1,5 @@
-import inspect
 import typing
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,

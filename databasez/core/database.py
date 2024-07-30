@@ -106,6 +106,7 @@ class Database:
                 connection_config = connection_config["credentials"]
                 url = url.replace(**connection_config)
         self.backend, self.url, self.options = self.apply_database_url_and_options(url, **options)
+        self.backend.owner = self
         self.is_connected = False
         self._connection_map = weakref.WeakKeyDictionary()
 
