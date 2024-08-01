@@ -33,7 +33,7 @@ class Connection(SQLAlchemyConnection):
                 return typing.cast(int, result.lastrowid)
             except AttributeError:
                 if result.is_insert and result.returned_defaults:
-                    return result.returned_defaults[0]
+                    return typing.cast(int, result.returned_defaults[0])
                 return typing.cast(int, result.rowcount)
 
     async def batched_iterate(

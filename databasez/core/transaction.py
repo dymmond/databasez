@@ -23,7 +23,7 @@ ACTIVE_TRANSACTIONS: ContextVar[
 class Transaction:
     def __init__(
         self,
-        connection_callable: typing.Callable[[], Connection],
+        connection_callable: typing.Callable[[], typing.Optional[Connection]],
         force_rollback: bool,
         existing_transaction: typing.Optional[typing.Any] = None,
         **kwargs: typing.Any,

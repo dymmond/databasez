@@ -18,6 +18,10 @@ if typing.TYPE_CHECKING:
     from databasez.core.transaction import Transaction as RootTransaction
 
 
+_P = typing.ParamSpec("_P")
+_T = typing.TypeVar("_T", bound=typing.Any)
+
+
 class Record(Sequence):
     @property
     def _mapping(self) -> Mapping[str, typing.Any]:
@@ -38,23 +42,30 @@ class TransactionBackend(ABC):
     @property
     def connection(self) -> typing.Optional[ConnectionBackend]:
         result = self.__dict__.get("connection")
-        if result is not None:
-            return result()
-        return result
+        if result is None:
+            return None
+        return typing.cast(ConnectionBackend, result())
 
     @connection.setter
-    def connection(self, value: ConnectionBackend):
+    def connection(self, value: ConnectionBackend) -> None:
         self.__dict__["connection"] = weakref.ref(value)
+
+    @property
+    def async_connection(self) -> typing.Optional[typing.Any]:
+        result = self.connection
+        if result is None:
+            return None
+        return result.async_connection
 
     @property
     def owner(self) -> typing.Optional[RootTransaction]:
         result = self.__dict__.get("owner")
-        if result is not None:
-            return result()
-        return result
+        if result is None:
+            return None
+        return typing.cast("RootTransaction", result())
 
     @owner.setter
-    def owner(self, value: RootTransaction):
+    def owner(self, value: RootTransaction) -> None:
         self.__dict__["owner"] = weakref.ref(value)
 
     @abstractmethod
@@ -71,7 +82,7 @@ class TransactionBackend(ABC):
     @abstractmethod
     def get_default_transaction_isolation_level(
         self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]
-    ): ...
+    ) -> str: ...
 
     @property
     def database(self) -> typing.Optional[DatabaseBackend]:
@@ -92,11 +103,10 @@ class TransactionBackend(ABC):
         database = self.database
         if database is None:
             return None
-        return database.root
+        return database.owner
 
 
 class ConnectionBackend(ABC):
-    database: DatabaseBackend
     async_connection: typing.Optional[typing.Any] = None
 
     def __init__(self, database: DatabaseBackend):
@@ -105,23 +115,23 @@ class ConnectionBackend(ABC):
     @property
     def database(self) -> typing.Optional[DatabaseBackend]:
         result = self.__dict__.get("database")
-        if result is not None:
-            return result()
-        return result
+        if result is None:
+            return None
+        return typing.cast(DatabaseBackend, result())
 
     @database.setter
-    def database(self, value: DatabaseBackend):
+    def database(self, value: DatabaseBackend) -> None:
         self.__dict__["database"] = weakref.ref(value)
 
     @property
     def owner(self) -> typing.Optional[RootConnection]:
         result = self.__dict__.get("owner")
-        if result is not None:
-            return result()
-        return result
+        if result is None:
+            return None
+        return typing.cast("RootConnection", result())
 
     @owner.setter
-    def owner(self, value: RootConnection):
+    def owner(self, value: RootConnection) -> None:
         self.__dict__["owner"] = weakref.ref(value)
 
     @abstractmethod
@@ -167,6 +177,14 @@ class ConnectionBackend(ABC):
         if isinstance(column, int):
             return row[column]
         return getattr(row, column)
+
+    @abstractmethod
+    async def run_sync(
+        self,
+        fn: typing.Callable[typing.Concatenate[typing.Any, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T: ...
 
     @abstractmethod
     async def execute_raw(self, stmt: typing.Any) -> typing.Any: ...
@@ -218,12 +236,12 @@ class DatabaseBackend(ABC):
     @property
     def owner(self) -> typing.Optional[RootDatabase]:
         result = self.__dict__.get("root")
-        if result is not None:
-            return result()
-        return result
+        if result is None:
+            return None
+        return typing.cast("RootDatabase", result())
 
     @owner.setter
-    def owner(self, value: RootDatabase):
+    def owner(self, value: RootDatabase) -> None:
         self.__dict__["root"] = weakref.ref(value)
 
     @abstractmethod

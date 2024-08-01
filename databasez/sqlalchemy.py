@@ -16,17 +16,22 @@ from sqlalchemy.sql import ClauseElement
 from databasez.interfaces import ConnectionBackend, DatabaseBackend, Record, TransactionBackend
 
 if typing.TYPE_CHECKING:
+    from sqlalchemy import Connection
+
     from databasez.core import DatabaseURL
 
 logger = logging.getLogger("databasez")
+
+_P = typing.ParamSpec("_P")
+_T = typing.TypeVar("_T", bound=typing.Any)
 
 
 class SQLAlchemyTransaction(TransactionBackend):
     raw_transaction: typing.Optional[typing.Any] = None
     old_transaction_level: str = ""
 
-    async def start(self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]) -> None:
-        connection = self.connection.async_connection
+    async def start(self, is_root: bool, **extra_options: typing.Any) -> None:
+        connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
         assert self.raw_transaction is None, "Transaction is already initialized"
         in_transaction = connection.in_transaction()
@@ -40,7 +45,7 @@ class SQLAlchemyTransaction(TransactionBackend):
 
         if (
             extra_options.get("isolation_level") is None
-            or extra_options["isolation_level"] == self.old_transaction_level
+            or typing.cast(str, extra_options["isolation_level"]) == self.old_transaction_level
         ):
             extra_options.pop("isolation_level", None)
             self.old_transaction_level = ""
@@ -54,9 +59,10 @@ class SQLAlchemyTransaction(TransactionBackend):
         else:
             self.raw_transaction = await connection.begin()
 
-    async def _close(self):
+    async def _close(self) -> None:
+        assert self.raw_transaction is not None, "Transaction is not initialized"
         await self.raw_transaction.close()
-        connection = self.connection.async_connection
+        connection = self.async_connection
         if connection is not None and self.old_transaction_level:
             await connection.execution_options(isolation_level=self.old_transaction_level)
 
@@ -70,7 +76,9 @@ class SQLAlchemyTransaction(TransactionBackend):
         await self.raw_transaction.rollback()
         await self._close()
 
-    def get_default_transaction_isolation_level(self, is_root: bool, **extra_options):
+    def get_default_transaction_isolation_level(
+        self, is_root: bool, **extra_options: typing.Any
+    ) -> str:
         return "SERIALIZABLE"
 
 
@@ -90,7 +98,7 @@ class SQLAlchemyConnection(ConnectionBackend):
 
     async def fetch_all(self, query: ClauseElement) -> typing.List[Record]:
         with await self.execute_raw(query) as result:
-            return result.fetchall()
+            return typing.cast(typing.List[Record], result.fetchall())
 
     async def fetch_one(self, query: ClauseElement, pos: int = 0) -> typing.Optional[Record]:
         if pos > 0:
@@ -99,9 +107,9 @@ class SQLAlchemyConnection(ConnectionBackend):
             query = query.limit(1)
         with await self.execute_raw(query) as result:
             if pos >= 0:
-                return result.first()
+                return typing.cast(typing.Optional[Record], result.first())
             elif pos == -1:
-                return await result.last()
+                return typing.cast(typing.Optional[Record], result.last())
             else:
                 raise NotImplementedError(
                     f"Only positive numbers and -1 for the last result are currently supported: {pos}"
@@ -115,13 +123,13 @@ class SQLAlchemyConnection(ConnectionBackend):
             batch_size = 100
         assert connection is not None, "Connection is not acquired"
 
-        async with (await connection.execution_options(yield_per=batch_size)).stream(
+        async with (await connection.execution_options(yield_per=batch_size)).stream(  # type: ignore
             query
         ) as result:
             async for batch in result.partitions():
                 yield batch
 
-    async def execute_raw(self, stmt: typing.Any) -> int:
+    async def execute_raw(self, stmt: typing.Any) -> typing.Any:
         connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
         return await connection.execute(stmt)
@@ -149,7 +157,19 @@ class SQLAlchemyConnection(ConnectionBackend):
 
     async def get_raw_connection(self) -> typing.Any:
         """The real raw connection."""
-        return await self.async_connection.get_raw_connection()
+        connection = self.async_connection
+        assert connection is not None, "Connection is not acquired"
+        return await connection.get_raw_connection()
+
+    async def run_sync(
+        self,
+        fn: typing.Callable[typing.Concatenate[Connection, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T:
+        connection = self.async_connection
+        assert connection is not None, "Connection is not acquired"
+        return await connection.run_sync(fn, *args, **kwargs)
 
     def in_transaction(self) -> bool:
         connection = self.async_connection
@@ -163,13 +183,13 @@ class SQLAlchemyDatabase(DatabaseBackend):
     def extract_options(
         self,
         database_url: DatabaseURL,
-        **options: typing.Dict[str, typing.Any],
+        **options: typing.Any,
     ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
         options.setdefault("isolation_level", self.default_isolation_level)
         new_query_options = dict(database_url.options)
         if "ssl" in new_query_options:
             assert "ssl" not in options
-            ssl = new_query_options.pop("ssl")
+            ssl = typing.cast(str, new_query_options.pop("ssl"))
             options["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
         return database_url.replace(options=new_query_options), options
 
@@ -177,12 +197,12 @@ class SQLAlchemyDatabase(DatabaseBackend):
         return orjson.dumps(inp).decode("utf8")
 
     def json_deserializer(self, inp: typing.Union[str, bytes]) -> dict:
-        return orjson.loads(inp)
+        return typing.cast(dict, orjson.loads(inp))
 
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:
-        options.setdefault("json_serializer", self.json_serializer)
-        options.setdefault("json_deserializer", self.json_deserializer)
         self.engine = create_async_engine(database_url.sqla_url, **options)
 
     async def disconnect(self) -> None:
-        await self.engine.dispose()
+        engine = self.engine
+        assert engine is not None, "database is not initialized"
+        await engine.dispose()

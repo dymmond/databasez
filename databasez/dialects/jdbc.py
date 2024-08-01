@@ -1,13 +1,20 @@
 import typing
 from concurrent.futures import ThreadPoolExecutor
+from importlib import import_module
 
+import orjson
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
 )
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.util.concurrency import await_
+from sqlalchemy.pool import AsyncAdaptedQueuePool
+from sqlalchemy.util.concurrency import await_only
 
 from databasez.utils import AsyncWrapper
+
+if typing.TYPE_CHECKING:
+    from sqlalchemy import URL
+    from sqlalchemy.engine.interfaces import ConnectArgsType
 
 
 class AsyncAdapt_adbapi2_connection(AsyncAdapt_dbapi_connection):
@@ -23,21 +30,48 @@ class JDBC_dialect(DefaultDialect):
 
     is_async = True
 
-    def connect(self, *arg, **kw):
-        creator_fn = kw.pop("async_creator_fn", self.aiomysql.connect)
+    def __init__(
+        self,
+        json_serializer: typing.Any = None,
+        json_deserializer: typing.Any = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
 
-        return AsyncAdapt_adbapi2_connection(
+    def create_connect_args(self, url: "URL") -> "ConnectArgsType":
+        jdbc_dsn_driver: str = url.query["jdbc_dsn_driver"]
+        jdbc_driver: typing.Optional[str] = url.query.get("jdbc_driver")
+        driver_args: typing.Any = url.query.get("jdbc_driver_args")
+        if driver_args:
+            driver_args = orjson.loads(driver_args)
+        dsn: str = url.difference_update_query(
+            ("jdbc_driver", "jdbc_driver_args")
+        ).render_as_string(hide_password=False)
+        dsn = dsn.replace("jdbc:", f"jdbc:{jdbc_dsn_driver}", 1)
+
+        return (dsn,), {"driver_args": driver_args, "driver": jdbc_driver}
+
+    def connect(self, *arg: typing.Any, **kw: typing.Any) -> AsyncAdapt_adbapi2_connection:
+        creator_fn = AsyncWrapper(
+            self.loaded_dbapi, pool=ThreadPoolExecutor(1, thread_name_prefix="jpype")
+        ).connect
+
+        creator_fn = kw.pop("async_creator_fn", creator_fn)
+
+        return AsyncAdapt_adbapi2_connection(  # type: ignore
             self,
-            await_(creator_fn(*arg, **kw)),
+            await_only(creator_fn(*arg, **kw)),
         )
+
+    @classmethod
+    def get_pool_class(cls, url):
+        return AsyncAdaptedQueuePool
 
     @classmethod
     def import_dbapi(
         cls,
     ) -> typing.Any:
-        return AsyncWrapper(
-            __import__("jpype.dbapi2"), pool=ThreadPoolExecutor(1, thread_name_prefix="jpype")
-        )
+        return import_module("jpype.dbapi2")
 
 
 dialect = JDBC_dialect

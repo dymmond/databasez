@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import decimal
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from urllib.parse import parse_qsl, urlsplit
 
 import pyodbc
@@ -11,6 +11,16 @@ import sqlalchemy
 from sqlalchemy.engine import URL, make_url
 
 from databasez import Database, DatabaseURL
+from tests.shared_db import (
+    AsyncMock,
+    articles,
+    create_database_tables,
+    custom_date,
+    drop_database_tables,
+    notes,
+    prices,
+    session,
+)
 
 assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
@@ -44,100 +54,17 @@ MIXED_DATABASE_CONFIG_URLS = [*DATABASE_URLS, *DATABASE_CONFIG_URLS]
 MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATABASE_URLS)]
 
 
-class AsyncMock(MagicMock):
-    async def __call__(self, *args, **kwargs):
-        return super().__call__(*args, **kwargs)
-
-
-class MyEpochType(sqlalchemy.types.TypeDecorator):
-    impl = sqlalchemy.Integer
-
-    epoch = datetime.date(1970, 1, 1)
-
-    def process_bind_param(self, value, dialect):
-        return (value - self.epoch).days
-
-    def process_result_value(self, value, dialect):
-        return self.epoch + datetime.timedelta(days=value)
-
-
-metadata = sqlalchemy.MetaData()
-
-notes = sqlalchemy.Table(
-    "notes",
-    metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("text", sqlalchemy.String(length=100)),
-    sqlalchemy.Column("completed", sqlalchemy.Boolean),
-)
-
-# Used to test DateTime
-articles = sqlalchemy.Table(
-    "articles",
-    metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("title", sqlalchemy.String(length=100)),
-    sqlalchemy.Column("published", sqlalchemy.DateTime),
-)
-
-# Used to test JSON
-session = sqlalchemy.Table(
-    "session",
-    metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("data", sqlalchemy.JSON),
-)
-
-# Used to test custom column types
-custom_date = sqlalchemy.Table(
-    "custom_date",
-    metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("title", sqlalchemy.String(length=100)),
-    sqlalchemy.Column("published", MyEpochType),
-)
-
-# Used to test Numeric
-prices = sqlalchemy.Table(
-    "prices",
-    metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("price", sqlalchemy.Numeric(precision=30, scale=20)),
-)
-
-
 @pytest.fixture(autouse=True, scope="function")
 def create_test_database():
-    # Create test databases with tables creation
+    # Create test databases
     for url in DATABASE_URLS:
-        database_url = str(DatabaseURL(url))
-        database_url = (
-            database_url.replace("sqlite+aiosqlite:", "sqlite:")
-            .replace("mssql+aioodbc:", "mssql+pyodbc:")
-            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
-            .replace("mysql+asyncmy:", "mysql+pymysql:")
-            .replace("mysql+aiomysql:", "mysql+pymysql:")
-        )
-
-        engine = sqlalchemy.create_engine(database_url)
-        metadata.create_all(engine)
+        asyncio.run(create_database_tables(url))
 
     # Run the test suite
     yield
 
-    # Drop test databases
     for url in DATABASE_URLS:
-        database_url = str(DatabaseURL(url))
-        database_url = (
-            database_url.replace("sqlite+aiosqlite:", "sqlite:")
-            .replace("mssql+aioodbc:", "mssql+pyodbc:")
-            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
-            .replace("mysql+asyncmy:", "mysql+pymysql:")
-            .replace("mysql+aiomysql:", "mysql+pymysql:")
-        )
-
-        engine = sqlalchemy.create_engine(database_url)
-        metadata.drop_all(engine)
+        asyncio.run(drop_database_tables(url))
 
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
@@ -147,12 +74,8 @@ async def test_queries(database_url):
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``,
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
 
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # execute()
             query = notes.insert()
@@ -240,12 +163,7 @@ async def test_queries_raw(database_url):
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``, and
     `fetch_one()` interfaces are all supported (raw queries).
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # execute()
             query = "INSERT INTO notes(text, completed) VALUES (:text, :completed)"
@@ -307,12 +225,8 @@ async def test_ddl_queries(database_url):
     Test that the built-in DDL elements such as `DropTable()`,
     `CreateTable()` are supported (using SQLAlchemy core).
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
 
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # DropTable()
             query = sqlalchemy.schema.DropTable(notes)
@@ -330,12 +244,8 @@ async def test_queries_after_error(database_url, exception):
     """
     Test that the basic `execute()` works after a previous error.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
 
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         with patch.object(
             database.connection()._connection,
             "acquire",
@@ -356,12 +266,7 @@ async def test_results_support_mapping_interface(database_url):
     Casting results to a dict should work, since the interface defines them
     as supporting the mapping interface.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # execute()
             query = notes.insert()
@@ -388,12 +293,7 @@ async def test_result_values_allow_duplicate_names(database_url):
     The values of a result should respect when two columns are selected
     with the same name.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             query = "SELECT 1 AS id, 2 AS id"
             row = await database.fetch_one(query=query)
@@ -408,12 +308,7 @@ async def test_fetch_one_returning_no_results(database_url):
     """
     fetch_one should return `None` when no results match.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # fetch_all()
             query = notes.select()
@@ -452,12 +347,7 @@ async def test_datetime_field(database_url):
     """
     Test DataTime columns, to ensure records are coerced to/from proper Python types.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             now = datetime.datetime.now().replace(microsecond=0)
 
@@ -480,7 +370,6 @@ async def test_decimal_field(database_url):
     """
     Test Decimal (NUMERIC) columns, to ensure records are coerced to/from proper Python types.
     """
-
     async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             price = decimal.Decimal("0.700000000000001")
@@ -507,12 +396,7 @@ async def test_json_field(database_url):
     """
     Test JSON columns, to ensure correct cross-database support.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # execute()
             data = {"text": "hello", "boolean": True, "int": 1}
@@ -560,12 +444,7 @@ async def test_connections_isolation(database_url):
     To check this we have to not create a transaction, so that
     each query ends up on a different connection from the pool.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         try:
             query = notes.insert().values(text="example1", completed=True)
             await database.execute(query)
@@ -660,12 +539,7 @@ async def test_connection_context_with_raw_connection(database_url):
     """
     Test connection contexts with respect to the raw connection.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.connection() as connection_1:
             async with database.connection() as connection_2:
                 assert connection_1 is connection_2
@@ -679,12 +553,7 @@ async def test_queries_with_expose_backend_connection(database_url):
     Replication of `execute()`, `execute_many()`, `fetch_all()``, and
     `fetch_one()` using the raw driver interface.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.connection() as connection:
             async with connection.transaction(force_rollback=True):
                 # Get the driver connection
@@ -882,6 +751,7 @@ async def test_global_connection_is_initialized_lazily(database_url):
             await asyncio.gather(db_lookup(), db_lookup())
 
     await run_database_queries()
+    await database.disconnect()
 
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
@@ -891,12 +761,7 @@ async def test_column_names(database_url, select_query):
     """
     Test that column names are exposed correctly through `._mapping.keys()` on each row.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.transaction(force_rollback=True):
             # insert values
             query = notes.insert()
@@ -936,12 +801,7 @@ async def test_mapping_property_interface(database_url):
     """
     Test that all connections implement interface with `_mapping` property
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         query = notes.insert()
         values = {"text": "example1", "completed": True}
         await database.execute(query, values)

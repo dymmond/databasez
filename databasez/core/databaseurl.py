@@ -78,6 +78,7 @@ class DatabaseURL:
         if isinstance(host, list):
             if len(host) > 0:
                 return host[0]
+            return None
         else:
             return host
 

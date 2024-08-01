@@ -8,6 +8,7 @@ import pytest
 import sqlalchemy
 
 from databasez import Database, DatabaseURL
+from tests.shared_db import create_database_tables, drop_database_tables, notes
 
 assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
@@ -16,49 +17,18 @@ DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split("
 if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
-metadata = sqlalchemy.MetaData()
-
-notes = sqlalchemy.Table(
-    "notes",
-    metadata,
-    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
-    sqlalchemy.Column("text", sqlalchemy.String(length=100)),
-    sqlalchemy.Column("completed", sqlalchemy.Boolean),
-)
-
 
 @pytest.fixture(autouse=True, scope="function")
 def create_test_database():
-    # Create test databases with tables creation
+    # Create test databases
     for url in DATABASE_URLS:
-        database_url = str(DatabaseURL(url))
-        database_url = (
-            database_url.replace("sqlite+aiosqlite:", "sqlite:")
-            .replace("mssql+aioodbc:", "mssql+pyodbc:")
-            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
-            .replace("mysql+asyncmy:", "mysql+pymysql:")
-            .replace("mysql+aiomysql:", "mysql+pymysql:")
-        )
-
-        engine = sqlalchemy.create_engine(database_url)
-        metadata.create_all(engine)
+        asyncio.run(create_database_tables(url))
 
     # Run the test suite
     yield
 
-    # Drop test databases
     for url in DATABASE_URLS:
-        database_url = str(DatabaseURL(url))
-        database_url = (
-            database_url.replace("sqlite+aiosqlite:", "sqlite:")
-            .replace("mssql+aioodbc:", "mssql+pyodbc:")
-            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
-            .replace("mysql+asyncmy:", "mysql+pymysql:")
-            .replace("mysql+aiomysql:", "mysql+pymysql:")
-        )
-
-        engine = sqlalchemy.create_engine(database_url)
-        metadata.drop_all(engine)
+        asyncio.run(drop_database_tables(url))
 
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)

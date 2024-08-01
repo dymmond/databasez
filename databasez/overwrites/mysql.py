@@ -7,7 +7,9 @@ if typing.TYPE_CHECKING:
 
 
 class Transaction(SQLAlchemyTransaction):
-    def get_default_transaction_isolation_level(self, is_root: bool, **extra_options):
+    def get_default_transaction_isolation_level(
+        self, is_root: bool, **extra_options: typing.Any
+    ) -> str:
         return "READ COMMITTED"
 
 
@@ -20,4 +22,6 @@ class Database(SQLAlchemyDatabase):
         database_url_new, options = super().extract_options(database_url, **options)
         if database_url_new.driver in {None, "pymysql"}:
             database_url_new = database_url_new.replace(driver="asyncmy")
+        options.setdefault("json_serializer", self.json_serializer)
+        options.setdefault("json_deserializer", self.json_deserializer)
         return database_url_new, options

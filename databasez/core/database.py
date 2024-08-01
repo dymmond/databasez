@@ -44,13 +44,17 @@ default_connection: typing.Type[interfaces.ConnectionBackend]
 default_transaction: typing.Type[interfaces.TransactionBackend]
 
 
+_P = typing.ParamSpec("_P")
+_T = typing.TypeVar("_T", bound=typing.Any)
+
+
 @lru_cache(1)
 def init() -> None:
     """Lazy init global defaults and register sqlalchemy dialects."""
     global default_database, default_connection, default_transaction
     from sqlalchemy.dialects import registry
 
-    registry.register("adbapi2", "databasez.dialects.adbapi2", "dialect")
+    registry.register("dbapi2", "databasez.dialects.dbapi2", "dialect")
     registry.register("jdbc", "databasez.dialects.jdbc", "dialect")
 
     default_database, default_connection, default_transaction = Database.get_backends(
@@ -261,9 +265,14 @@ class Database:
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
-    async def run_sync(self, fn: typing.Callable, **kwargs: typing.Any) -> typing.Any:
+    async def run_sync(
+        self,
+        fn: typing.Callable[typing.Concatenate[Connection, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T:
         async with self.connection() as connection:
-            return connection.run_sync(fn, **kwargs)
+            return connection.run_sync(fn, *args, **kwargs)
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
@@ -314,18 +323,21 @@ class Database:
     ]:
         module: typing.Any = None
         for overwrite_path in overwrite_paths:
+            imp_path = f"{overwrite_path}.{scheme.replace('+', '_')}" if scheme else overwrite_path
             try:
-                module = importlib.import_module(
-                    f"{overwrite_path}.{scheme.replace('+', '_')}" if scheme else overwrite_path
+                module = importlib.import_module(imp_path)
+            except ImportError as exc:
+                logging.debug(
+                    f'Import of "{imp_path}" failed. This is not an error.', exc_info=exc
                 )
-            except ImportError:
                 if "+" in scheme:
+                    imp_path = f"{overwrite_path}.{scheme.split('+', 1)[0]}"
                     try:
-                        module = importlib.import_module(
-                            f"{overwrite_path}.{scheme.split('+', 1)[0]}"
+                        module = importlib.import_module(imp_path)
+                    except ImportError as exc:
+                        logging.debug(
+                            f'Import of "{imp_path}" failed. This is not an error.', exc_info=exc
                         )
-                    except ImportError:
-                        pass
             if module is not None:
                 break
         database_class = getattr(module, database_name, database_class)
@@ -363,7 +375,7 @@ class Database:
             connection_class=connection_class, transaction_class=transaction_class
         )
         url, options = backend.extract_options(url, **options)
-
+        # check against transformed url
         assert url.sqla_url.get_dialect(True).is_async, f'Dialect: "{url.scheme}" is not async.'
 
         return backend, url, options

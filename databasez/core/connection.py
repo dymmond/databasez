@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import typing
 import weakref
-from functools import partial
 from types import TracebackType
 
 from sqlalchemy import text
@@ -17,6 +16,10 @@ if typing.TYPE_CHECKING:
     from sqlalchemy.sql import ClauseElement
 
     from .database import Database
+
+
+_P = typing.ParamSpec("_P")
+_T = typing.TypeVar("_T", bound=typing.Any)
 
 
 class Connection:
@@ -33,7 +36,7 @@ class Connection:
         self._transaction_stack: typing.List[Transaction] = []
 
         self._query_lock = asyncio.Lock()
-        self.connection_transaction: typing.Optional[interfaces.TransactionBackend] = None
+        self.connection_transaction: typing.Optional[Transaction] = None
 
     async def __aenter__(self) -> Connection:
         async with self._connection_lock:
@@ -134,9 +137,14 @@ class Connection:
             async for records in self._connection.batched_iterate(built_query, batch_size):
                 yield records
 
-    async def run_sync(self, fn: typing.Callable, **kwargs: typing.Any) -> typing.Any:
+    async def run_sync(
+        self,
+        fn: typing.Callable[typing.Concatenate[Connection, _P], _T],
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T:
         async with self._query_lock:
-            return self._connection.run_sync(partial(fn, **kwargs))
+            return await self._connection.run_sync(fn, *args, **kwargs)
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         await self.run_sync(meta.create_all, **kwargs)
