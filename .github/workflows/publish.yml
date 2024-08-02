@@ -4,7 +4,7 @@ name: Publish
 on:
   push:
     tags:
-      - '*'
+      - '[0-9]*'
 
 jobs:
   publish:
@@ -16,8 +16,6 @@ jobs:
       - uses: "actions/setup-python@v5"
         with:
           python-version: 3.12
-      - name: "Install dependencies"
-        run: "scripts/install"
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: pip install hatch
