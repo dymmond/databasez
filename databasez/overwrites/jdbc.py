@@ -50,7 +50,9 @@ class Database(SQLAlchemyDatabase):
         return database_url_new.replace(driver=None, options=new_query_options), options
 
     async def connect(self, database_url: "DatabaseURL", **options: typing.Any) -> None:
-        classpath: typing.Optional[typing.Union[str, typing.List[str]]] = options.pop("classpath", None)
+        classpath: typing.Optional[typing.Union[str, typing.List[str]]] = options.pop(
+            "classpath", None
+        )
         if classpath:
             if isinstance(classpath, str):
                 classpath = [classpath]
