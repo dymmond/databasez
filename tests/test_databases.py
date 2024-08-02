@@ -473,13 +473,17 @@ async def test_connect_and_disconnect(database_url):
     database = Database(**data)
 
     assert not database.is_connected
+    assert database.engine is None
     await database.connect()
     assert database.is_connected
+    assert database.engine is not None
+    old_engine = database.engine
     await database.disconnect()
     assert not database.is_connected
 
     # connect and disconnect idempotence
     await database.connect()
+    assert database.engine is not old_engine
     await database.connect()
     assert database.is_connected
     await database.disconnect()
