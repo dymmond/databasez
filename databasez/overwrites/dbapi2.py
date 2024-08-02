@@ -24,5 +24,5 @@ class Database(SQLAlchemyDatabase):
         database_url_new, options = super().extract_options(database_url, **options)
         new_query_options = dict(database_url.options)
         if database_url_new.driver:
-            new_query_options["dbapi2_dsn_driver"] = database_url_new.driver
+            new_query_options["dbapi_dsn_driver"] = database_url_new.driver
         return database_url_new.replace(driver=None, options=new_query_options), options

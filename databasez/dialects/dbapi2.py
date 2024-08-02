@@ -54,15 +54,15 @@ class DBAPI2_dialect(DefaultDialect):
                 setattr(self, k, v)
 
     def create_connect_args(self, url: "URL") -> "ConnectArgsType":
-        dbapi2_dsn_driver: typing.Optional[str] = url.query.get("dbapi2_dsn_driver")  # type: ignore
-        driver_args: typing.Any = url.query.get("dbapi2_driver_args")
+        dbapi_dsn_driver: typing.Optional[str] = url.query.get("dbapi_dsn_driver")  # type: ignore
+        driver_args: typing.Any = url.query.get("dbapi_driver_args")
         if driver_args:
             driver_args = orjson.loads(driver_args)
         dsn: str = url.difference_update_query(
-            ("dbapi2_dsn_driver", "dbapi2_driver_args")
+            ("dbapi_dsn_driver", "dbapi_driver_args")
         ).render_as_string(hide_password=False)
-        if dbapi2_dsn_driver:
-            dsn = dsn.replace("dbapi2:", dbapi2_dsn_driver, 1)
+        if dbapi_dsn_driver:
+            dsn = dsn.replace("dbapi2:", dbapi_dsn_driver, 1)
         else:
             dsn = dsn.replace("dbapi2://", "", 1)
 
