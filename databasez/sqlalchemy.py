@@ -157,7 +157,7 @@ class SQLAlchemyConnection(ConnectionBackend):
             if result.is_insert:
                 try:
                     if result.returned_defaults:
-                        return result.returned_defaults
+                        return typing.cast(Record, result.returned_defaults)
                 except AttributeError:
                     pass
                 try:
