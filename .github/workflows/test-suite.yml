@@ -87,7 +87,7 @@ jobs:
         run: pip install hatch
       - name: "Run linting"
         if: steps.filters.outputs.src == 'true'
-        run: "hatch fmt"
+        run: "hatch fmt --check"
       - name: "Run mypy"
         if: steps.filters.outputs.src == 'true'
         run: "hatch run test:check_types"
