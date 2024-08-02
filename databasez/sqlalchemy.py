@@ -17,14 +17,9 @@ from sqlalchemy.sql import ClauseElement
 from databasez.interfaces import ConnectionBackend, DatabaseBackend, Record, TransactionBackend
 
 if typing.TYPE_CHECKING:
-    from sqlalchemy import Connection
-
     from databasez.core import DatabaseURL
 
 logger = logging.getLogger("databasez")
-
-_P = typing.ParamSpec("_P")
-_T = typing.TypeVar("_T", bound=typing.Any)
 
 
 def batched(iterable: typing.Iterable[typing.Any], n: int) -> typing.Any:
@@ -183,13 +178,13 @@ class SQLAlchemyConnection(ConnectionBackend):
 
     async def run_sync(
         self,
-        fn: typing.Callable[typing.Concatenate[Connection, _P], _T],
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> _T:
+        fn: typing.Callable[..., typing.Any],
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Any:
         connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
-        return typing.cast(_T, await connection.run_sync(fn, *args, **kwargs))
+        return await connection.run_sync(fn, *args, **kwargs)
 
     def in_transaction(self) -> bool:
         connection = self.async_connection

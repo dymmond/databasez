@@ -18,10 +18,6 @@ if typing.TYPE_CHECKING:
     from databasez.core.transaction import Transaction as RootTransaction
 
 
-_P = typing.ParamSpec("_P")
-_T = typing.TypeVar("_T", bound=typing.Any)
-
-
 class Record(Sequence):
     @property
     def _mapping(self) -> Mapping[str, typing.Any]:
@@ -181,10 +177,10 @@ class ConnectionBackend(ABC):
     @abstractmethod
     async def run_sync(
         self,
-        fn: typing.Callable[typing.Concatenate[typing.Any, _P], _T],
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> _T: ...
+        fn: typing.Callable[..., typing.Any],
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Any: ...
 
     @abstractmethod
     async def execute_raw(self, stmt: typing.Any) -> typing.Any: ...

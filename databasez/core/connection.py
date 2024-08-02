@@ -18,10 +18,6 @@ if typing.TYPE_CHECKING:
     from .database import Database
 
 
-_P = typing.ParamSpec("_P")
-_T = typing.TypeVar("_T", bound=typing.Any)
-
-
 class Connection:
     def __init__(self, database: Database, backend: interfaces.DatabaseBackend) -> None:
         self._database = database
@@ -139,10 +135,10 @@ class Connection:
 
     async def run_sync(
         self,
-        fn: typing.Callable[typing.Concatenate[typing.Any, _P], _T],
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> _T:
+        fn: typing.Callable[..., typing.Any],
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Any:
         async with self._query_lock:
             return await self._connection.run_sync(fn, *args, **kwargs)
 

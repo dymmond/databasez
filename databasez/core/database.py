@@ -44,10 +44,6 @@ default_connection: typing.Type[interfaces.ConnectionBackend]
 default_transaction: typing.Type[interfaces.TransactionBackend]
 
 
-_P = typing.ParamSpec("_P")
-_T = typing.TypeVar("_T", bound=typing.Any)
-
-
 @lru_cache(1)
 def init() -> None:
     """Lazy init global defaults and register sqlalchemy dialects."""
@@ -267,12 +263,12 @@ class Database:
 
     async def run_sync(
         self,
-        fn: typing.Callable[typing.Concatenate[typing.Any, _P], _T],
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> _T:
+        fn: typing.Callable[..., typing.Any],
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> typing.Any:
         async with self.connection() as connection:
-            return typing.cast(_T, connection.run_sync(fn, *args, **kwargs))
+            return connection.run_sync(fn, *args, **kwargs)
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
