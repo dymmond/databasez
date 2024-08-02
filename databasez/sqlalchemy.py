@@ -160,7 +160,10 @@ class SQLAlchemyConnection(ConnectionBackend):
                         return result.returned_defaults
                 except AttributeError:
                     pass
-                return typing.cast(int, result.lastrowid)
+                try:
+                    return typing.cast(int, result.lastrowid)
+                except AttributeError:
+                    pass
             return typing.cast(int, result.rowcount)
 
     async def execute_many(self, stmts: typing.List[typing.Any]) -> None:
