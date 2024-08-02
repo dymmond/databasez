@@ -76,7 +76,7 @@ Internally Esmerald handles the `on_startup` and `on_shutdown` in a unique and c
 it will automatically generate the `Lifespan` events for you.
 
 !!! Note
-    Since the author of [Esmerald][esmerald] and [Saffier][saffier] is the same and you would like to
+    Since the author of [Esmerald][esmerald] and [Edgy][edgy] is the same and you would like to
     have those same type of events to continue also for Starlette even after the deprecation and without
     breaking your code or diverge from Starlette's base, the same author is the creator of
     [Starlette Bridge][starlette-bridge] where it was shared the same approach created for Esmerald with
@@ -295,10 +295,23 @@ async with databases.Database(database_url) as db:
 ```
 
 ```python
-async with database.transaction(isolation="serializable"):
+async with database.transaction(isolation_level="serializable"):
     ...
 ```
 
+## Reusing sqlalchemy engine of databasez
+
+For integration in other libraries databasez has also the AsyncEngine exposed via the `engine` property.
+If a database is connected you can retrieve the engine from there.
+
+## Special jdbc/dbapi2 stuff
+
+Currently there is not much documentation and you have to check the overwrites and dialects yourself to get an idea how it works.
+Additional there is a jdbc test with a really old sqlite jdbc jar so you may get an idea how it works.
+
+However it is planned to update the documentation.
+
 [esmerald]: https://github.com/dymmond/esmerald
+[edgy]: https://github.com/dymmond/edgy
 [saffier]: https://github.com/tarsil/saffier
 [starlette-bridge]: https://github.com/tarsil/starlette-bridge

@@ -38,7 +38,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Internet :: WWW/HTTP",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson"]
+dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "sqlalchemy_utils>=0.40.0"]
 keywords = [
     "mysql",
     "postgres",
@@ -58,7 +58,7 @@ Funding = "https://github.com/sponsors/tarsil"
 Source = "https://github.com/dymmond/databasez"
 
 [project.optional-dependencies]
-testing = ["nest_asyncio>=1.6.0,<2", "sqlalchemy_utils>=0.40.0",]
+testing = ["nest_asyncio>=1.6.0,<2"]
 aiomysql = ["aiomysql"]
 aioodbc = ["aioodbc"]
 aiosqlite = ["aiosqlite"]

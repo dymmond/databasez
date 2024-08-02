@@ -10,12 +10,15 @@ from sqlalchemy.connectors.asyncio import (
 )
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.pool import AsyncAdaptedQueuePool
+from sqlalchemy.sql import text
 from sqlalchemy.util.concurrency import await_only
+from sqlalchemy_utils.functions.orm import quote
 
 from databasez.utils import AsyncWrapper
 
 if typing.TYPE_CHECKING:
     from sqlalchemy import URL
+    from sqlalchemy.base import Connection
     from sqlalchemy.engine.interfaces import ConnectArgsType
 
 
@@ -32,9 +35,10 @@ class DBAPI2_dialect(DefaultDialect):
     Takes a (a)dbapi object and wraps the functions. Generalized
     """
 
-    driver = "adbapi2"
+    driver = "dbapi2"
 
     is_async = True
+    supports_statement_cache = True
 
     def __init__(
         self,
@@ -50,7 +54,7 @@ class DBAPI2_dialect(DefaultDialect):
                 setattr(self, k, v)
 
     def create_connect_args(self, url: "URL") -> "ConnectArgsType":
-        dbapi2_dsn_driver: typing.Optional[str] = url.query.get("dbapi2_dsn_driver")
+        dbapi2_dsn_driver: typing.Optional[str] = url.query.get("dbapi2_dsn_driver")  # type: ignore
         driver_args: typing.Any = url.query.get("dbapi2_driver_args")
         if driver_args:
             driver_args = orjson.loads(driver_args)
@@ -66,15 +70,33 @@ class DBAPI2_dialect(DefaultDialect):
 
     def connect(self, *arg: typing.Any, **kw: typing.Any) -> AsyncAdapt_dbapi_connection:  # type: ignore
         creator_fn = kw.pop("async_creator_fn", self.loaded_dbapi.connect)
-
         return AsyncAdapt_dbapi_connection(  # type: ignore
             self,
             await_only(creator_fn(*arg, **kw)),
         )
 
     @classmethod
-    def get_pool_class(cls, url):
+    def get_pool_class(cls, url: "URL") -> typing.Any:
         return AsyncAdaptedQueuePool
+
+    def has_table(
+        self,
+        connection: "Connection",
+        table_name: str,
+        schema: typing.Optional[str] = None,
+        **kw: typing.Any,
+    ) -> bool:
+        stmt = text(f"select * from '{quote(connection, table_name)}' LIMIT 1")
+        try:
+            connection.execute(stmt)
+            return True
+        except Exception as exc:
+            return False
+
+    def get_isolation_level(
+        self, dbapi_connection: typing.Any
+    ) -> typing.Any:
+        return None
 
     @classmethod
     def import_dbapi(  # type: ignore
@@ -93,7 +115,11 @@ class DBAPI2_dialect(DefaultDialect):
         if dbapi_force_async_wrapper is None:
             # is async -> no need for the wrapper
             if not inspect.iscoroutinefunction(dbapi_namespace.connect):
-                dbapi_namespace = AsyncWrapper(dbapi_namespace, get_pool_for(dbapi_pool))  # type: ignore
+                dbapi_namespace = AsyncWrapper(
+                    dbapi_namespace,
+                    get_pool_for(dbapi_pool),
+                    exclude_attrs={"connect": {"cursor": True}},
+                )  # type: ignore
         elif dbapi_force_async_wrapper:
             dbapi_namespace = AsyncWrapper(dbapi_namespace, get_pool_for(dbapi_pool))  # type: ignore
         return dbapi_namespace

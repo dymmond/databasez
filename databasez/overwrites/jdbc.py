@@ -1,8 +1,9 @@
 import typing
-
+import os
+from pathlib import Path
 from jpype import addClassPath, isJVMStarted, startJVM
 
-from databasez.sqlalchemy import SQLAlchemyDatabase
+from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction
 
 if typing.TYPE_CHECKING:
     from databasez.core.databaseurl import DatabaseURL
@@ -11,27 +12,57 @@ if typing.TYPE_CHECKING:
 seen_classpathes: typing.Set[str] = set()
 
 
+class Transaction(SQLAlchemyTransaction):
+    def get_default_transaction_isolation_level(
+        self, is_root: bool, **extra_options: typing.Any
+    ) -> typing.Optional[str]:
+        return None
+
 class Database(SQLAlchemyDatabase):
+    default_isolation_level = None
+
     def extract_options(
         self,
         database_url: "DatabaseURL",
-        **options: typing.Dict[str, typing.Any],
+        **options: typing.Any,
     ) -> typing.Tuple["DatabaseURL", typing.Dict[str, typing.Any]]:
         database_url_new, options = super().extract_options(database_url, **options)
         new_query_options = dict(database_url.options)
         if database_url_new.driver:
             new_query_options["jdbc_dsn_driver"] = database_url_new.driver
+        if "classpath" in new_query_options:
+            old_classpath = options.pop("classpath", None)
+            new_classpath: typing.List[str] = []
+            if old_classpath:
+                if isinstance(old_classpath, str):
+                    new_classpath.append(old_classpath)
+                else:
+                    new_classpath.extend(old_classpath)
+            query_classpath = new_query_options.pop("classpath")
+            if query_classpath:
+                if isinstance(query_classpath, str):
+                    new_classpath.append(query_classpath)
+                else:
+                    new_classpath.extend(query_classpath)
+            options["classpath"] = new_classpath
         return database_url_new.replace(driver=None, options=new_query_options), options
 
     async def connect(self, database_url: "DatabaseURL", **options: typing.Any) -> None:
+        classpath: typing.Optional[typing.Union[str, list[str]]] = options.pop("classpath", None)
+        if classpath:
+            if isinstance(classpath, str):
+                classpath = [classpath]
+            parent_dir = Path(os.getcwd())
+            for clpath in classpath:
+                _classpath: str = str(clpath)
+                if _classpath not in seen_classpathes:
+                    seen_classpathes.add(_classpath)
+                    # add original
+                    try:
+                        addClassPath(parent_dir.joinpath(clpath))
+                    except Exception as exc:
+                        raise Exception(str(exc)) from None
+
         if not isJVMStarted():
             startJVM()
-        classpath: typing.Optional[str] = options.pop("classpath", None)
-        if classpath:
-            _classpath: str = str(classpath)
-            if _classpath not in seen_classpathes:
-                seen_classpathes.add(_classpath)
-                # add original
-                addClassPath(classpath)
-
         await super().connect(database_url, **options)

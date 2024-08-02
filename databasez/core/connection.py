@@ -139,7 +139,7 @@ class Connection:
 
     async def run_sync(
         self,
-        fn: typing.Callable[typing.Concatenate[Connection, _P], _T],
+        fn: typing.Callable[typing.Concatenate[typing.Any, _P], _T],
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> _T:

@@ -267,12 +267,12 @@ class Database:
 
     async def run_sync(
         self,
-        fn: typing.Callable[typing.Concatenate[Connection, _P], _T],
+        fn: typing.Callable[typing.Concatenate[typing.Any, _P], _T],
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> _T:
         async with self.connection() as connection:
-            return connection.run_sync(fn, *args, **kwargs)
+            return typing.cast(_T, connection.run_sync(fn, *args, **kwargs))
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:

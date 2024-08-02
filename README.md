@@ -78,16 +78,12 @@ $ pip install databasez[testing]
 
 ## What does databasez support at the moment
 
-Databasez currently supports `sqlite`, `postgres`, `mysql` and `sql server`. More drivers can and
-will be added in the future.
+Databasez currently supports nearly all async drivers of sqlalchemy.
 
-Database drivers supported are:
+If this is not enough there are two special dialects with restricted features:
 
-* [asyncpg][asyncpg] - For postgres.
-* [aiomysql][aiomysql] - For MySQL/MariaDB.
-* [asyncmy][asyncmy] - For MySQL/MariaDB.
-* [aiosqlite][aiosqlite] - For SQLite.
-* [aioodbc][aioodbc] - For MSSQL (SQL Server).
+- jdbc: can load nearly any jdbc driver
+- dbapi2: can load nearly any dbapi2 driver (python standard), async as well as sync.
 
 ### Driver installation
 

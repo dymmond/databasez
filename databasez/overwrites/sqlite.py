@@ -17,7 +17,7 @@ class Database(SQLAlchemyDatabase):
     def extract_options(
         self,
         database_url: "DatabaseURL",
-        **options: typing.Dict[str, typing.Any],
+        **options: typing.Any,
     ) -> typing.Tuple["DatabaseURL", typing.Dict[str, typing.Any]]:
         database_url_new, options = super().extract_options(database_url, **options)
         if database_url_new.driver is None:

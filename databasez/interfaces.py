@@ -82,7 +82,7 @@ class TransactionBackend(ABC):
     @abstractmethod
     def get_default_transaction_isolation_level(
         self, is_root: bool, **extra_options: typing.Dict[str, typing.Any]
-    ) -> str: ...
+    ) -> typing.Optional[str]: ...
 
     @property
     def database(self) -> typing.Optional[DatabaseBackend]:
@@ -224,6 +224,7 @@ class DatabaseBackend(ABC):
     engine: typing.Optional[AsyncEngine] = None
     connection_class: typing.Type[ConnectionBackend]
     transaction_class: typing.Type[TransactionBackend]
+    default_batch_size: int
 
     def __init__(
         self,

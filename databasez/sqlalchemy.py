@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import typing
+from itertools import islice
 
 import orjson
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
@@ -24,6 +25,15 @@ logger = logging.getLogger("databasez")
 
 _P = typing.ParamSpec("_P")
 _T = typing.TypeVar("_T", bound=typing.Any)
+
+
+def batched(iterable: typing.Iterable[typing.Any], n: int) -> typing.Any:
+    # dropin, batched is not available for pythpn < 3.12
+    iterator = iter(iterable)
+    batch = tuple(islice(iterator, n))
+    while batch:
+        yield batch
+        batch = tuple(islice(iterator, n))
 
 
 class SQLAlchemyTransaction(TransactionBackend):
@@ -78,7 +88,7 @@ class SQLAlchemyTransaction(TransactionBackend):
 
     def get_default_transaction_isolation_level(
         self, is_root: bool, **extra_options: typing.Any
-    ) -> str:
+    ) -> typing.Optional[str]:
         return "SERIALIZABLE"
 
 
@@ -119,9 +129,17 @@ class SQLAlchemyConnection(ConnectionBackend):
         self, query: ClauseElement, batch_size: typing.Optional[int] = None
     ) -> typing.AsyncGenerator[typing.Any, None]:
         connection = self.async_connection
-        if batch_size is None:
-            batch_size = 100
         assert connection is not None, "Connection is not acquired"
+        database = self.database
+        assert database
+        if batch_size is None:
+            batch_size = database.default_batch_size
+
+        if not connection.dialect.supports_server_side_cursors:
+            with await self.execute_raw(query) as result:
+                for batch in batched(typing.cast(typing.List[Record], result.fetchall()), batch_size):
+                    yield batch
+                return
 
         async with (await connection.execution_options(yield_per=batch_size)).stream(  # type: ignore
             query
@@ -169,7 +187,7 @@ class SQLAlchemyConnection(ConnectionBackend):
     ) -> _T:
         connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
-        return await connection.run_sync(fn, *args, **kwargs)
+        return typing.cast(_T, await connection.run_sync(fn, *args, **kwargs))
 
     def in_transaction(self) -> bool:
         connection = self.async_connection
@@ -178,14 +196,16 @@ class SQLAlchemyConnection(ConnectionBackend):
 
 
 class SQLAlchemyDatabase(DatabaseBackend):
-    default_isolation_level: str = "AUTOCOMMIT"
+    default_isolation_level: typing.Optional[str] = "AUTOCOMMIT"
+    default_batch_size: int = 100
 
     def extract_options(
         self,
         database_url: DatabaseURL,
         **options: typing.Any,
     ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
-        options.setdefault("isolation_level", self.default_isolation_level)
+        if self.default_isolation_level is not None:
+            options.setdefault("isolation_level", self.default_isolation_level)
         new_query_options = dict(database_url.options)
         if "ssl" in new_query_options:
             assert "ssl" not in options

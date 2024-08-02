@@ -69,8 +69,9 @@ class DatabaseTestClient(Database):
         """
         return await self.database_exists(self.test_db_url)
 
-    async def database_exists(self, url: str) -> Any:
-        url = sa.make_url(url)
+    async def database_exists(self, url: typing.Union[str, sa.URL]) -> Any:
+        if isinstance(url, str):
+            url = sa.make_url(url)
         database = url.database
         dialect_name = url.get_dialect().name
         engine = None
@@ -116,9 +117,10 @@ class DatabaseTestClient(Database):
                 await engine.dispose()
 
     async def create_database(
-        self, url: str, encoding: str = "utf8", template: typing.Any = None
+        self, url: typing.Union[str, sa.URL], encoding: str = "utf8", template: typing.Any = None
     ) -> Any:
-        url = sa.make_url(url)
+        if isinstance(url, str):
+            url = sa.make_url(url)
         database = url.database
         dialect_name = url.get_dialect().name
         dialect_driver = url.get_dialect().driver
@@ -170,8 +172,9 @@ class DatabaseTestClient(Database):
 
         await engine.dispose()
 
-    async def drop_database(self, url: str) -> Any:
-        url = sa.make_url(url)
+    async def drop_database(self, url: typing.Union[str, sa.URL]) -> Any:
+        if isinstance(url, str):
+            url = sa.make_url(url)
         database = url.database
         dialect_name = url.get_dialect().name
         dialect_driver = url.get_dialect().driver

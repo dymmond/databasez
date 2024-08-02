@@ -383,7 +383,7 @@ async def test_transaction_commit_serializable(database_url):
         conn.close()
 
     async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True, isolation="serializable"):
+        async with database.transaction(force_rollback=True, isolation_level="serializable"):
             query = notes.select()
             results = await database.fetch_all(query=query)
             assert len(results) == 0

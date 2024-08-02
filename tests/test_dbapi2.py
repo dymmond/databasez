@@ -2,15 +2,23 @@ import pytest
 import sqlalchemy
 
 from databasez import Database
-from tests.shared_db import metadata, notes
 
+# we have not many db types available
+metadata = sqlalchemy.MetaData()
+
+notes = sqlalchemy.Table(
+    "notes",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("text", sqlalchemy.String(length=100)),
+    sqlalchemy.Column("completed", sqlalchemy.Boolean),
+)
 
 @pytest.mark.asyncio
 async def test_dbapi2_connect():
     """
     Test that a basic connection works.
     """
-    pytest.skip("does not work yet")
     async with Database("dbapi2://testsuite.sqlite3", dbapi_path="sqlite3") as database:
         async with database.connection():
             pass
@@ -22,7 +30,6 @@ async def test_dbapi2_queries():
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``,
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
-    pytest.skip("does not work yet")
     async with Database("dbapi2://testsuite.sqlite3", dbapi_path="sqlite3") as database:
         await database.create_all(metadata)
         try:

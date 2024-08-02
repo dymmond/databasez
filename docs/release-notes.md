@@ -5,6 +5,8 @@
 ### Added
 
 - `batched_iterate`
+- `jdbc` dialect to load nearly all jdbc drivers (note: many features won't work)
+- `dbapi2` dialect to load nearly all dbapi2 drivers (note: many features won't work)
 
 ### Changed
 
@@ -17,6 +19,7 @@
 
 - `aiopg` support (no update for 2 years and better alternatives available)
 - Remove Makefile and other scripts
+- own `run_sync` implementation. Use asyncio.run instead.
 
 ### Fixed
 
