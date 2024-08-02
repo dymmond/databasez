@@ -209,7 +209,5 @@ mysql+aiomysql://username:passwsss*1348394#@localhost:3306/testsuite,\
 mysql+asyncmy://username:passwsss*1348394#@localhost:3306/testsuite,\
 postgresql+psycopg://username:passwsss*1348394#@localhost:5432/testsuite,\
 postgresql+asyncpg://username:passwsss*1348394#@localhost:5432/testsuite,\
-mssql://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server,\
-mssql+pyodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server,\
 mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server\
 """
