@@ -10,7 +10,7 @@ class Transaction(SQLAlchemyTransaction):
     def get_default_transaction_isolation_level(
         self, is_root: bool, **extra_options: typing.Any
     ) -> str:
-        return "READ COMMITTED"
+        return "READ UNCOMMITTED"
 
 
 class Database(SQLAlchemyDatabase):
