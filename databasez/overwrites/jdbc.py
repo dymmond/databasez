@@ -1,6 +1,7 @@
-import typing
 import os
+import typing
 from pathlib import Path
+
 from jpype import addClassPath, isJVMStarted, startJVM
 
 from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction
@@ -17,6 +18,7 @@ class Transaction(SQLAlchemyTransaction):
         self, is_root: bool, **extra_options: typing.Any
     ) -> typing.Optional[str]:
         return None
+
 
 class Database(SQLAlchemyDatabase):
     default_isolation_level = None

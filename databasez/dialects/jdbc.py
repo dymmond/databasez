@@ -8,9 +8,9 @@ from sqlalchemy.connectors.asyncio import (
 )
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.pool import AsyncAdaptedQueuePool
+from sqlalchemy.sql import text
 from sqlalchemy.util.concurrency import await_only
 from sqlalchemy_utils.functions.orm import quote
-from sqlalchemy.sql import text
 
 from databasez.utils import AsyncWrapper
 
@@ -44,7 +44,9 @@ class JDBC_dialect(DefaultDialect):
 
     def create_connect_args(self, url: "URL") -> "ConnectArgsType":
         jdbc_dsn_driver: str = typing.cast(str, url.query["jdbc_dsn_driver"])
-        jdbc_driver: typing.Optional[str] = typing.cast(typing.Optional[str], url.query.get("jdbc_driver"))
+        jdbc_driver: typing.Optional[str] = typing.cast(
+            typing.Optional[str], url.query.get("jdbc_driver")
+        )
         driver_args: typing.Any = url.query.get("jdbc_driver_args")
         if driver_args:
             driver_args = orjson.loads(driver_args)
@@ -81,12 +83,10 @@ class JDBC_dialect(DefaultDialect):
         try:
             connection.execute(stmt)
             return True
-        except Exception as exc:
+        except Exception:
             return False
 
-    def get_isolation_level(
-        self, dbapi_connection: typing.Any
-    ) -> typing.Any:
+    def get_isolation_level(self, dbapi_connection: typing.Any) -> typing.Any:
         return None
 
     @classmethod

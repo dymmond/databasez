@@ -90,12 +90,10 @@ class DBAPI2_dialect(DefaultDialect):
         try:
             connection.execute(stmt)
             return True
-        except Exception as exc:
+        except Exception:
             return False
 
-    def get_isolation_level(
-        self, dbapi_connection: typing.Any
-    ) -> typing.Any:
+    def get_isolation_level(self, dbapi_connection: typing.Any) -> typing.Any:
         return None
 
     @classmethod

@@ -88,7 +88,9 @@ async def test_jdbc_queries():
                     assert result == "example1"
 
                     # fetch_val() with no rows
-                    query = sqlalchemy.sql.select(*[notes.c.text]).where(notes.c.text == "impossible")
+                    query = sqlalchemy.sql.select(*[notes.c.text]).where(
+                        notes.c.text == "impossible"
+                    )
                     result = await database.fetch_val(query=query)
                     assert result is None
 

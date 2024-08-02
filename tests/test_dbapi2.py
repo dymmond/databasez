@@ -14,6 +14,7 @@ notes = sqlalchemy.Table(
     sqlalchemy.Column("completed", sqlalchemy.Boolean),
 )
 
+
 @pytest.mark.asyncio
 async def test_dbapi2_connect():
     """

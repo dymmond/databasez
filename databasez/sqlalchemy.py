@@ -137,7 +137,9 @@ class SQLAlchemyConnection(ConnectionBackend):
 
         if not connection.dialect.supports_server_side_cursors:
             with await self.execute_raw(query) as result:
-                for batch in batched(typing.cast(typing.List[Record], result.fetchall()), batch_size):
+                for batch in batched(
+                    typing.cast(typing.List[Record], result.fetchall()), batch_size
+                ):
                     yield batch
                 return
 
