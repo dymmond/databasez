@@ -144,6 +144,8 @@ junit_family = "xunit2"
 setup_timeout = 2
 execution_timeout = 20
 teardown_timeout = 5
+reruns = 3
+reruns_delay = 1
 
 [tool.hatch.build.targets.sdist]
 include = ["/databasez"]
@@ -199,6 +201,7 @@ extra-dependencies = [
     "psycopg[binary]",
     "pyodbc",
     "pytest-timeouts",
+    "pytest-rerunfailures",
     "pytest-asyncio"
 ]
 
