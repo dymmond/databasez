@@ -186,11 +186,9 @@ class ConnectionBackend(ABC):
     async def execute_raw(self, stmt: typing.Any) -> typing.Any: ...
 
     @abstractmethod
-    async def execute(self, stmt: typing.Any) -> int:
+    async def execute(self, stmt: typing.Any) -> typing.Union[Record, int]:
         """
-        Executes statement and returns the last row id (query) or the row count of updates.
-
-        Warning: can return -1 (e.g. psycopg) in case the result is unknown
+        Executes statement and returns the last row defaults (insert) or rowid (insert) or the row count of updates.
 
         """
 

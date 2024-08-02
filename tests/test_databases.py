@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import decimal
 import os
+from collections.abc import Sequence
 from unittest.mock import patch
 from urllib.parse import parse_qsl, urlsplit
 
@@ -327,8 +328,12 @@ async def test_execute_return_val(database_url):
             query = notes.insert()
             values = {"text": "example1", "completed": True}
             pk1 = await database.execute(query, values)
+            if isinstance(pk1, Sequence):
+                pk1 = pk1[0]
             values = {"text": "example2", "completed": True}
             pk2 = await database.execute(query, values)
+            if isinstance(pk2, Sequence):
+                pk2 = pk2[0]
             assert isinstance(pk1, int) and pk1 > 0
             query = notes.select().where(notes.c.id == pk1)
             result = await database.fetch_one(query)
@@ -787,6 +792,8 @@ async def test_result_named_access(database_url):
         query = notes.insert()
         values = {"text": "example1", "completed": True}
         result = await database.execute(query, values)
+        if isinstance(result, Sequence):
+            result = result[0]
         assert result in {1, -1}
         result = await database.fetch_one(query=notes.select())
         assert result.text == "example1"

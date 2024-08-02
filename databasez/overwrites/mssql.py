@@ -1,6 +1,6 @@
 import typing
 
-from databasez.sqlalchemy import SQLAlchemyConnection, SQLAlchemyDatabase, SQLAlchemyTransaction
+from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction
 
 if typing.TYPE_CHECKING:
     from databasez.core.databaseurl import DatabaseURL
@@ -11,18 +11,6 @@ class Transaction(SQLAlchemyTransaction):
         self, is_root: bool, **extra_options: typing.Any
     ) -> str:
         return "READ COMMITTED"
-
-
-class Connection(SQLAlchemyConnection):
-    async def execute(self, stmt: typing.Any) -> int:
-        """
-        Executes statement and returns the last row id (query) or the row count of updates.
-
-        """
-        with await self.execute_raw(stmt) as result:
-            if result.is_insert and result.returned_defaults:
-                return typing.cast(int, result.returned_defaults[0])
-            return typing.cast(int, result.rowcount)
 
 
 class Database(SQLAlchemyDatabase):

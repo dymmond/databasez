@@ -101,7 +101,7 @@ class Connection:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> int:
+    ) -> typing.Union[interfaces.Record, int]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.execute(built_query)

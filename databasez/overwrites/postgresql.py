@@ -21,15 +21,6 @@ class Database(SQLAlchemyDatabase):
 
 
 class Connection(SQLAlchemyConnection):
-    async def execute(self, stmt: typing.Any) -> int:
-        """
-        Executes statement and returns the last row id (query) or the row count of updates.
-        """
-        with await self.execute_raw(stmt) as result:
-            if result.is_insert and result.returned_defaults:
-                return typing.cast(int, result.returned_defaults[0])
-            return typing.cast(int, result.rowcount)
-
     async def batched_iterate(
         self, query: "ClauseElement", batch_size: typing.Optional[int] = None
     ) -> typing.AsyncGenerator[typing.Any, None]:

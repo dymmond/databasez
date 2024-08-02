@@ -229,7 +229,7 @@ class Database:
         self,
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
-    ) -> typing.Any:
+    ) -> typing.Union[interfaces.Record, int]:
         async with self.connection() as connection:
             return await connection.execute(query, values)
 

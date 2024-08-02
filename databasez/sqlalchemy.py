@@ -149,19 +149,19 @@ class SQLAlchemyConnection(ConnectionBackend):
         assert connection is not None, "Connection is not acquired"
         return await connection.execute(stmt)
 
-    async def execute(self, stmt: typing.Any) -> int:
+    async def execute(self, stmt: typing.Any) -> typing.Union[Record, int]:
         """
-        Executes statement and returns the last row id (query) or the row count of updates.
-
-        Warning: can return -1 (e.g. psycopg) in case the result is unknown
-
+        Executes statement and returns the last row defaults (insert) or rowid (insert) or the row count of updates.
         """
         with await self.execute_raw(stmt) as result:
-            try:
+            if result.is_insert:
+                try:
+                    if result.returned_defaults:
+                        return result.returned_defaults
+                except AttributeError:
+                    pass
                 return typing.cast(int, result.lastrowid)
-            except AttributeError:
-                assert result.is_insert is False, "could not retrieve lastrowid"
-                return typing.cast(int, result.rowcount)
+            return typing.cast(int, result.rowcount)
 
     async def execute_many(self, stmts: typing.List[typing.Any]) -> None:
         connection = self.async_connection
