@@ -167,7 +167,7 @@ class SQLAlchemyConnection(ConnectionBackend):
         connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
         for stmt in stmts:
-            with await connection.execute(stmt):
+            with await connection.execute_raw(stmt):
                 pass
 
     async def get_raw_connection(self) -> typing.Any:
