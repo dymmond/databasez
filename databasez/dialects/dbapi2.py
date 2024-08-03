@@ -56,6 +56,8 @@ class DBAPI2_dialect(DefaultDialect):
     def create_connect_args(self, url: "URL") -> "ConnectArgsType":
         dbapi_dsn_driver: typing.Optional[str] = url.query.get("dbapi_dsn_driver")  # type: ignore
         driver_args: typing.Any = url.query.get("dbapi_driver_args")
+        dbapi_pool: typing.Optional[str] = url.query.get("dbapi_pool")  # type: ignore
+        dbapi_force_async_wrapper: str = url.query.get("dbapi_force_async_wrapper")  # type: ignore
         if driver_args:
             driver_args = orjson.loads(driver_args)
         dsn: str = url.difference_update_query(
@@ -65,14 +67,41 @@ class DBAPI2_dialect(DefaultDialect):
             dsn = dsn.replace("dbapi2:", dbapi_dsn_driver, 1)
         else:
             dsn = dsn.replace("dbapi2://", "", 1)
+        kwargs_passed = {
+            "driver_args": driver_args,
+            "dbapi_pool": dbapi_pool,
+            "dbapi_force_async_wrapper": (
+                True
+                if dbapi_force_async_wrapper == "true"
+                else (False if dbapi_force_async_wrapper == "false" else None)
+            ),
+        }
 
-        return (dsn,), driver_args or {}
+        return (dsn,), {k: v for k, v in kwargs_passed.items() if v is not None}
 
-    def connect(self, *arg: typing.Any, **kw: typing.Any) -> AsyncAdapt_dbapi_connection:  # type: ignore
-        creator_fn = kw.pop("async_creator_fn", self.loaded_dbapi.connect)
+    def connect(
+        self,
+        *arg: typing.Any,
+        dbapi_pool: typing.Literal["thread", "process"] = "thread",
+        dbapi_force_async_wrapper: typing.Optional[bool] = None,
+        driver_args: typing.Any = None,
+        **kw: typing.Any,
+    ) -> AsyncAdapt_dbapi_connection:
+        dbapi_namespace = self.loaded_dbapi
+        if dbapi_force_async_wrapper is None:
+            # is async -> no need for the wrapper
+            if not inspect.iscoroutinefunction(dbapi_namespace.connect):
+                dbapi_namespace = AsyncWrapper(
+                    dbapi_namespace,
+                    get_pool_for(dbapi_pool),
+                    exclude_attrs={"connect": {"cursor": True}},
+                )  # type: ignore
+        elif dbapi_force_async_wrapper:
+            dbapi_namespace = AsyncWrapper(dbapi_namespace, get_pool_for(dbapi_pool))  # type: ignore
+        creator_fn = kw.pop("async_creator_fn", dbapi_namespace.connect)
         return AsyncAdapt_dbapi_connection(  # type: ignore
             self,
-            await_only(creator_fn(*arg, **kw)),
+            await_only(creator_fn(*arg, **(driver_args or {}))),
         )
 
     @classmethod
@@ -100,8 +129,6 @@ class DBAPI2_dialect(DefaultDialect):
     def import_dbapi(  # type: ignore
         cls,
         dbapi_path: str,
-        dbapi_pool: typing.Literal["thread", "process"] = "thread",
-        dbapi_force_async_wrapper: typing.Optional[bool] = None,
     ) -> ModuleType:
         attr = ""
         if ":" in dbapi_path:
@@ -110,16 +137,6 @@ class DBAPI2_dialect(DefaultDialect):
         dbapi_namespace = import_module(dbapi_path)
         if attr:
             dbapi_namespace = getattr(dbapi_namespace, attr)
-        if dbapi_force_async_wrapper is None:
-            # is async -> no need for the wrapper
-            if not inspect.iscoroutinefunction(dbapi_namespace.connect):
-                dbapi_namespace = AsyncWrapper(
-                    dbapi_namespace,
-                    get_pool_for(dbapi_pool),
-                    exclude_attrs={"connect": {"cursor": True}},
-                )  # type: ignore
-        elif dbapi_force_async_wrapper:
-            dbapi_namespace = AsyncWrapper(dbapi_namespace, get_pool_for(dbapi_pool))  # type: ignore
         return dbapi_namespace
 
 
