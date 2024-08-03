@@ -19,8 +19,8 @@ jobs:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     services:
-      mysql:
-        image: mysql:5.7
+      mariadb:
+        image: mariadb:11
         env:
           MYSQL_USER: username
           MYSQL_PASSWORD: passwsss*1348394#
@@ -28,10 +28,10 @@ jobs:
           MYSQL_DATABASE: testsuite
         ports:
           - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+        options: --health-cmd="mariadb-admin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
       postgres:
-        image: postgres:14
+        image: postgres:16
         env:
           POSTGRES_USER: username
           POSTGRES_PASSWORD: passwsss*1348394#
@@ -41,7 +41,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
       mssql:
-        image: mcr.microsoft.com/mssql/server:2019-GA-ubuntu-16.04
+        image: mcr.microsoft.com/mssql/server:2022-CU13-ubuntu-22.04
         env:
           MSSQL_SA_PASSWORD: Mssql123mssql-
           ACCEPT_EULA: "Y"
@@ -56,37 +56,41 @@ jobs:
           --health-retries 3
 
     steps:
-      - uses: "actions/checkout@v3"
-      - uses: "actions/setup-python@v4"
+      - uses: "actions/checkout@v4"
+      - uses: "dorny/paths-filter@v3"
+        id: filters
+        with:
+          filters: |
+            docs_src:
+              - 'docs_src/**'
+              - 'pyproject.toml'
+            src:
+              - 'databasez/**'
+              - 'tests/**'
+              - 'scripts/**'
+              - 'docker-compose.yml'
+              - 'pyproject.toml'
+            workflows:
+              - '.github/workflows/**'
+
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
           allow-prereleases: true
       - name: "Install drivers"
         run: |
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 default-jre
           sudo apt-get install -y unixodbc-dev
-
-      - name: "Install dependencies"
-        run: "scripts/install"
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
-        run: pip install build twine
-      - name: "Run linting checks"
-        run: "scripts/check"
-      - name: "Build package & docs"
-        run: "scripts/build"
+        run: pip install hatch
+      - name: "Run linting"
+        if: steps.filters.outputs.src == 'true'
+        run: "hatch fmt --check"
+      - name: "Run mypy"
+        if: steps.filters.outputs.src == 'true'
+        run: "hatch run test:check_types"
       - name: "Run tests"
-        env:
-          TEST_DATABASE_URLS: |
-            sqlite:///testsuite,
-            sqlite+aiosqlite:///testsuite,
-            mysql://username:passwsss*1348394#@localhost:3306/testsuite,
-            mysql+aiomysql://username:passwsss*1348394#@localhost:3306/testsuite,
-            mysql+asyncmy://username:passwsss*1348394#@localhost:3306/testsuite,
-            postgresql://username:passwsss*1348394#@localhost:5432/testsuite,
-            postgresql+aiopg://username:passwsss*1348394#@127.0.0.1:5432/testsuite,
-            postgresql+asyncpg://username:passwsss*1348394#@localhost:5432/testsuite,
-            mssql://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server,
-            mssql+pyodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server,
-            mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server
-        run: "scripts/test"
+        if: steps.filters.outputs.src == 'true' || steps.filters.outputs.workflows == 'true' || github.event.schedule != ''
+        run: hatch test

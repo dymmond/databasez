@@ -1,40 +1,33 @@
 version: "3.8"
 services:
-  db:
+  postgres:
     restart: always
-    image: postgres:14
+    image: postgres:16
     environment:
-      POSTGRES_HOST_AUTH_METHOD: trust
-      POSTGRES_USER: "postgres@123*#"
-      POSTGRES_PASSWORD: "passwsss*1348394#"
-      POSTGRES_DB: "testsuite"
-    expose:
-      - "5432"
+      POSTGRES_USER: username
+      POSTGRES_PASSWORD: passwsss*1348394#
+      POSTGRES_DB: testsuite
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
-  mysql:
+  mariadb:
     restart: always
-    image: mysql:5.7
+    image: mariadb:11
     environment:
-      MYSQL_USER: "mysql@123*#"
-      MYSQL_PASSWORD: "passwsss*1348394#"
-      MYSQL_DATABASE: "testsuite"
-      MYSQL_ROOT_PASSWORD: "password"
-    expose:
-      - "3306"
+      MYSQL_USER: username
+      MYSQL_PASSWORD: passwsss*1348394#
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: testsuite
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     command: --default-authentication-plugin=mysql_native_password
 
   mssql:
     restart: always
-    image: mcr.microsoft.com/mssql/server:2019-GA-ubuntu-16.04
+    image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
-      MSSQL_SA_PASSWORD: "Mssql123mssql-"
+      MSSQL_SA_PASSWORD: Mssql123mssql-
       ACCEPT_EULA: "Y"
-      MSSQL_PID: "Developer"
-    expose:
-      - "1433"
+      MSSQL_PID: Developer
     ports:
-      - "1433:1433"
+      - "127.0.0.1:1433:1433"

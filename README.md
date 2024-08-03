@@ -78,17 +78,12 @@ $ pip install databasez[testing]
 
 ## What does databasez support at the moment
 
-Databasez currently supports `sqlite`, `postgres`, `mysql` and `sql server`. More drivers can and
-will be added in the future.
+Databasez currently supports nearly all async drivers of sqlalchemy.
 
-Database drivers supported are:
+If this is not enough there are two special dialects with restricted features:
 
-* [asyncpg][asyncpg] - For postgres.
-* [aiopg][aiopg] - For postgres.
-* [aiomysql][aiomysql] - For MySQL/MariaDB.
-* [asyncmy][asyncmy] - For MySQL/MariaDB.
-* [aiosqlite][aiosqlite] - For SQLite.
-* [aioodbc][aioodbc] - For MSSQL (SQL Server).
+- jdbc: can load nearly any jdbc driver
+- dbapi2: can load nearly any dbapi2 driver (python standard), async as well as sync.
 
 ### Driver installation
 
@@ -98,12 +93,6 @@ You can install the required database drivers with:
 
 ```shell
 $ pip install databasez[asyncpg]
-```
-
-or
-
-```shell
-$ pip install databasez[aiopg]
 ```
 
 #### MySQL/MariaDB
@@ -133,7 +122,7 @@ $ pip install databasez[aioodbc]
 !!! Note
     Note that if you are using any synchronous SQLAlchemy functions such as `engine.create_all()`
     or [alembic][alembic] migrations then you still have to install a synchronous DB driver:
-    [psycopg2][psycopg2] for PostgreSQL, [pymysql][pymysql] for MySQL and
+    [psycopg][psycopg] for PostgreSQL, [pymysql][pymysql] for MySQL and
     [pyodbc][pyodbc] for SQL Server.
 
 ---
@@ -191,11 +180,10 @@ for examples of how to start using databasez together with SQLAlchemy core expre
 [sqlalchemy-core]: https://docs.sqlalchemy.org/en/latest/core/
 [sqlalchemy-core-tutorial]: https://docs.sqlalchemy.org/en/latest/core/tutorial.html
 [alembic]: https://alembic.sqlalchemy.org/en/latest/
-[psycopg2]: https://www.psycopg.org/
+[psycopg]: https://www.psycopg.org/
 [pymysql]: https://github.com/PyMySQL/PyMySQL
 [pyodbc]: https://github.com/mkleehammer/pyodbc
 [asyncpg]: https://github.com/MagicStack/asyncpg
-[aiopg]: https://github.com/aio-libs/aiopg
 [aiomysql]: https://github.com/aio-libs/aiomysql
 [asyncmy]: https://github.com/long2ice/asyncmy
 [aiosqlite]: https://github.com/omnilib/aiosqlite

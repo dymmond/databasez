@@ -7,7 +7,7 @@ import nest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy_utils.functions.database import _set_url_database, _sqlite_file_exists, make_url
+from sqlalchemy_utils.functions.database import _sqlite_file_exists
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
@@ -69,8 +69,9 @@ class DatabaseTestClient(Database):
         """
         return await self.database_exists(self.test_db_url)
 
-    async def database_exists(self, url: str) -> Any:
-        url = make_url(url)
+    async def database_exists(self, url: typing.Union[str, sa.URL]) -> Any:
+        if isinstance(url, str):
+            url = sa.make_url(url)
         database = url.database
         dialect_name = url.get_dialect().name
         engine = None
@@ -78,7 +79,7 @@ class DatabaseTestClient(Database):
             if dialect_name == "postgresql":
                 text = "SELECT 1 FROM pg_database WHERE datname='%s'" % database
                 for db in (database, "postgres", "template1", "template0", None):
-                    url = _set_url_database(url, database=db)
+                    url = url._replace(database=db)
                     engine = create_async_engine(url)
                     try:
                         return bool(await _get_scalar_result(engine, sa.text(text)))
@@ -87,7 +88,7 @@ class DatabaseTestClient(Database):
                 return False
 
             elif dialect_name == "mysql":
-                url = _set_url_database(url, database=None)
+                url = url._replace(database=None)
                 engine = create_async_engine(url)
                 text = (
                     "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
@@ -96,7 +97,7 @@ class DatabaseTestClient(Database):
                 return bool(await _get_scalar_result(engine, sa.text(text)))
 
             elif dialect_name == "sqlite":
-                url = _set_url_database(url, database=None)
+                url = url._replace(database=None)
                 engine = create_async_engine(url)
                 if database:
                     return database == ":memory:" or _sqlite_file_exists(database)
@@ -116,25 +117,26 @@ class DatabaseTestClient(Database):
                 await engine.dispose()
 
     async def create_database(
-        self, url: str, encoding: str = "utf8", template: typing.Any = None
+        self, url: typing.Union[str, sa.URL], encoding: str = "utf8", template: typing.Any = None
     ) -> Any:
-        url = make_url(url)
+        if isinstance(url, str):
+            url = sa.make_url(url)
         database = url.database
         dialect_name = url.get_dialect().name
         dialect_driver = url.get_dialect().driver
 
         if dialect_name == "postgresql":
-            url = _set_url_database(url, database="postgres")
+            url = url._replace(database="postgres")
         elif dialect_name == "mssql":
-            url = _set_url_database(url, database="master")
+            url = url._replace(database="master")
         elif dialect_name == "cockroachdb":
-            url = _set_url_database(url, database="defaultdb")
-        elif not dialect_name == "sqlite":
-            url = _set_url_database(url, database=None)
+            url = url._replace(database="defaultdb")
+        elif dialect_name != "sqlite":
+            url = url._replace(database=None)
 
         if (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
             dialect_name == "postgresql"
-            and dialect_driver in {"asyncpg", "pg8000", "psycopg2", "psycopg2cffi"}
+            and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
             engine = create_async_engine(url, isolation_level="AUTOCOMMIT")
         else:
@@ -170,26 +172,28 @@ class DatabaseTestClient(Database):
 
         await engine.dispose()
 
-    async def drop_database(self, url: str) -> Any:
-        url = make_url(url)
+    async def drop_database(self, url: typing.Union[str, sa.URL]) -> Any:
+        if isinstance(url, str):
+            url = sa.make_url(url)
         database = url.database
         dialect_name = url.get_dialect().name
         dialect_driver = url.get_dialect().driver
 
         if dialect_name == "postgresql":
-            url = _set_url_database(url, database="postgres")
+            url = url._replace(database="postgres")
         elif dialect_name == "mssql":
-            url = _set_url_database(url, database="master")
+            url = url._replace(database="master")
         elif dialect_name == "cockroachdb":
-            url = _set_url_database(url, database="defaultdb")
-        elif not dialect_name == "sqlite":
-            url = _set_url_database(url, database=None)
+            url = url._replace(database="defaultdb")
+        elif dialect_name != "sqlite":
+            url = url._replace(database=None)
 
         if dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}:
             engine = create_async_engine(url, connect_args={"autocommit": True})
         elif dialect_name == "postgresql" and dialect_driver in {
             "asyncpg",
             "pg8000",
+            "psycopg",
             "psycopg2",
             "psycopg2cffi",
         }:
@@ -210,9 +214,7 @@ class DatabaseTestClient(Database):
                 FROM pg_stat_activity
                 WHERE pg_stat_activity.datname = '{database}'
                 AND {pid_column} <> pg_backend_pid();
-                """.format(
-                    pid_column=pid_column, database=database
-                )
+                """.format(pid_column=pid_column, database=database)
                 await conn.execute(sa.text(text))
 
                 # Drop the database.

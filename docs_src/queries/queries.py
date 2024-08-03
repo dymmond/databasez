@@ -1,3 +1,5 @@
+import sqlalchemy
+
 from databasez import Database
 
 database = Database("postgresql+asyncpg://localhost/example")
@@ -5,6 +7,17 @@ database = Database("postgresql+asyncpg://localhost/example")
 
 # Establish the connection pool
 await database.connect()
+
+
+metadata = sqlalchemy.MetaData()
+# Define your table(s)
+users = sqlalchemy.Table(
+    "users",
+    metadata,
+    sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True),
+    sqlalchemy.Column("name", sqlalchemy.String(length=150)),
+    sqlalchemy.Column("address", sqlalchemy.String(length=500)),
+)
 
 # Execute
 query = users.insert()
@@ -34,6 +47,16 @@ value = await database.fetch_val(query=query)
 # Fetch multiple rows without loading them all into memory at once
 query = users.select()
 async for row in database.iterate(query=query):
+    ...
+
+# Fetch multiple rows in batches
+query = users.select()
+async for batch_tuple in database.batched_iterate(query=query, batch_size=10):
+    ...
+
+# Fetch multiple rows in batches and use as wrapper list
+query = users.select()
+async for batch_list in database.batched_iterate(query=query, batch_size=10, batch_wrapper=list):
     ...
 
 # Close all connections in the connection pool
