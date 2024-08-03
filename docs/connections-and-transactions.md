@@ -259,12 +259,12 @@ The dbapi2 driver supports some extra parameters which will be removed from the 
 
 * **dbapi_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
 * **dbapi_dsn_driver** - If required it is possible to set the dsn driver here. Normally it should work without. You can use the same trick like in jdbc to provide a dsn driver.
+* **dbapi_pool** - thread/process. Default: thread. How the dbapi2. is isolated. Either via ProcessPool or ThreadPool (with one worker).
+* **dbapi_force_async_wrapper** - bool/None. Default: None. Figure out if the async_wrapper is required. By setting a bool the wrapper can be enforced or removed.
 
 The dbapi2 has some extra options which cannot be passed via the url, some of them are required:
 
 * **dbapi_path** - Import path of the dbapi2 module. Required
-* **dbapi_pool** - thread/process. Default: thread. How the dbapi2. is isolated. Either via ProcessPool or ThreadPool (with one worker).
-* **dbapi_force_async_wrapper** - bool/None. Default: None. Figure out if the async_wrapper is required. By setting a bool
 
 ## Transactions
 

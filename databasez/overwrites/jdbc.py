@@ -47,6 +47,12 @@ class Database(SQLAlchemyDatabase):
                 else:
                     new_classpath.extend(query_classpath)
             options["classpath"] = new_classpath
+        if "jdbc_driver_args" in options:
+            jdbc_driver_args = options.pop("jdbc_driver_args")
+            if isinstance(jdbc_driver_args, str):
+                new_query_options["jdbc_driver_args"] = jdbc_driver_args
+            else:
+                new_query_options["jdbc_driver_args"] = self.json_serializer(jdbc_driver_args)
         return database_url_new.replace(driver=None, options=new_query_options), options
 
     async def connect(self, database_url: "DatabaseURL", **options: typing.Any) -> None:
