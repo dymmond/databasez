@@ -16,7 +16,7 @@ from databasez import Database
 **Parameters**
 
 * **url** - The `url` of the connection string.
-  
+
   <sup>Default: `None`</sup>
 
 * **force_rollback** - A boolean flag indicating if it should force the rollback.
@@ -69,14 +69,14 @@ async def shutdown():
 ```
 
 Starlette is deprecating the previous way of declaring events in favour of the newly created
-`Lifespan`. 
+`Lifespan`.
 
 [Esmerald][esmerald] on the other hand, will allow you to continue to use the events in both ways.
 Internally Esmerald handles the `on_startup` and `on_shutdown` in a unique and clean way where
 it will automatically generate the `Lifespan` events for you.
 
 !!! Note
-    Since the author of [Esmerald][esmerald] and [Saffier][saffier] is the same and you would like to
+    Since the author of [Esmerald][esmerald] and [Edgy][edgy] is the same and you would like to
     have those same type of events to continue also for Starlette even after the deprecation and without
     breaking your code or diverge from Starlette's base, the same author is the creator of
     [Starlette Bridge][starlette-bridge] where it was shared the same approach created for Esmerald with
@@ -97,7 +97,8 @@ database = Database('mysql+aiomysql://localhost/example?min_size=5&max_size=20')
 ```
 
 You can also use keyword arguments to pass in any connection options.
-Available keyword arguments may differ between database backends.
+Available keyword arguments may differ between database backends. Keywords can be used like in create_async_engine (most are passed through).
+This means also the keyword extraction works like in sqlalchemy
 
 ```python
 database = Database('postgresql+asyncpg://localhost/example', ssl=True, min_size=5, max_size=20)
@@ -208,6 +209,63 @@ mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+fo
     As you can see, Databasez offers some other ways of achieving the same results and offers
     multiple forms of creating a [Database](#database) object.
 
+## JDBC
+
+Databasez injects a jdbc driver. You can use it as simple as:
+
+`jdbc+jdbc-dsn-driver-name://dsn?jdbc_driver=?`
+
+or for modern jdbc drivers
+
+`jdbc+jdbc-dsn-driver-name://dsn`
+
+Despite the jdbc-dsn-driver-name is not known by sqlalchemy this works. The overwrites rewrite the URL for sqlalchemy.
+
+
+!!! Warning
+    It seems like injecting classpathes in a running JVM doesn't work properly. If you have more then one jdbc driver,
+    make sure all classpathes are specified.
+
+
+!!! Warning
+    The jdbc driver doesn't support setting the isolation_level yet (this is highly db vendor specific).
+
+### Parameters
+
+The jdbc driver supports some extra parameters which will be removed from the query (note: most of them can be also passed via keywords)
+
+* **jdbc_driver** - import path of the jdbc driver (java format). Required for old jdbc drivers.
+* **jdbc_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
+* **jdbc_dsn_driver** - Not really required because of the rewrite but if the url only specifies jdbc:// withouth the dsn driver you can set it here manually.
+
+
+## dbapi2
+
+
+Databasez injects a dbapi2 driver. You can use it as simple as:
+
+`dbapi2+foo://dsn`
+
+or simply
+
+`dbapi2://dsn`
+
+!!! Warning
+    The dbapi2 driver doesn't support setting the isolation_level yet (this is highly db vendor specific).
+
+### Parameters
+
+The dbapi2 driver supports some extra parameters which will be removed from the query (note: most of them can be also passed via keywords)
+
+* **dbapi_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
+* **dbapi_dsn_driver** - If required it is possible to set the dsn driver here. Normally it should work without. You can use the same trick like in jdbc to provide a dsn driver.
+
+The dbapi2 has some extra options which cannot be passed via the url, some of them are required:
+
+* **dbapi_path** - Import path of the dbapi2 module. Required
+* **dbapi_pool** - thread/process. Default: thread. How the dbapi2. is isolated. Either via ProcessPool or ThreadPool (with one worker).
+* **dbapi_force_async_wrapper** - bool/None. Default: None. Figure out if the async_wrapper is required. By setting a bool
+
 ## Transactions
 
 Transactions are managed by async context blocks.
@@ -295,10 +353,23 @@ async with databases.Database(database_url) as db:
 ```
 
 ```python
-async with database.transaction(isolation="serializable"):
+async with database.transaction(isolation_level="serializable"):
     ...
 ```
 
+## Reusing sqlalchemy engine of databasez
+
+For integration in other libraries databasez has also the AsyncEngine exposed via the `engine` property.
+If a database is connected you can retrieve the engine from there.
+
+## Special jdbc/dbapi2 stuff
+
+Currently there is not much documentation and you have to check the overwrites and dialects yourself to get an idea how it works.
+Additional there is a jdbc test with a really old sqlite jdbc jar so you may get an idea how it works.
+
+However it is planned to update the documentation.
+
 [esmerald]: https://github.com/dymmond/esmerald
+[edgy]: https://github.com/dymmond/edgy
 [saffier]: https://github.com/tarsil/saffier
 [starlette-bridge]: https://github.com/tarsil/starlette-bridge

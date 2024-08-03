@@ -38,7 +38,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Internet :: WWW/HTTP",
 ]
-dependencies = ["nest_asyncio>=1.6.0,<2", "sqlalchemy>=2.0.25,<2.1"]
+dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "sqlalchemy_utils>=0.40.0"]
 keywords = [
     "mysql",
     "postgres",
@@ -47,6 +47,7 @@ keywords = [
     "asyncio",
     "esmerald",
     "saffier",
+    "jdbc"
 ]
 
 [project.urls]
@@ -57,17 +58,19 @@ Funding = "https://github.com/sponsors/tarsil"
 Source = "https://github.com/dymmond/databasez"
 
 [project.optional-dependencies]
+testing = ["nest_asyncio>=1.6.0,<2"]
 aiomysql = ["aiomysql"]
 aioodbc = ["aioodbc"]
 aiosqlite = ["aiosqlite"]
 asyncpg = ["asyncpg"]
+jdbc = ["jpype1"]
 # without aio, async prefix
 odbc = ["aioodbc"]
 mysql = ["asyncmy"]
 postgresql = ["asyncpg"]
 sqlite = ["aiosqlite"]
 
-all = ["databasez[mysql,aiomysql,odbc,postgresql,sqlite]"]
+all = ["databasez[testing,jdbc,mysql,aiomysql,odbc,postgresql,sqlite]"]
 
 [tool.hatch.version]
 path = "databasez/__init__.py"
@@ -83,7 +86,6 @@ disable_error_code = "attr-defined"
 disallow_untyped_defs = true
 ignore_missing_imports = true
 no_implicit_optional = true
-exclude = "databasez/backends"
 
 [tool.ruff]
 extend-exclude = ["docs"]
@@ -139,6 +141,11 @@ ignore_errors = true
 addopts = ["--strict-config", "--strict-markers", "--pdbcls=IPython.terminal.debugger:Pdb"]
 xfail_strict = true
 junit_family = "xunit2"
+setup_timeout = 2
+execution_timeout = 20
+teardown_timeout = 5
+reruns = 3
+reruns_delay = 1
 
 [tool.hatch.build.targets.sdist]
 include = ["/databasez"]
@@ -187,27 +194,23 @@ features = ["all"]
 
 extra-dependencies = [
     "ipdb>=0.13.13",
-    "sqlalchemy_utils>=0.40.0",
     "esmerald>=1.1.0",
     "mypy>=1.1.0,<2.0.0",
     "starlette>=0.26.1",
     "httpx",
-    "requests>=2.28.2",
     "psycopg[binary]",
-    "pyodbc"
+    "pyodbc",
+    "pytest-timeouts",
+    "pytest-rerunfailures",
+    "pytest-asyncio"
 ]
 
 [tool.hatch.envs.hatch-test.env-vars]
 TEST_DATABASE_URLS = """
-sqlite:///testsuite.sqlite3,\
 sqlite+aiosqlite:///testsuite.sqlite3,\
-mysql://username:passwsss*1348394#@localhost:3306/testsuite,\
 mysql+aiomysql://username:passwsss*1348394#@localhost:3306/testsuite,\
 mysql+asyncmy://username:passwsss*1348394#@localhost:3306/testsuite,\
-postgresql://username:passwsss*1348394#@localhost:5432/testsuite,\
 postgresql+psycopg://username:passwsss*1348394#@localhost:5432/testsuite,\
 postgresql+asyncpg://username:passwsss*1348394#@localhost:5432/testsuite,\
-mssql://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server,\
-mssql+pyodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server,\
-mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server\
+mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&Encrypt=Optional\
 """

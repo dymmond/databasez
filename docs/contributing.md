@@ -49,7 +49,7 @@ $ git clone https://github.com/YOUR-USERNAME/databasez
 
 ```shell
 $ cd databasez
-$ scripts/install
+$ hatch env create
 ```
 
 ### Run the tests
@@ -57,7 +57,7 @@ $ scripts/install
 To run the tests, use:
 
 ```shell
-$ scripts/test
+$ hatch test
 ```
 
 Because Databasez uses pytest, any additional arguments will be passed. More info within the
@@ -66,13 +66,13 @@ Because Databasez uses pytest, any additional arguments will be passed. More inf
 For example, to run a single test_script:
 
 ```shell
-$ scripts/test tests/test_apiviews.py
+$ hatch test tests/test_apiviews.py
 ```
 
 To run the linting, use:
 
 ```shell
-$ scripts/lint
+$ hatch fmt
 ```
 
 ### Documentation

@@ -1,6 +1,6 @@
 site_name: Databasez
 site_description: Async database support for Python.
-site_url: https://databases.dymmond.com
+site_url: https://databasez.dymmond.com
 
 theme:
     name: "material"

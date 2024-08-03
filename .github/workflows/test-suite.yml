@@ -41,7 +41,7 @@ jobs:
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
 
       mssql:
-        image: mcr.microsoft.com/mssql/server:2019-GA-ubuntu-16.04
+        image: mcr.microsoft.com/mssql/server:2022-CU13-ubuntu-22.04
         env:
           MSSQL_SA_PASSWORD: Mssql123mssql-
           ACCEPT_EULA: "Y"
@@ -79,14 +79,15 @@ jobs:
           allow-prereleases: true
       - name: "Install drivers"
         run: |
-          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17
+          sudo apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 default-jre
           sudo apt-get install -y unixodbc-dev
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: pip install hatch
       - name: "Run linting"
         if: steps.filters.outputs.src == 'true'
-        run: "hatch fmt"
+        run: "hatch fmt --check"
       - name: "Run mypy"
         if: steps.filters.outputs.src == 'true'
         run: "hatch run test:check_types"
