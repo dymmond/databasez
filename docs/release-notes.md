@@ -1,5 +1,12 @@
 # Release Notes
 
+## 0.8.1
+
+### Fixed
+
+- The `dbapi2` dialect used only a single thread for all connections.
+- Some options were not translated into query options and vice versa.
+
 ## 0.8.0
 
 ### Added
