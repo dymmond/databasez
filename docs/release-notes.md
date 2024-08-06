@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.8.2
+
+### Fixed
+
+- Cannot pass parameters to execute directly. Bulk_inserts not possible anymore.
+
 ## 0.8.1
 
 ### Fixed

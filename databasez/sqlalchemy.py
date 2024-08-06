@@ -144,16 +144,21 @@ class SQLAlchemyConnection(ConnectionBackend):
             async for batch in result.partitions():
                 yield batch
 
-    async def execute_raw(self, stmt: typing.Any) -> typing.Any:
+    async def execute_raw(self, stmt: typing.Any, value: typing.Any = None) -> typing.Any:
         connection = self.async_connection
         assert connection is not None, "Connection is not acquired"
+        if value is not None:
+            return await connection.execute(stmt, value)
         return await connection.execute(stmt)
 
-    async def execute(self, stmt: typing.Any) -> typing.Union[Record, int]:
+    async def execute(
+        self, stmt: typing.Any, value: typing.Any = None
+    ) -> typing.Union[Record, int]:
         """
         Executes statement and returns the last row defaults (insert) or rowid (insert) or the row count of updates.
         """
-        with await self.execute_raw(stmt) as result:
+
+        with await self.execute_raw(stmt, value) as result:
             if result.is_insert:
                 try:
                     if result.returned_defaults:

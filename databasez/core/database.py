@@ -228,7 +228,7 @@ class Database:
     async def execute(
         self,
         query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
+        values: typing.Any = None,
     ) -> typing.Union[interfaces.Record, int]:
         async with self.connection() as connection:
             return await connection.execute(query, values)

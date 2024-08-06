@@ -183,10 +183,12 @@ class ConnectionBackend(ABC):
     ) -> typing.Any: ...
 
     @abstractmethod
-    async def execute_raw(self, stmt: typing.Any) -> typing.Any: ...
+    async def execute_raw(self, stmt: typing.Any, value: typing.Any = None) -> typing.Any: ...
 
     @abstractmethod
-    async def execute(self, stmt: typing.Any) -> typing.Union[Record, int]:
+    async def execute(
+        self, stmt: typing.Any, value: typing.Any = None
+    ) -> typing.Union[Record, int]:
         """
         Executes statement and returns the last row defaults (insert) or rowid (insert) or the row count of updates.
 

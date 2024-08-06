@@ -100,11 +100,15 @@ class Connection:
     async def execute(
         self,
         query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
+        values: typing.Any = None,
     ) -> typing.Union[interfaces.Record, int]:
-        built_query = self._build_query(query, values)
-        async with self._query_lock:
-            return await self._connection.execute(built_query)
+        if isinstance(query, str):
+            built_query = self._build_query(query, values)
+            async with self._query_lock:
+                return await self._connection.execute(built_query)
+        else:
+            async with self._query_lock:
+                return await self._connection.execute(query, values)
 
     async def execute_many(self, query: typing.Union[ClauseElement, str], values: list) -> None:
         queries = [self._build_query(query, values_set) for values_set in values]
@@ -162,13 +166,13 @@ class Connection:
 
     @staticmethod
     def _build_query(
-        query: typing.Union[ClauseElement, str], values: typing.Optional[dict] = None
+        query: typing.Union[ClauseElement, str], values: typing.Optional[typing.Any] = None
     ) -> ClauseElement:
         if isinstance(query, str):
             query = text(query)
 
             return query.bindparams(**values) if values is not None else query
         elif values:
-            return query.values(**values)  # type: ignore
+            return query.values(values)  # type: ignore
 
         return query
