@@ -10,6 +10,7 @@
 
 - DatabaseTestClient can now use the improvements in 8.0 too.
 - DatabaseTestClient is now tested.
+- Fix run_sync on Database objects.
 
 ## 0.8.2
 

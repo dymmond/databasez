@@ -268,7 +268,7 @@ class Database:
         **kwargs: typing.Any,
     ) -> typing.Any:
         async with self.connection() as connection:
-            return connection.run_sync(fn, *args, **kwargs)
+            return await connection.run_sync(fn, *args, **kwargs)
 
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
