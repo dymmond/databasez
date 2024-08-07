@@ -89,12 +89,14 @@ class Database:
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
     options: typing.Any
+    _force_rollback: bool
+    is_connected: bool = False
 
     def __init__(
         self,
         url: typing.Optional[typing.Union[str, DatabaseURL, URL, Database]] = None,
         *,
-        force_rollback: bool = False,
+        force_rollback: typing.Union[bool, None] = None,
         config: typing.Optional["DictAny"] = None,
         **options: typing.Any,
     ):
@@ -105,6 +107,10 @@ class Database:
             self.backend = url.backend.__copy__()
             self.url = url.url
             self.options = url.options
+            if force_rollback is None:
+                self._force_rollback = url._force_rollback
+            else:
+                self._force_rollback = force_rollback
         else:
             url = DatabaseURL(url)
             if config and "connection" in config:
@@ -115,11 +121,10 @@ class Database:
             self.backend, self.url, self.options = self.apply_database_url_and_options(
                 url, **options
             )
+            self._force_rollback = bool(force_rollback)
         self.backend.owner = self
-        self.is_connected = False
         self._connection_map = weakref.WeakKeyDictionary()
 
-        self._force_rollback = force_rollback
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None

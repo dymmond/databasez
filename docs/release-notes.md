@@ -1,5 +1,19 @@
 # Release Notes
 
+## 0.8.5
+
+### Added
+
+- Allow overwriting `force_rollback` when copying via passing Database as parameter.
+
+### Changed
+
+- The `force_rollback` parameter is now None by default.
+
+### Fixed
+
+- Fix typo in Testclient copying path.
+
 ## 0.8.4
 
 ### Added
