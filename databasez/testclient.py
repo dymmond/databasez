@@ -32,7 +32,7 @@ class DatabaseTestClient(Database):
 
     def __init__(
         self,
-        url: typing.Union[str, "DatabaseURL", "sa.URL"],
+        url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
         *,
         force_rollback: bool = False,
         use_existing: bool = False,
@@ -40,17 +40,33 @@ class DatabaseTestClient(Database):
         test_prefix: str = "test_",
         **options: typing.Any,
     ):
-        url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
-        test_database_url = (
-            url.replace(database=f"{test_prefix}{url.database}") if test_prefix else url
-        )
-        self.test_db_url = str(test_database_url)
-        self.use_existing = use_existing
+        if isinstance(url, Database):
+            test_database_url = (
+                url.url.replace(database=f"{test_prefix}{url.database}")
+                if test_prefix
+                else url.url
+            )
+            # replace only if not cloning a DatabaseTestClient
+            self.test_db_url = str(getattr(url, "test_db_url", test_database_url))
+            self.use_existing = getattr(url, "use_existing", use_existing)
+            self.drop = getattr(url, "drop", drop_database)
+            asyncio.get_event_loop().run_until_complete(self.setup())
+            super().__init__(url)
+            # fix url
+            if str(self.url) != self.test_db_url:
+                self.url = test_database_url
+        else:
+            url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
+            test_database_url = (
+                url.replace(database=f"{test_prefix}{url.database}") if test_prefix else url
+            )
+            self.test_db_url = str(test_database_url)
+            self.use_existing = use_existing
+            self.drop = drop_database
 
-        asyncio.get_event_loop().run_until_complete(self.setup())
+            asyncio.get_event_loop().run_until_complete(self.setup())
 
-        super().__init__(test_database_url, force_rollback=force_rollback, **options)
-        self.drop = drop_database
+            super().__init__(test_database_url, force_rollback=force_rollback, **options)
 
     async def setup(self) -> None:
         """

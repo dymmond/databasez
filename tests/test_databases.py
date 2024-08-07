@@ -4,7 +4,7 @@ import decimal
 import os
 from collections.abc import Sequence
 from unittest.mock import patch
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pyodbc
 import pytest
@@ -15,12 +15,12 @@ from databasez import Database, DatabaseURL
 from tests.shared_db import (
     AsyncMock,
     articles,
-    create_database_tables,
     custom_date,
-    drop_database_tables,
+    database_client,
     notes,
     prices,
     session,
+    stop_database_client,
 )
 
 assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
@@ -38,11 +38,11 @@ for value in DATABASE_URLS:
         {
             "connection": {
                 "credentials": {
-                    "scheme": spliter.scheme.split("+")[0],
+                    "scheme": spliter.scheme,
                     "host": spliter.hostname,
                     "port": spliter.port,
                     "user": spliter.username,
-                    "password": spliter.password,
+                    "password": unquote(spliter.password) if spliter.password else None,
                     "database": spliter.path[1:],
                     "options": dict(parse_qsl(spliter.query)),
                 }
@@ -55,20 +55,24 @@ MIXED_DATABASE_CONFIG_URLS = [*DATABASE_URLS, *DATABASE_CONFIG_URLS]
 MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATABASE_URLS)]
 
 
-@pytest.fixture(autouse=True, scope="function")
-def create_test_database():
-    # Create test databases
-    for url in DATABASE_URLS:
-        asyncio.run(create_database_tables(url))
-
-    # Run the test suite
-    yield
-
-    for url in DATABASE_URLS:
-        asyncio.run(drop_database_tables(url))
+@pytest.fixture(params=DATABASE_URLS)
+def database_url(request):
+    """Yield test database despite its name"""
+    # yield test Databases
+    loop = asyncio.new_event_loop()
+    database = loop.run_until_complete(database_client(request.param))
+    yield database
+    loop.run_until_complete(stop_database_client(database))
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.fixture(params=MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS)
+def database_mixed_url(request):
+    loop = asyncio.new_event_loop()
+    database = loop.run_until_complete(database_client(request.param))
+    yield request.param
+    loop.run_until_complete(stop_database_client(database))
+
+
 @pytest.mark.asyncio
 async def test_queries(database_url):
     """
@@ -157,7 +161,6 @@ async def test_queries(database_url):
             assert batched_iterate_results[1][0].completed is True
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_queries_raw(database_url):
     """
@@ -219,7 +222,6 @@ async def test_queries_raw(database_url):
             assert iterate_results[2].completed == True
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_ddl_queries(database_url):
     """
@@ -239,7 +241,6 @@ async def test_ddl_queries(database_url):
 
 
 @pytest.mark.parametrize("exception", [Exception, asyncio.CancelledError])
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_queries_after_error(database_url, exception):
     """
@@ -260,7 +261,6 @@ async def test_queries_after_error(database_url, exception):
         await database.fetch_all(query)
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_results_support_mapping_interface(database_url):
     """
@@ -287,7 +287,6 @@ async def test_results_support_mapping_interface(database_url):
             assert results_as_dicts[0]["completed"] is True
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_result_values_allow_duplicate_names(database_url):
     """
@@ -303,7 +302,6 @@ async def test_result_values_allow_duplicate_names(database_url):
             assert list(row._mapping.values()) == [1, 2]
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_fetch_one_returning_no_results(database_url):
     """
@@ -317,7 +315,6 @@ async def test_fetch_one_returning_no_results(database_url):
             assert result is None
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_execute_return_val(database_url):
     """
@@ -346,7 +343,6 @@ async def test_execute_return_val(database_url):
             assert result.completed is True
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_datetime_field(database_url):
     """
@@ -369,7 +365,6 @@ async def test_datetime_field(database_url):
             assert results[0].published == now
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_decimal_field(database_url):
     """
@@ -388,14 +383,13 @@ async def test_decimal_field(database_url):
             query = prices.select()
             results = await database.fetch_all(query=query)
             assert len(results) == 1
-            if database_url.startswith("sqlite"):
+            if str(database.url).startswith("sqlite"):
                 # aiosqlite does not support native decimals --> a round-off error is expected
                 assert results[0].price == pytest.approx(price)
             else:
                 assert results[0].price == price
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_json_field(database_url):
     """
@@ -417,7 +411,6 @@ async def test_json_field(database_url):
             assert results[0].data == {"text": "hello", "boolean": True, "int": 1}
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_custom_field(database_url):
     """
@@ -441,7 +434,6 @@ async def test_custom_field(database_url):
             assert results[0].published == today
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_connections_isolation(database_url):
     """
@@ -462,18 +454,15 @@ async def test_connections_isolation(database_url):
             await database.execute(query)
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
 @pytest.mark.asyncio
-async def test_connect_and_disconnect(database_url):
+async def test_connect_and_disconnect(database_mixed_url):
     """
     Test explicit connect() and disconnect().
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
+    if isinstance(database_mixed_url, str):
+        data = {"url": database_mixed_url}
     else:
-        data = {"config": database_url}
+        data = {"config": database_mixed_url}
 
     database = Database(**data)
 
@@ -482,6 +471,17 @@ async def test_connect_and_disconnect(database_url):
     await database.connect()
     assert database.is_connected
     assert database.engine is not None
+
+    # copy
+    copied_db = database.__copy__()
+    assert not copied_db.is_connected
+    assert copied_db.engine is None
+
+    # second method
+    copied_db = Database(database)
+    assert not copied_db.is_connected
+    assert copied_db.engine is None
+
     old_engine = database.engine
     await database.disconnect()
     assert not database.is_connected
@@ -496,23 +496,17 @@ async def test_connect_and_disconnect(database_url):
     assert not database.is_connected
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_connection_context(database_url):
     """
     Test connection contexts are task-local.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         async with database.connection() as connection_1:
             async with database.connection() as connection_2:
                 assert connection_1 is connection_2
 
-    async with Database(**data) as database:
+    async with Database(database_url) as database:
         connection_1 = None
         connection_2 = None
         test_complete = asyncio.Event()
@@ -542,7 +536,6 @@ async def test_connection_context(database_url):
         await task_2
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_connection_context_with_raw_connection(database_url):
     """
@@ -555,7 +548,6 @@ async def test_connection_context_with_raw_connection(database_url):
                 assert connection_1.async_connection is connection_2.async_connection
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_queries_with_expose_backend_connection(database_url):
     """
@@ -700,41 +692,49 @@ async def test_queries_with_expose_backend_connection(database_url):
                 assert result[2] == True
 
 
-@pytest.mark.parametrize(
-    "database_url", MIXED_DATABASE_CONFIG_URLS, ids=MIXED_DATABASE_CONFIG_URLS_IDS
-)
 @pytest.mark.asyncio
-async def test_database_url_interface(database_url):
+async def test_database_url_interface(database_mixed_url):
     """
     Test that Database instances expose a `.url` attribute.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
+    if isinstance(database_mixed_url, str):
+        data = {"url": database_mixed_url}
     else:
-        data = {"config": database_url}
+        data = {"config": database_mixed_url}
 
     async with Database(**data) as database:
         assert isinstance(database.url, DatabaseURL)
-        if isinstance(database_url, str):
-            assert database.url == database_url
+        if isinstance(database_mixed_url, str):
+            assert database.url == database_mixed_url
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
+def _startswith(tested, params):
+    for param in params:
+        if tested.startswith(param):
+            return True
+    return False
+
+
 @pytest.mark.asyncio
 async def test_concurrent_access_on_single_connection(database_url):
-    database_url = DatabaseURL(database_url)
-    if database_url.dialect != "postgresql":
-        pytest.skip("Test requires `pg_sleep()`")
-
+    database_url = DatabaseURL(str(database_url.url))
+    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+        pytest.skip("Test requires sleep function")
     async with Database(database_url, force_rollback=True) as database:
 
         async def db_lookup():
-            await database.fetch_one("SELECT pg_sleep(1)")
+            if database_url.dialect.startswith("postgres"):
+                await database.fetch_one("SELECT pg_sleep(0.3)")
+            elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
+                "mariadb"
+            ):
+                await database.fetch_one("SELECT SLEEP(0.3)")
+            elif database_url.dialect.startswith("mssql"):
+                await database.execute("WAITFOR DELAY '00:00:00.300'")
 
-        await asyncio.gather(db_lookup(), db_lookup())
+        await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_global_connection_is_initialized_lazily(database_url):
     """
@@ -745,9 +745,9 @@ async def test_global_connection_is_initialized_lazily(database_url):
     See https://github.com/dymmond/databasez/issues/157 for more context.
     """
 
-    database_url = DatabaseURL(database_url)
-    if database_url.dialect != "postgresql":
-        pytest.skip("Test requires `pg_sleep()`")
+    database_url = DatabaseURL(database_url.url)
+    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+        pytest.skip("Test requires sleep function")
 
     database = Database(database_url, force_rollback=True)
 
@@ -755,15 +755,21 @@ async def test_global_connection_is_initialized_lazily(database_url):
         async with database:
 
             async def db_lookup():
-                await database.fetch_one("SELECT pg_sleep(1)")
+                if database_url.dialect.startswith("postgres"):
+                    await database.fetch_one("SELECT pg_sleep(0.3)")
+                elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
+                    "mariadb"
+                ):
+                    await database.fetch_one("SELECT SLEEP(0.3)")
+                elif database_url.dialect.startswith("mssql"):
+                    await database.execute("WAITFOR DELAY '00:00:00.300'")
 
-            await asyncio.gather(db_lookup(), db_lookup())
+            await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
 
     await run_database_queries()
     await database.disconnect()
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.parametrize("select_query", [notes.select(), "SELECT * FROM notes"])
 @pytest.mark.asyncio
 async def test_column_names(database_url, select_query):
@@ -785,7 +791,6 @@ async def test_column_names(database_url, select_query):
             assert results[0].completed == True
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_result_named_access(database_url):
     async with Database(database_url) as database:
@@ -806,7 +811,6 @@ async def test_result_named_access(database_url):
         assert result.completed is True
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_mapping_property_interface(database_url):
     """

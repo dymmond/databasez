@@ -230,6 +230,9 @@ class DatabaseBackend(ABC):
         self.connection_class = connection_class
         self.transaction_class = transaction_class
 
+    def __copy__(self) -> DatabaseBackend:
+        return self.__class__(self.connection_class, self.transaction_class)
+
     @property
     def owner(self) -> typing.Optional[RootDatabase]:
         result = self.__dict__.get("root")

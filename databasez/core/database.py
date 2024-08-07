@@ -87,10 +87,12 @@ class Database:
 
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
     backend: interfaces.DatabaseBackend
+    url: DatabaseURL
+    options: typing.Any
 
     def __init__(
         self,
-        url: typing.Optional[typing.Union[str, DatabaseURL, URL]] = None,
+        url: typing.Optional[typing.Union[str, DatabaseURL, URL, Database]] = None,
         *,
         force_rollback: bool = False,
         config: typing.Optional["DictAny"] = None,
@@ -98,14 +100,21 @@ class Database:
     ):
         init()
         assert config is None or url is None, "Use either 'url' or 'config', not both."
-
-        url = DatabaseURL(url)
-        if config and "connection" in config:
-            connection_config = config["connection"]
-            if "credentials" in connection_config:
-                connection_config = connection_config["credentials"]
-                url = url.replace(**connection_config)
-        self.backend, self.url, self.options = self.apply_database_url_and_options(url, **options)
+        if isinstance(url, Database):
+            assert not options, "Cannot specify options when copying a Database object."
+            self.backend = url.backend.__copy__()
+            self.url = url.url
+            self.options = url.options
+        else:
+            url = DatabaseURL(url)
+            if config and "connection" in config:
+                connection_config = config["connection"]
+                if "credentials" in connection_config:
+                    connection_config = connection_config["credentials"]
+                    url = url.replace(**connection_config)
+            self.backend, self.url, self.options = self.apply_database_url_and_options(
+                url, **options
+            )
         self.backend.owner = self
         self.is_connected = False
         self._connection_map = weakref.WeakKeyDictionary()
@@ -115,6 +124,9 @@ class Database:
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
         self._global_transaction: typing.Optional[Transaction] = None
+
+    def __copy__(self) -> Database:
+        return self.__class__(self)
 
     @property
     def _current_task(self) -> asyncio.Task:

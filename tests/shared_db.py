@@ -1,8 +1,10 @@
 import datetime
+import typing
 from unittest.mock import MagicMock
 
 import sqlalchemy
 
+from databasez import Database
 from databasez.testclient import DatabaseTestClient
 
 
@@ -68,17 +70,19 @@ prices = sqlalchemy.Table(
 )
 
 
-async def create_database_tables(url: str) -> None:
-    is_sqlite = url.startswith("sqlite")
-    async with DatabaseTestClient(
-        url, test_prefix="", use_existing=not is_sqlite, drop_database=False
-    ) as database:
-        await database.create_all(metadata)
+async def database_client(url: typing.Union[dict, str]) -> DatabaseTestClient:
+    if isinstance(url, str):
+        is_sqlite = url.startswith("sqlite")
+        database = DatabaseTestClient(
+            url, test_prefix="", use_existing=not is_sqlite, drop_database=is_sqlite
+        )
+    else:
+        database = Database(config=url)
+    await database.connect()
+    await database.create_all(metadata)
+    return database
 
 
-async def drop_database_tables(url: str) -> None:
-    is_sqlite = url.startswith("sqlite")
-    async with DatabaseTestClient(
-        url, test_prefix="", use_existing=True, drop_database=is_sqlite
-    ) as database:
-        await database.drop_all(metadata)
+async def stop_database_client(database: Database):
+    await database.drop_all(metadata)
+    await database.disconnect()

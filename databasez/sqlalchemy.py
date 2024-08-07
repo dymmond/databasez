@@ -205,6 +205,12 @@ class SQLAlchemyDatabase(DatabaseBackend):
     default_isolation_level: typing.Optional[str] = "AUTOCOMMIT"
     default_batch_size: int = 100
 
+    def __copy__(self) -> DatabaseBackend:
+        _copy = super().__copy__()
+        _copy.default_isolation_level = self.default_isolation_level
+        _copy.default_batch_size = self.default_batch_size
+        return _copy
+
     def extract_options(
         self,
         database_url: DatabaseURL,
