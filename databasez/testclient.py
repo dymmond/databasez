@@ -24,7 +24,7 @@ async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
 
 class DatabaseTestClient(Database):
     """
-    Client used only or unit testing.
+    Client used only for unit testing.
 
     This client simply creates a "test_" from the database provided in the
     connection.

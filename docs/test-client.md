@@ -60,9 +60,13 @@ that rollbacks once the database is disconnected.
 
     <sup>Default: `False`</sup>
 
+* **test_prefix** - Allow a custom test prefix or leave empty to use the url instead without changes.
+
+    <sup>Default: `test_`</sup>
+
 ### How to use it
 
-This is the easiest part because is already very familiar with the `Database` used by Saffier. In
+This is the easiest part because is already very familiar with the `Database` used by Edgy or Saffier. In
 fact, this is an extension of that same object with a lot of testing flavours.
 
 Let us assume you have a database url like this following:
@@ -71,7 +75,7 @@ Let us assume you have a database url like this following:
 DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/my_db"
 ```
 
-We know the database is called `my_db`, right? 
+We know the database is called `my_db`, right?
 
 When using the `DatabaseTestClient`, the client will ensure the tests will land on a `test_my_db`.
 
@@ -89,8 +93,7 @@ Well, this is rather complex test and actually a real one from Saffier and what 
 that is using the `DatabaseTestClient` which means the tests against models, fields or whatever
 database operation you want will be on a `test_` database.
 
-But you can see a `drop_database=True`, so what is that? 
+But you can see a `drop_database=True`, so what is that?
 
 Well `drop_database=True` means that by the end of the tests finish running, drops the database
 into oblivion.
-
