@@ -7,9 +7,11 @@ from sqlalchemy.engine import make_url
 
 
 class DatabaseURL:
-    def __init__(self, url: typing.Union[str, "DatabaseURL", None] = None):
+    def __init__(self, url: typing.Union[str, "DatabaseURL", URL, None] = None):
         if isinstance(url, DatabaseURL):
             self._url: str = url._url
+        elif isinstance(url, URL):
+            self._url = url.render_as_string(hide_password=False)
         elif isinstance(url, str):
             self._url = url
         elif url is None:
@@ -133,8 +135,12 @@ class DatabaseURL:
             kwargs["netloc"] = netloc
 
         if "database" in kwargs:
-            # pathes should begin with /
-            kwargs["path"] = "/" + kwargs.pop("database")
+            database = kwargs.pop("database")
+            if database is None:
+                kwargs["path"] = ""
+            else:
+                # pathes should begin with /
+                kwargs["path"] = f"/{database}"
 
         if "dialect" in kwargs or "driver" in kwargs:
             dialect = kwargs.pop("dialect", self.dialect)

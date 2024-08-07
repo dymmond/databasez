@@ -1,5 +1,16 @@
 # Release Notes
 
+## 0.8.3
+
+### Added
+
+- DatabaseTestClient has now an option for changing the test prefix.
+
+### Fixed
+
+- DatabaseTestClient can now use the improvements in 8.0 too.
+- DatabaseTestClient is now tested.
+
 ## 0.8.2
 
 ### Fixed

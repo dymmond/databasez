@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import sqlalchemy
 
-from databasez import Database
+from databasez.testclient import DatabaseTestClient
 
 
 class AsyncMock(MagicMock):
@@ -69,10 +69,16 @@ prices = sqlalchemy.Table(
 
 
 async def create_database_tables(url: str) -> None:
-    async with Database(url) as database:
+    is_sqlite = url.startswith("sqlite")
+    async with DatabaseTestClient(
+        url, test_prefix="", use_existing=not is_sqlite, drop_database=False
+    ) as database:
         await database.create_all(metadata)
 
 
 async def drop_database_tables(url: str) -> None:
-    async with Database(url) as database:
+    is_sqlite = url.startswith("sqlite")
+    async with DatabaseTestClient(
+        url, test_prefix="", use_existing=True, drop_database=is_sqlite
+    ) as database:
         await database.drop_all(metadata)
