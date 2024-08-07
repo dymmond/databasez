@@ -467,6 +467,7 @@ async def test_connect_and_disconnect(database_mixed_url):
     database = Database(**data)
 
     assert not database.is_connected
+    assert database._force_rollback is False
     assert database.engine is None
     await database.connect()
     assert database.is_connected
@@ -474,13 +475,18 @@ async def test_connect_and_disconnect(database_mixed_url):
 
     # copy
     copied_db = database.__copy__()
+    assert database._force_rollback is False
     assert not copied_db.is_connected
     assert copied_db.engine is None
 
     # second method
-    copied_db = Database(database)
+    copied_db = Database(database, force_rollback=True)
     assert not copied_db.is_connected
     assert copied_db.engine is None
+    assert copied_db._force_rollback is True
+
+    copied_db2 = copied_db.__copy__()
+    assert copied_db2._force_rollback is True
 
     old_engine = database.engine
     await database.disconnect()

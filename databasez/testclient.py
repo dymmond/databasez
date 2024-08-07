@@ -34,7 +34,7 @@ class DatabaseTestClient(Database):
         self,
         url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
         *,
-        force_rollback: bool = False,
+        force_rollback: typing.Union[bool, None] = None,
         use_existing: bool = False,
         drop_database: bool = False,
         test_prefix: str = "test_",
@@ -42,7 +42,7 @@ class DatabaseTestClient(Database):
     ):
         if isinstance(url, Database):
             test_database_url = (
-                url.url.replace(database=f"{test_prefix}{url.database}")
+                url.url.replace(database=f"{test_prefix}{url.url.database}")
                 if test_prefix
                 else url.url
             )
@@ -51,7 +51,7 @@ class DatabaseTestClient(Database):
             self.use_existing = getattr(url, "use_existing", use_existing)
             self.drop = getattr(url, "drop", drop_database)
             asyncio.get_event_loop().run_until_complete(self.setup())
-            super().__init__(url)
+            super().__init__(url, force_rollback=force_rollback)
             # fix url
             if str(self.url) != self.test_db_url:
                 self.url = test_database_url
