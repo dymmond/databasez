@@ -236,5 +236,8 @@ class SQLAlchemyDatabase(DatabaseBackend):
 
     async def disconnect(self) -> None:
         engine = self.engine
-        assert engine is not None and self.owner.is_connected, "database is not initialized"
+        # during disconnect it could be that the owner is lost
+        assert engine is not None and (
+            self.owner is None or self.owner.is_connected
+        ), "database is not initialized"
         await engine.dispose()
