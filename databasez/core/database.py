@@ -16,7 +16,7 @@ from .databaseurl import DatabaseURL
 from .transaction import Transaction
 
 if typing.TYPE_CHECKING:
-    from sqlalchemy import MetaData
+    from sqlalchemy import URL, MetaData
     from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.sql import ClauseElement
 
@@ -90,7 +90,7 @@ class Database:
 
     def __init__(
         self,
-        url: typing.Optional[typing.Union[str, DatabaseURL]] = None,
+        url: typing.Optional[typing.Union[str, DatabaseURL, URL]] = None,
         *,
         force_rollback: bool = False,
         config: typing.Optional["DictAny"] = None,
