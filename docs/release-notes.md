@@ -1,5 +1,17 @@
 # Release Notes
 
+## 0.8.4
+
+### Added
+
+- Provide `__copy__` method for Database, DatabaseBackend.
+- Database is now an allowed type for Database (used for copying). Same is true for the DatabaseTestClient subclass.
+
+### Fixed
+
+- Speed of tests.
+- DATABASE_CONFIG_URLS had passwords not properly unquoted.
+
 ## 0.8.3
 
 ### Added

@@ -8,7 +8,7 @@ import pytest
 import sqlalchemy
 
 from databasez import Database, DatabaseURL
-from tests.shared_db import create_database_tables, drop_database_tables, notes
+from tests.shared_db import database_client, notes, stop_database_client
 
 assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
@@ -18,20 +18,15 @@ if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 
-@pytest.fixture(autouse=True, scope="function")
-def create_test_database():
+@pytest.fixture(params=DATABASE_URLS)
+def database_url(request):
     # Create test databases
-    for url in DATABASE_URLS:
-        asyncio.run(create_database_tables(url))
-
-    # Run the test suite
-    yield
-
-    for url in DATABASE_URLS:
-        asyncio.run(drop_database_tables(url))
+    loop = asyncio.new_event_loop()
+    database = loop.run_until_complete(database_client(request.param))
+    yield str(database.url)
+    loop.run_until_complete(stop_database_client(database))
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_commit_on_root_transaction(database_url):
     """
@@ -59,7 +54,6 @@ async def test_commit_on_root_transaction(database_url):
             await database.execute(query)
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_iterate_outside_transaction_with_values(database_url):
     """
@@ -86,7 +80,6 @@ async def test_iterate_outside_transaction_with_values(database_url):
         assert len(iterate_results) == 5
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_context_child_task_inheritance(database_url):
     """
@@ -102,7 +95,6 @@ async def test_transaction_context_child_task_inheritance(database_url):
             await asyncio.create_task(check_transaction(transaction, transaction._transaction))
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_connection_cleanup_contextmanager(database_url):
     """
@@ -142,7 +134,6 @@ async def test_connection_cleanup_contextmanager(database_url):
     assert len(database._connection_map) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_connection_cleanup_garbagecollector(database_url):
     """
@@ -170,7 +161,6 @@ async def test_connection_cleanup_garbagecollector(database_url):
     assert len(database._connection_map) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_context_cleanup_contextmanager(database_url):
     """
@@ -192,7 +182,6 @@ async def test_transaction_context_cleanup_contextmanager(database_url):
         assert open_transactions.get(transaction, None) is None
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_context_cleanup_garbagecollector(database_url):
     """
@@ -233,7 +222,6 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
         assert len(open_transactions) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_iterate_outside_transaction_with_temp_table(database_url):
     """
@@ -271,7 +259,6 @@ async def test_iterate_outside_transaction_with_temp_table(database_url):
         assert len(iterate_results) == 5
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_rollback_isolation(database_url):
     """
@@ -294,7 +281,6 @@ async def test_rollback_isolation(database_url):
         assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_rollback_isolation_with_contextmanager(database_url):
     """
@@ -320,7 +306,6 @@ async def test_rollback_isolation_with_contextmanager(database_url):
             assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_commit(database_url):
     """
@@ -338,7 +323,6 @@ async def test_transaction_commit(database_url):
             assert len(results) == 1
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_commit_serializable(database_url):
     """
@@ -397,7 +381,6 @@ async def test_transaction_commit_serializable(database_url):
             delete_independently()
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_rollback(database_url):
     """
@@ -423,7 +406,6 @@ async def test_transaction_rollback(database_url):
             assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_commit_low_level(database_url):
     """
@@ -450,7 +432,6 @@ async def test_transaction_commit_low_level(database_url):
             assert len(results) == 1
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_rollback_low_level(database_url):
     """
@@ -474,18 +455,12 @@ async def test_transaction_rollback_low_level(database_url):
             assert len(results) == 0
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_decorator(database_url):
     """
     Ensure that @database.transaction() is supported.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
-
-    database = Database(force_rollback=True, **data)
+    database = Database(database_url, force_rollback=True)
 
     @database.transaction()
     async def insert_data(raise_exception):
@@ -512,7 +487,6 @@ async def test_transaction_decorator(database_url):
 # highly default isolation level specific
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_context_sibling_task_isolation_example(database_url):
     """
@@ -542,7 +516,6 @@ async def test_transaction_context_sibling_task_isolation_example(database_url):
         await asyncio.gather(tx1(db), tx2(db))
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_context_child_task_inheritance_example(database_url):
     """
@@ -576,7 +549,6 @@ async def test_transaction_context_child_task_inheritance_example(database_url):
             assert result.text == "test"
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_transaction_context_sibling_task_isolation(database_url):
     """

@@ -1,4 +1,6 @@
 # Create a database instance, and connect to it.
+import copy
+
 from databasez import Database
 
 database = Database("sqlite+aiosqlite:///example.db")
@@ -22,3 +24,11 @@ query = "SELECT * FROM HighScores"
 rows = await database.fetch_all(query=query)
 
 print("High Scores:", rows)
+
+# new Database object with the same parameters required? No problem, we can copy:
+database2 = copy.copy(database)
+# or
+database2 = Database(database)
+await database2.connect()
+await database2.disconnect()
+assert database.is_connected == True

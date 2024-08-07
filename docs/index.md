@@ -154,7 +154,7 @@ Now from the console, we can run a simple example.
 {!> ../docs_src/quickstart/quickstart.py !}
 ```
 
-Check out the documentation on [making database queries](https://databasez.dymmond.com/queries/)
+Check out the documentation on [making database queries](./queries.md)
 for examples of how to start using databases together with SQLAlchemy core expressions.
 
 
