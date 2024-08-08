@@ -8,7 +8,8 @@
 
 ### Fixed
 
-- Testclient drops database unexpectly.
+- Testclient has issues with missing permissions.
+- Lazy global connection.
 
 ## 0.9.1
 
