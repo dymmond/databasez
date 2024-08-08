@@ -232,6 +232,9 @@ class Database:
                 return True
         return False
 
+    async def connect_hook(self) -> None:
+        """Refcount protected connect hook"""
+
     async def connect(self) -> None:
         """
         Establish the connection pool.
@@ -250,6 +253,10 @@ class Database:
         self._global_connection = Connection(self, self.backend)
         self._global_transaction = self._global_connection.transaction(force_rollback=True)
         await self._global_transaction.__aenter__()
+        await self.connect_hook()
+
+    async def disconnect_hook(self) -> None:
+        """Refcount protected disconnect hook"""
 
     async def disconnect(self, force: bool = False) -> None:
         """
@@ -266,6 +273,7 @@ class Database:
 
         assert self._global_connection is not None
         assert self._global_transaction is not None
+        await self.disconnect_hook()
 
         await self._global_transaction.__aexit__()
         assert (

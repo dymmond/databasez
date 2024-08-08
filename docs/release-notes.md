@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.9.2
+
+### Added
+
+- Expose customization hooks for disconnects, connects.
+
+### Fixed
+
+- Testclient drops database unexpectly.
+
 ## 0.9.1
 
 ### Added
