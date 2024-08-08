@@ -134,7 +134,7 @@ class Transaction:
                 assert connection._transaction_stack[-1] is self
                 connection._transaction_stack.pop()
                 await _transaction.commit()
-            await connection.__aexit__()
+        await connection.__aexit__()
 
     async def rollback(self) -> None:
         connection = self.connection
@@ -146,4 +146,4 @@ class Transaction:
                 assert connection._transaction_stack[-1] is self
                 connection._transaction_stack.pop()
                 await _transaction.rollback()
-            await connection.__aexit__()
+        await connection.__aexit__()
