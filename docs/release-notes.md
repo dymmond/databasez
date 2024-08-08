@@ -10,6 +10,9 @@
     - Its trueness value evaluates to the current value, context-sensitive.
     - It still can be used as a contextmanager for temporary overwrites.
 
+### Fixed
+
+- Fixed refcount for global connections.
 
 ### Changed
 
