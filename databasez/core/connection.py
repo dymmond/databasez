@@ -33,8 +33,13 @@ class Connection:
 
         self._query_lock = asyncio.Lock()
         self.connection_transaction: typing.Optional[Transaction] = None
+        self._connection_aenter_hook: typing.Optional[typing.Any] = None
 
     async def __aenter__(self) -> Connection:
+        if self._connection_aenter_hook is not None:
+            hook = self._connection_aenter_hook
+            self._connection_aenter_hook = None
+            await hook()
         async with self._connection_lock:
             self._connection_counter += 1
             try:

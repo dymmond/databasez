@@ -1,4 +1,3 @@
-import asyncio
 import os
 import typing
 from typing import Any
@@ -50,7 +49,6 @@ class DatabaseTestClient(Database):
             self.test_db_url = str(getattr(url, "test_db_url", test_database_url))
             self.use_existing = getattr(url, "use_existing", use_existing)
             self.drop = getattr(url, "drop", drop_database)
-            asyncio.get_event_loop().run_until_complete(self.setup())
             super().__init__(url, force_rollback=force_rollback)
             # fix url
             if str(self.url) != self.test_db_url:
@@ -64,22 +62,28 @@ class DatabaseTestClient(Database):
             self.use_existing = use_existing
             self.drop = drop_database
 
-            asyncio.get_event_loop().run_until_complete(self.setup())
-
             super().__init__(test_database_url, force_rollback=force_rollback, **options)
 
-    async def setup(self) -> None:
+    async def connect_hook(self) -> None:
         """
         Makes sure the database is created if does not exist or use existing
         if needed.
         """
         if not self.use_existing:
-            if await self.database_exists(self.test_db_url):
-                await self.drop_database(self.test_db_url)
-            await self.create_database(self.test_db_url)
+            try:
+                if await self.database_exists(self.test_db_url):
+                    await self.drop_database(self.test_db_url)
+                else:
+                    await self.create_database(self.test_db_url)
+            except (ProgrammingError, OperationalError, TypeError):
+                self.drop = False
         else:
             if not await self.database_exists(self.test_db_url):
-                await self.create_database(self.test_db_url)
+                try:
+                    await self.create_database(self.test_db_url)
+                except (ProgrammingError, OperationalError):
+                    self.drop = False
+        await super().connect_hook()
 
     async def is_database_exist(self) -> Any:
         """
@@ -153,43 +157,41 @@ class DatabaseTestClient(Database):
             db_client = Database(url, isolation_level="AUTOCOMMIT")
         else:
             db_client = Database(url)
-        await db_client.connect()
+        async with db_client:
+            if dialect_name == "postgresql":
+                if not template:
+                    template = "template1"
 
-        if dialect_name == "postgresql":
-            if not template:
-                template = "template1"
-
-            async with db_client.engine.begin() as conn:  # type: ignore
-                text = "CREATE DATABASE {} ENCODING '{}' TEMPLATE {}".format(
-                    quote(conn, database), encoding, quote(conn, template)
-                )
-                await conn.execute(sa.text(text))
-
-        elif dialect_name == "mysql":
-            async with db_client.engine.begin() as conn:  # type: ignore
-                text = "CREATE DATABASE {} CHARACTER SET = '{}'".format(
-                    quote(conn, database), encoding
-                )
-                await conn.execute(sa.text(text))
-
-        elif dialect_name == "sqlite" and database != ":memory:":
-            if database:
                 async with db_client.engine.begin() as conn:  # type: ignore
-                    await conn.execute(sa.text("CREATE TABLE DB(id int)"))
-                    await conn.execute(sa.text("DROP TABLE DB"))
+                    text = "CREATE DATABASE {} ENCODING '{}' TEMPLATE {}".format(
+                        quote(conn, database), encoding, quote(conn, template)
+                    )
+                    await conn.execute(sa.text(text))
 
-        else:
-            async with db_client.engine.begin() as conn:  # type: ignore
-                text = f"CREATE DATABASE {quote(conn, database)}"
-                await conn.execute(sa.text(text))
+            elif dialect_name == "mysql":
+                async with db_client.engine.begin() as conn:  # type: ignore
+                    text = "CREATE DATABASE {} CHARACTER SET = '{}'".format(
+                        quote(conn, database), encoding
+                    )
+                    await conn.execute(sa.text(text))
 
-        await db_client.disconnect()
+            elif dialect_name == "sqlite" and database != ":memory:":
+                if database:
+                    async with db_client.engine.begin() as conn:  # type: ignore
+                        await conn.execute(sa.text("CREATE TABLE DB(id int)"))
+                        await conn.execute(sa.text("DROP TABLE DB"))
+
+            else:
+                async with db_client.engine.begin() as conn:  # type: ignore
+                    text = f"CREATE DATABASE {quote(conn, database)}"
+                    await conn.execute(sa.text(text))
 
     async def drop_database(self, url: typing.Union[str, "sa.URL", DatabaseURL]) -> Any:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
-        dialect_name = url.sqla_url.get_dialect(True).name
-        dialect_driver = url.sqla_url.get_dialect(True).driver
+        dialect = url.sqla_url.get_dialect(True)
+        dialect_name = dialect.name
+        dialect_driver = dialect.driver
 
         if dialect_name == "postgresql":
             url = url.replace(database="postgres")
@@ -207,33 +209,35 @@ class DatabaseTestClient(Database):
             db_client = Database(url, isolation_level="AUTOCOMMIT")
         else:
             db_client = Database(url)
-        await db_client.connect()
+        async with db_client:
+            if dialect_name == "sqlite" and database != ":memory:":
+                if database:
+                    os.remove(database)
+            elif dialect_name == "postgresql":
+                async with db_client.connection() as conn1:
+                    async with conn1.async_connection.begin() as conn:
+                        # no connection
+                        if dialect.server_version_info is None:
+                            return
+                        # Disconnect all users from the database we are dropping.
+                        version = dialect.server_version_info
+                        pid_column = "pid" if (version >= (9, 2)) else "procpid"
+                        text = """
+                        SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
+                        FROM pg_stat_activity
+                        WHERE pg_stat_activity.datname = '{database}'
+                        AND {pid_column} <> pg_backend_pid();
+                        """.format(pid_column=pid_column, database=database)
+                        await conn.execute(sa.text(text))
 
-        if dialect_name == "sqlite" and database != ":memory:":
-            if database:
-                os.remove(database)
-        elif dialect_name == "postgresql":
-            async with db_client.engine.begin() as conn:  # type: ignore
-                # Disconnect all users from the database we are dropping.
-                version = conn.dialect.server_version_info
-                pid_column = "pid" if (version >= (9, 2)) else "procpid"  # type: ignore
-                text = """
-                SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
-                FROM pg_stat_activity
-                WHERE pg_stat_activity.datname = '{database}'
-                AND {pid_column} <> pg_backend_pid();
-                """.format(pid_column=pid_column, database=database)
-                await conn.execute(sa.text(text))
-
-                # Drop the database.
-                text = f"DROP DATABASE {quote(conn, database)}"
-                await conn.execute(sa.text(text))
-        else:
-            async with db_client.engine.begin() as conn:  # type: ignore
-                text = f"DROP DATABASE {quote(conn, database)}"
-                await conn.execute(sa.text(text))
-
-        await db_client.disconnect()
+                        # Drop the database.
+                        text = f"DROP DATABASE {quote(conn, database)}"
+                        await conn.execute(sa.text(text))
+            else:
+                async with db_client.connection() as conn1:
+                    async with conn1.async_connection.begin() as conn:
+                        text = f"DROP DATABASE {quote(conn, database)}"
+                        await conn.execute(sa.text(text))
 
     async def disconnect_hook(self) -> None:
         if self.drop:

@@ -252,7 +252,7 @@ class Database:
 
         self._global_connection = Connection(self, self.backend)
         self._global_transaction = self._global_connection.transaction(force_rollback=True)
-        await self._global_transaction.__aenter__()
+        self._global_connection._connection_aenter_hook = self._global_transaction.__aenter__
         await self.connect_hook()
 
     async def disconnect_hook(self) -> None:
@@ -273,24 +273,27 @@ class Database:
 
         assert self._global_connection is not None
         assert self._global_transaction is not None
-        await self.disconnect_hook()
+        try:
+            await self.disconnect_hook()
+        finally:
+            if self._global_connection._connection_aenter_hook is None:
+                await self._global_transaction.__aexit__()
+            assert (
+                self._global_connection._connection_counter == 0
+            ), f"global connection active: {self._global_connection._connection_counter}"
 
-        await self._global_transaction.__aexit__()
-        assert (
-            self._global_connection._connection_counter == 0
-        ), f"global connection active: {self._global_connection._connection_counter}"
-
-        self._global_transaction = None
-        self._global_connection = None
-        self._connection = None
-
-        await self.backend.disconnect()
-        logger.info(
-            "Disconnected from database %s",
-            self.url.obscure_password,
-            extra=DISCONNECT_EXTRA,
-        )
-        self.is_connected = False
+            self._global_transaction = None
+            self._global_connection = None
+            self._connection = None
+            try:
+                await self.backend.disconnect()
+                logger.info(
+                    "Disconnected from database %s",
+                    self.url.obscure_password,
+                    extra=DISCONNECT_EXTRA,
+                )
+            finally:
+                self.is_connected = False
 
     async def __aenter__(self) -> "Database":
         await self.connect()
