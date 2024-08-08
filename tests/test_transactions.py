@@ -199,14 +199,12 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
     async with Database(database_url) as database:
         # Should be tracking the transaction
         open_transactions = ACTIVE_TRANSACTIONS.get()
-        assert isinstance(open_transactions, MutableMapping)
-        # the global one is always created
-        assert len(open_transactions) == 1
+        assert open_transactions is None
         transaction = database.transaction()
         await transaction.start()
         # is replaced after start() call
         open_transactions = ACTIVE_TRANSACTIONS.get()
-        assert len(open_transactions) == 2
+        assert len(open_transactions) == 1
 
         assert open_transactions.get(transaction) is transaction._transaction
 
@@ -216,7 +214,7 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
 
         # A strong reference to the transaction is kept alive by the connection's
         # ._transaction_stack, so it is still be tracked at this point.
-        assert len(open_transactions) == 2
+        assert len(open_transactions) == 1
 
         # If that were magically cleared, the transaction would be cleaned up,
         # but as it stands this always causes a hang during teardown at
@@ -227,7 +225,7 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
         del transaction
 
         # Now with the transaction rolled-back, it should be cleaned up.
-        assert len(open_transactions) == 1
+        assert len(open_transactions) == 0
 
 
 @pytest.mark.asyncio

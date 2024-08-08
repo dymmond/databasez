@@ -113,6 +113,7 @@ class Transaction:
 
     async def start(self) -> Transaction:
         connection = self.connection
+        await connection._exec_hook()
         async with connection._transaction_lock:
             is_root = not connection._transaction_stack
             _transaction = connection._connection.transaction(self._existing_transaction)
