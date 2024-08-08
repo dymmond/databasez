@@ -151,6 +151,19 @@ class SQLAlchemyConnection(ConnectionBackend):
             return await connection.execute(stmt, value)
         return await connection.execute(stmt)
 
+    def parse_execute_result(self, result: typing.Any) -> typing.Union[Record, int]:
+        if result.is_insert:
+            try:
+                if result.inserted_primary_key:
+                    return typing.cast(Record, result.inserted_primary_key)
+            except AttributeError:
+                pass
+            try:
+                return typing.cast(int, result.lastrowid)
+            except AttributeError:
+                pass
+        return typing.cast(int, result.rowcount)
+
     async def execute(
         self, stmt: typing.Any, value: typing.Any = None
     ) -> typing.Union[Record, int]:
@@ -159,25 +172,25 @@ class SQLAlchemyConnection(ConnectionBackend):
         """
 
         with await self.execute_raw(stmt, value) as result:
-            if result.is_insert:
-                try:
-                    if result.returned_defaults:
-                        return typing.cast(Record, result.returned_defaults)
-                except AttributeError:
-                    pass
-                try:
-                    return typing.cast(int, result.lastrowid)
-                except AttributeError:
-                    pass
-            return typing.cast(int, result.rowcount)
+            return self.parse_execute_result(result)
 
-    async def execute_many(self, stmts: typing.List[typing.Any]) -> None:
-        connection = self.async_connection
-        assert connection is not None, "Connection is not acquired"
-        for stmt in stmts:
-            # this is the internal execute
-            with await connection.execute(stmt):
+    def parse_execute_many_result(
+        self, result: typing.Any
+    ) -> typing.Union[typing.Sequence[Record], int]:
+        if result.is_insert:
+            try:
+                if result.inserted_primary_key_rows is not None:
+                    # WARNING: only postgresql, other dbs have None values
+                    return typing.cast(typing.Sequence[Record], result.inserted_primary_key_rows)
+            except AttributeError:
                 pass
+        return typing.cast(int, result.rowcount)
+
+    async def execute_many(
+        self, stmt: typing.Union[ClauseElement, str], values: typing.Any = None
+    ) -> typing.Union[typing.Sequence[Record], int]:
+        with await self.execute_raw(stmt, values) as result:
+            return self.parse_execute_many_result(result)
 
     async def get_raw_connection(self) -> typing.Any:
         """The real raw connection."""

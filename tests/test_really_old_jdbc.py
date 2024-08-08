@@ -56,13 +56,7 @@ async def test_jdbc_queries():
                         {"text": "example2", "completed": False},
                         {"text": "example3", "completed": True},
                     ]
-                    # fails after each insert, so do it manually:
-                    # await database.execute_many(query, values)
-                    for value in values:
-                        try:
-                            await connection.execute(query, value)
-                        except Exception:
-                            pass
+                    await connection.execute_many(query, values)
 
                     # fetch_all()
                     query = notes.select()

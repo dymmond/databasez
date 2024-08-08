@@ -110,10 +110,16 @@ class Connection:
             async with self._query_lock:
                 return await self._connection.execute(query, values)
 
-    async def execute_many(self, query: typing.Union[ClauseElement, str], values: list) -> None:
-        queries = [self._build_query(query, values_set) for values_set in values]
-        async with self._query_lock:
-            await self._connection.execute_many(queries)
+    async def execute_many(
+        self, query: typing.Union[ClauseElement, str], values: typing.Any = None
+    ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
+        if isinstance(query, str):
+            built_query = self._build_query(query, None)
+            async with self._query_lock:
+                return await self._connection.execute_many(built_query, values)
+        else:
+            async with self._query_lock:
+                return await self._connection.execute_many(query, values)
 
     async def iterate(
         self,
