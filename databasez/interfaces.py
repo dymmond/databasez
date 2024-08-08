@@ -192,11 +192,15 @@ class ConnectionBackend(ABC):
     ) -> typing.Union[Record, int]:
         """
         Executes statement and returns the last row defaults (insert) or rowid (insert) or the row count of updates.
-
         """
 
     @abstractmethod
-    async def execute_many(self, stmts: typing.List[typing.Any]) -> None: ...
+    async def execute_many(
+        self, stmt: typing.Any, value: typing.Any = None
+    ) -> typing.Union[typing.Sequence[Record], int]:
+        """
+        Executes statement and returns the row defaults (insert) or the row count of operations.
+        """
 
     @abstractmethod
     def in_transaction(self) -> bool:

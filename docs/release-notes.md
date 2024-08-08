@@ -1,5 +1,16 @@
 # Release Notes
 
+## 0.9.1
+
+### Added
+
+- Expose customization hooks for execute result parsing for subclasses of sqlalchemy.
+
+### Fixed
+
+- `execute_many` works now efficient and properly and returns autoincrement column ids.
+- `execute` returned not autoincrement id but defaults.
+
 ## 0.9.0
 
 ### Added

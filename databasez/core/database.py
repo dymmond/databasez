@@ -331,7 +331,9 @@ class Database:
         async with self.connection() as connection:
             return await connection.execute(query, values)
 
-    async def execute_many(self, query: typing.Union[ClauseElement, str], values: list) -> None:
+    async def execute_many(
+        self, query: typing.Union[ClauseElement, str], values: typing.Any = None
+    ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
         async with self.connection() as connection:
             return await connection.execute_many(query, values)
 
