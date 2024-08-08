@@ -204,6 +204,8 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
         assert len(open_transactions) == 1
         transaction = database.transaction()
         await transaction.start()
+        # is replaced after start() call
+        open_transactions = ACTIVE_TRANSACTIONS.get()
         assert len(open_transactions) == 2
 
         assert open_transactions.get(transaction) is transaction._transaction

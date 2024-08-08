@@ -74,13 +74,20 @@ class ForceRollback:
         self.default = default
 
     def set(self, value: typing.Union[bool, None] = None) -> None:
-        if value is None:
-            value = self.default
         force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()
         if force_rollbacks is None:
+            # shortcut, we don't need to initialize anything for None (reset)
+            if value is None:
+                return
             force_rollbacks = weakref.WeakKeyDictionary()
-            ACTIVE_FORCE_ROLLBACKS.set(force_rollbacks)
-        force_rollbacks[self] = value
+        else:
+            force_rollbacks = force_rollbacks.copy()
+        if value is None:
+            force_rollbacks.pop(self, None)
+        else:
+            force_rollbacks[self] = value
+        # it is always a copy required to prevent sideeffects between the contexts
+        ACTIVE_FORCE_ROLLBACKS.set(force_rollbacks)
 
     def __bool__(self) -> bool:
         force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()

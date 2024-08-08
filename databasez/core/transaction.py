@@ -54,13 +54,20 @@ class Transaction:
     ) -> typing.Optional[interfaces.TransactionBackend]:
         transactions = ACTIVE_TRANSACTIONS.get()
         if transactions is None:
+            # shortcut, we don't need to initialize anything for None (remove transaction)
+            if transaction is None:
+                return None
             transactions = weakref.WeakKeyDictionary()
-            ACTIVE_TRANSACTIONS.set(transactions)
+        else:
+            transactions = transactions.copy()
 
         if transaction is None:
             transactions.pop(self, None)
         else:
             transactions[self] = transaction
+        # It is always a copy required to
+        # prevent sideeffects between contexts
+        ACTIVE_TRANSACTIONS.set(transactions)
 
         return transactions.get(self, None)
 
@@ -122,6 +129,7 @@ class Transaction:
         async with connection._transaction_lock:
             _transaction = self._transaction
             if _transaction is not None:
+                # delete transaction from ACTIVE_TRANSACTIONS
                 self._transaction = None
                 assert connection._transaction_stack[-1] is self
                 connection._transaction_stack.pop()
@@ -133,6 +141,7 @@ class Transaction:
         async with connection._transaction_lock:
             _transaction = self._transaction
             if _transaction is not None:
+                # delete transaction from ACTIVE_TRANSACTIONS
                 self._transaction = None
                 assert connection._transaction_stack[-1] is self
                 connection._transaction_stack.pop()
