@@ -35,10 +35,15 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     "Topic :: Internet :: WWW/HTTP",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "sqlalchemy_utils>=0.40.0"]
+dependencies = [
+    "sqlalchemy[asyncio]>=2.0.25,<2.1",
+    "orjson",
+    "sqlalchemy_utils>=0.40.0",
+]
 keywords = [
     "mysql",
     "postgres",
@@ -47,7 +52,7 @@ keywords = [
     "asyncio",
     "esmerald",
     "saffier",
-    "jdbc"
+    "jdbc",
 ]
 
 [project.urls]
@@ -96,12 +101,12 @@ fix = true
 
 [tool.ruff.lint]
 select = [
-    "E", # pycodestyle errors
-    "W", # pycodestyle warnings
-    "F", # pyflakes
-    "C", # flake8-comprehensions
-    "B", # flake8-bugbear
-    "I", # isort
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "C",     # flake8-comprehensions
+    "B",     # flake8-bugbear
+    "I",     # isort
     "ASYNC", # ASYNC
     # "SIM", # simplification
 ]
@@ -138,7 +143,11 @@ module = "docs_src.*"
 ignore_errors = true
 
 [tool.pytest.ini_options]
-addopts = ["--strict-config", "--strict-markers", "--pdbcls=IPython.terminal.debugger:Pdb"]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "--pdbcls=IPython.terminal.debugger:Pdb",
+]
 xfail_strict = true
 junit_family = "xunit2"
 setup_timeout = 2
@@ -153,10 +162,7 @@ include = ["/databasez"]
 
 [tool.hatch.envs.default]
 features = ["all"]
-extra-dependencies = [
-    "ipdb>=0.13.13",
-    "pre-commit>=2.17.0,<4.0.0",
-]
+extra-dependencies = ["ipdb>=0.13.13", "pre-commit>=2.17.0,<4.0.0"]
 
 [tool.hatch.envs.default.scripts]
 clean_pyc = "find . -type f -name \"*.pyc\" -delete"
@@ -177,13 +183,9 @@ build = "mkdocs build"
 serve = "mkdocs serve --dev-addr localhost:8000"
 
 
-
 [tool.hatch.envs.test]
 features = ["all"]
-extra-dependencies = [
-    "mypy>=1.1.0,<2.0.0",
-    "psycopg[binary]"
-]
+extra-dependencies = ["mypy>=1.1.0,<2.0.0", "psycopg[binary]"]
 
 [tool.hatch.envs.test.scripts]
 check_types = "mypy -p databasez"
@@ -202,7 +204,7 @@ extra-dependencies = [
     "pyodbc",
     "pytest-timeouts",
     "pytest-rerunfailures",
-    "pytest-asyncio"
+    "pytest-asyncio",
 ]
 
 [tool.hatch.envs.hatch-test.env-vars]
