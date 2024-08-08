@@ -1,5 +1,22 @@
 # Release Notes
 
+## 0.9.0
+
+### Added
+
+- `force_rollback` is now a descriptor returning an extensive ForceRollback object.
+    - Setting True, False, None is now possible for overwriting the value/resetting to the initial value (None).
+    - Deleting it resets it to the initial value.
+    - Its trueness value evaluates to the current value, context-sensitive.
+    - It still can be used as a contextmanager for temporary overwrites.
+
+
+### Changed
+
+- `connect`/`disconnect` calls are now refcounted. Nesting is now supported.
+- ACTIVE_TRANSACTIONS dict is not replaced anymore when initialized.
+
+
 ## 0.8.5
 
 ### Added

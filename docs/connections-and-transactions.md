@@ -15,13 +15,14 @@ from databasez import Database
 
 **Parameters**
 
-* **url** - The `url` of the connection string.
+* **url** - The `url` of the connection string or a Database object to copy from.
 
   <sup>Default: `None`</sup>
 
-* **force_rollback** - A boolean flag indicating if it should force the rollback.
+* **force_rollback** - An optional boolean flag for force_rollback. Overwritable at runtime possible.
+                       Note: when None it copies the value from the provided Database object or sets it to False.
 
-  <sup>Default: `False`</sup>
+  <sup>Default: `None`</sup>
 
 * **config** - A python like dictionary as alternative to the `url` that contains the information
 to connect to the database.
@@ -33,6 +34,21 @@ to connect to the database.
 !!! Warning
     Be careful when setting up the `url` or `config`. You can use one or the other but not both
     at the same time.
+
+
+**Attributes***
+
+* **force_rollback**:
+    It evaluates its trueness value to the active value of force_rollback for this context.
+    You can delete it to reset it (`del database.force_rollback`) (it uses the descriptor magic).
+
+**Functions**
+
+* **__copy__** - Either usable directly or via copy from the copy module. A fresh Database object with the same options as the existing is created.
+                 Note: for creating a copy with overwritten initial force_rollback you can use: `Database(database_obj, force_rollback=False)`.
+                 Note: you have to connect it.
+
+* **force_rollback(force_rollback=True)**: - The magic attribute is also function returning a context-manager for temporary overwrites of force_rollback.
 
 
 ## Connecting and disconnecting

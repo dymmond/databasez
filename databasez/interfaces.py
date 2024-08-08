@@ -32,6 +32,7 @@ class TransactionBackend(ABC):
         connection: ConnectionBackend,
         existing_transaction: typing.Optional[Transaction] = None,
     ):
+        # cannot be a weak ref otherwise connections get lost when retrieving them via transactions
         self.connection = connection
         self.raw_transaction = existing_transaction
 
@@ -235,14 +236,14 @@ class DatabaseBackend(ABC):
 
     @property
     def owner(self) -> typing.Optional[RootDatabase]:
-        result = self.__dict__.get("root")
+        result = self.__dict__.get("owner")
         if result is None:
             return None
         return typing.cast("RootDatabase", result())
 
     @owner.setter
     def owner(self, value: RootDatabase) -> None:
-        self.__dict__["root"] = weakref.ref(value)
+        self.__dict__["owner"] = weakref.ref(value)
 
     @abstractmethod
     async def connect(self, database_url: DatabaseURL, **options: typing.Any) -> None:

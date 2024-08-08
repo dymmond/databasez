@@ -44,7 +44,7 @@ class Connection:
                         self.connection_transaction = self.transaction(
                             existing_transaction=raw_transaction
                         )
-                        # we don't need to call __aenter__ of connection_transaction
+                        # we don't need to call __aenter__ of connection_transaction, it is not on the stack
             except BaseException as e:
                 self._connection_counter -= 1
                 raise e

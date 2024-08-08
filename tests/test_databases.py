@@ -467,39 +467,92 @@ async def test_connect_and_disconnect(database_mixed_url):
     database = Database(**data)
 
     assert not database.is_connected
-    assert database._force_rollback is False
+    assert not database.force_rollback
     assert database.engine is None
+    assert database.ref_counter == 0
     await database.connect()
     assert database.is_connected
     assert database.engine is not None
+    assert database.ref_counter == 1
 
     # copy
     copied_db = database.__copy__()
-    assert database._force_rollback is False
+    assert copied_db.ref_counter == 0
+    assert not database.force_rollback
     assert not copied_db.is_connected
     assert copied_db.engine is None
 
     # second method
     copied_db = Database(database, force_rollback=True)
+    assert copied_db.ref_counter == 0
     assert not copied_db.is_connected
     assert copied_db.engine is None
-    assert copied_db._force_rollback is True
+    assert copied_db.force_rollback
 
     copied_db2 = copied_db.__copy__()
-    assert copied_db2._force_rollback is True
+    assert copied_db2.force_rollback
 
     old_engine = database.engine
+    assert database.ref_counter == 1
     await database.disconnect()
     assert not database.is_connected
+    assert database.ref_counter == 0
 
-    # connect and disconnect idempotence
+    # connect and disconnect refcounting
     await database.connect()
     assert database.engine is not old_engine
-    await database.connect()
     assert database.is_connected
+    old_engine = database.engine
+    # nest
+    async with database:
+        assert database.ref_counter == 2
+        assert database.engine is old_engine
+        assert database.is_connected
+    assert database.ref_counter == 1
     await database.disconnect()
-    await database.disconnect()
+    assert database.ref_counter == 0
     assert not database.is_connected
+    assert not database._global_connection
+    assert not database._global_transaction
+
+
+@pytest.mark.asyncio
+async def test_force_rollback(database_url):
+    async with Database(database_url, force_rollback=False) as database:
+        assert not database.force_rollback
+        database.force_rollback = True
+        assert database.force_rollback
+        # execute()
+        data = {"text": "hello", "boolean": True, "int": 2}
+        values = {"data": data}
+        query = session.insert()
+        await database.execute(query, values)
+        async with database.connection() as connection_1:
+            assert connection_1 is database._global_connection
+        with database.force_rollback(False):
+            assert not database.force_rollback
+            async with database.connection() as connection_2:
+                assert connection_2 is not database._global_connection
+                if database.url.dialect != "sqlite":
+                    # sqlite has locking problems
+                    data = {"text": "hello", "boolean": True, "int": 1}
+                    values = {"data": data}
+                    query = session.insert()
+                    await database.execute(query, values)
+
+        # now reset
+        del database.force_rollback
+        assert not database.force_rollback
+
+    async with Database(database_url, force_rollback=True) as database:
+        # fetch_all()
+        query = session.select()
+        results = await database.fetch_all(query=query)
+        if database.url.dialect == "sqlite":
+            assert len(results) == 0
+        else:
+            assert len(results) == 1
+            assert results[0].data == {"text": "hello", "boolean": True, "int": 1}
 
 
 @pytest.mark.asyncio

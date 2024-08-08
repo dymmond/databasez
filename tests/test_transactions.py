@@ -159,6 +159,8 @@ async def test_connection_cleanup_garbagecollector(database_url):
 
     # Should not have a connection for the task anymore
     assert len(database._connection_map) == 0
+    # now cleanup
+    await database.disconnect()
 
 
 @pytest.mark.asyncio
@@ -195,12 +197,15 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
     assert ACTIVE_TRANSACTIONS.get() is None
 
     async with Database(database_url) as database:
-        transaction = database.transaction()
-        await transaction.start()
-
         # Should be tracking the transaction
         open_transactions = ACTIVE_TRANSACTIONS.get()
         assert isinstance(open_transactions, MutableMapping)
+        # the global one is always created
+        assert len(open_transactions) == 1
+        transaction = database.transaction()
+        await transaction.start()
+        assert len(open_transactions) == 2
+
         assert open_transactions.get(transaction) is transaction._transaction
 
         # neither .commit, .rollback, nor .__aexit__ are called
@@ -209,17 +214,18 @@ async def test_transaction_context_cleanup_garbagecollector(database_url):
 
         # A strong reference to the transaction is kept alive by the connection's
         # ._transaction_stack, so it is still be tracked at this point.
-        assert len(open_transactions) == 1
+        assert len(open_transactions) == 2
 
         # If that were magically cleared, the transaction would be cleaned up,
         # but as it stands this always causes a hang during teardown at
         # `Database(...).disconnect()` if the transaction is not closed.
         transaction = database.connection()._transaction_stack[-1]
         await transaction.rollback()
+        assert transaction.connection._connection_counter == 0
         del transaction
 
         # Now with the transaction rolled-back, it should be cleaned up.
-        assert len(open_transactions) == 0
+        assert len(open_transactions) == 1
 
 
 @pytest.mark.asyncio

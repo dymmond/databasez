@@ -6,6 +6,7 @@ import importlib
 import logging
 import typing
 import weakref
+from contextvars import ContextVar
 from functools import lru_cache
 from types import TracebackType
 
@@ -61,6 +62,54 @@ def init() -> None:
     )
 
 
+ACTIVE_FORCE_ROLLBACKS: ContextVar[
+    typing.Optional[weakref.WeakKeyDictionary[ForceRollback, bool]]
+] = ContextVar("ACTIVE_FORCE_ROLLBACKS", default=None)
+
+
+class ForceRollback:
+    default: bool
+
+    def __init__(self, default: bool):
+        self.default = default
+
+    def set(self, value: typing.Union[bool, None] = None) -> None:
+        if value is None:
+            value = self.default
+        force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()
+        if force_rollbacks is None:
+            force_rollbacks = weakref.WeakKeyDictionary()
+            ACTIVE_FORCE_ROLLBACKS.set(force_rollbacks)
+        force_rollbacks[self] = value
+
+    def __bool__(self) -> bool:
+        force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()
+        if force_rollbacks is None:
+            return self.default
+        return force_rollbacks.get(self, self.default)
+
+    @contextlib.contextmanager
+    def __call__(self, force_rollback: bool = True) -> typing.Iterator[None]:
+        initial = bool(self)
+        self.set(force_rollback)
+        try:
+            yield
+        finally:
+            self.set(initial)
+
+
+class ForceRollbackDescriptor:
+    def __get__(self, obj: Database, objtype: typing.Type[Database]) -> ForceRollback:
+        return obj._force_rollback
+
+    def __set__(self, obj: Database, value: typing.Union[bool, None]) -> None:
+        assert value is None or isinstance(value, bool), f"Invalid type: {value!r}."
+        obj._force_rollback.set(value)
+
+    def __delete__(self, obj: Database) -> None:
+        obj._force_rollback.set(None)
+
+
 class Database:
     """
     An abstraction on the top of the EncodeORM databases.Database object.
@@ -89,8 +138,10 @@ class Database:
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
     options: typing.Any
-    _force_rollback: bool
     is_connected: bool = False
+    _force_rollback: ForceRollback
+    # descriptor
+    force_rollback = ForceRollbackDescriptor()
 
     def __init__(
         self,
@@ -108,9 +159,7 @@ class Database:
             self.url = url.url
             self.options = url.options
             if force_rollback is None:
-                self._force_rollback = url._force_rollback
-            else:
-                self._force_rollback = force_rollback
+                force_rollback = bool(url.force_rollback)
         else:
             url = DatabaseURL(url)
             if config and "connection" in config:
@@ -121,7 +170,9 @@ class Database:
             self.backend, self.url, self.options = self.apply_database_url_and_options(
                 url, **options
             )
-            self._force_rollback = bool(force_rollback)
+            if force_rollback is None:
+                force_rollback = False
+        self._force_rollback = ForceRollback(force_rollback)
         self.backend.owner = self
         self._connection_map = weakref.WeakKeyDictionary()
 
@@ -129,6 +180,9 @@ class Database:
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
         self._global_transaction: typing.Optional[Transaction] = None
+
+        self.ref_counter: int = 0
+        self.ref_lock: asyncio.Lock = asyncio.Lock()
 
     def __copy__(self) -> Database:
         return self.__class__(self)
@@ -155,45 +209,65 @@ class Database:
 
         return self._connection
 
+    async def inc_refcount(self) -> bool:
+        async with self.ref_lock:
+            self.ref_counter += 1
+            # on the first call is count is 1 because of the former +1
+            if self.ref_counter == 1:
+                return True
+        return False
+
+    async def decr_refcount(self) -> bool:
+        async with self.ref_lock:
+            self.ref_counter -= 1
+            # on the last call, the count is 0
+            if self.ref_counter == 0:
+                return True
+        return False
+
     async def connect(self) -> None:
         """
         Establish the connection pool.
         """
-        if self.is_connected:
-            logger.debug("Already connected, skipping connection")
+        if not await self.inc_refcount():
+            assert self.is_connected, "ref_count < 0"
             return None
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
         self.is_connected = True
 
-        if self._force_rollback:
-            assert self._global_connection is None
-            assert self._global_transaction is None
+        assert self._global_connection is None
+        assert self._global_transaction is None
 
-            self._global_connection = Connection(self, self.backend)
-            self._global_transaction = self._global_connection.transaction(force_rollback=True)
+        self._global_connection = Connection(self, self.backend)
+        self._global_transaction = self._global_connection.transaction(force_rollback=True)
+        await self._global_transaction.__aenter__()
 
-            await self._global_transaction.__aenter__()
-
-    async def disconnect(self) -> None:
+    async def disconnect(self, force: bool = False) -> None:
         """
         Close all connections in the connection pool.
         """
-        if not self.is_connected:
-            logger.debug("Already disconnected, skipping disconnection")
-            return None
+        if not await self.decr_refcount() or force:
+            if not self.is_connected:
+                logger.debug("Already disconnected, skipping disconnection")
+                return None
+            if force:
+                logger.warning("Force disconnect, despite refcount not 0")
+            else:
+                return None
 
-        if self._force_rollback:
-            assert self._global_connection is not None
-            assert self._global_transaction is not None
+        assert self._global_connection is not None
+        assert self._global_transaction is not None
 
-            await self._global_transaction.__aexit__()
+        await self._global_transaction.__aexit__()
+        assert (
+            self._global_connection._connection_counter == 0
+        ), f"global connection active: {self._global_connection._connection_counter}"
 
-            self._global_transaction = None
-            self._global_connection = None
-        else:
-            self._connection = None
+        self._global_transaction = None
+        self._global_connection = None
+        self._connection = None
 
         await self.backend.disconnect()
         logger.info(
@@ -296,8 +370,8 @@ class Database:
             await connection.drop_all(meta, **kwargs)
 
     def connection(self) -> Connection:
-        if self._global_connection is not None:
-            return self._global_connection
+        if self.force_rollback:
+            return typing.cast(Connection, self._global_connection)
 
         if not self._connection:
             self._connection = Connection(self, self.backend)
@@ -306,15 +380,6 @@ class Database:
     @property
     def engine(self) -> typing.Optional[AsyncEngine]:
         return self.backend.engine
-
-    @contextlib.contextmanager
-    def force_rollback(self) -> typing.Iterator[None]:
-        initial = self._force_rollback
-        self._force_rollback = True
-        try:
-            yield
-        finally:
-            self._force_rollback = initial
 
     @classmethod
     def get_backends(

@@ -235,7 +235,7 @@ class DatabaseTestClient(Database):
 
         await db_client.disconnect()
 
-    async def disconnect(self) -> None:
+    async def disconnect(self, force: bool = False) -> None:
         if self.drop:
             await self.drop_database(self.test_db_url)
-        await super().disconnect()
+        await super().disconnect(force)
