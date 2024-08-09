@@ -70,7 +70,9 @@ prices = sqlalchemy.Table(
 )
 
 
-async def database_client(url: typing.Union[dict, str]) -> DatabaseTestClient:
+async def database_client(url: typing.Union[dict, str], meta=None) -> DatabaseTestClient:
+    if meta is None:
+        meta = metadata
     if isinstance(url, str):
         is_sqlite = url.startswith("sqlite")
         database = DatabaseTestClient(
@@ -79,10 +81,12 @@ async def database_client(url: typing.Union[dict, str]) -> DatabaseTestClient:
     else:
         database = Database(config=url)
     await database.connect()
-    await database.create_all(metadata)
+    await database.create_all(meta)
     return database
 
 
-async def stop_database_client(database: Database):
-    await database.drop_all(metadata)
+async def stop_database_client(database: Database, meta=None):
+    if meta is None:
+        meta = metadata
+    await database.drop_all(meta)
     await database.disconnect()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import typing
 import weakref
+from contextlib import AsyncExitStack
 from contextvars import ContextVar
 from types import TracebackType
 
@@ -111,14 +112,19 @@ class Transaction:
 
         return wrapper  # type: ignore
 
-    async def start(self) -> Transaction:
+    async def start(self, without_transaction_lock: bool = False) -> Transaction:
         connection = self.connection
-        await connection._exec_hook()
-        async with connection._transaction_lock:
+
+        async with AsyncExitStack() as cm:
+            if not without_transaction_lock:
+                await cm.enter_async_context(connection._transaction_lock)
             is_root = not connection._transaction_stack
             _transaction = connection._connection.transaction(self._existing_transaction)
             _transaction.owner = self
-            await connection.__aenter__()
+            # will be terminated with connection, don't bump
+            # fixes also a locking issue
+            if connection.connection_transaction is not self:
+                await connection.__aenter__()
             if self._existing_transaction is None:
                 await _transaction.start(is_root=is_root, **self._extra_options)
             self._transaction = _transaction
@@ -129,22 +135,30 @@ class Transaction:
         connection = self.connection
         async with connection._transaction_lock:
             _transaction = self._transaction
+            # some transactions are tied to connections and are not on the transaction stack
             if _transaction is not None:
                 # delete transaction from ACTIVE_TRANSACTIONS
                 self._transaction = None
                 assert connection._transaction_stack[-1] is self
                 connection._transaction_stack.pop()
                 await _transaction.commit()
-        await connection.__aexit__()
+        # if a connection_transaction, the connetion cleans it up in __aexit__
+        # prevent loop
+        if connection.connection_transaction is not self:
+            await connection.__aexit__()
 
     async def rollback(self) -> None:
         connection = self.connection
         async with connection._transaction_lock:
             _transaction = self._transaction
+            # some transactions are tied to connections and are not on the transaction stack
             if _transaction is not None:
                 # delete transaction from ACTIVE_TRANSACTIONS
                 self._transaction = None
                 assert connection._transaction_stack[-1] is self
                 connection._transaction_stack.pop()
                 await _transaction.rollback()
-        await connection.__aexit__()
+        # if a connection_transaction, the connetion cleans it up in __aexit__
+        # prevent loop
+        if connection.connection_transaction is not self:
+            await connection.__aexit__()

@@ -186,7 +186,6 @@ class Database:
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
-        self._global_transaction: typing.Optional[Transaction] = None
 
         self.ref_counter: int = 0
         self.ref_lock: asyncio.Lock = asyncio.Lock()
@@ -248,11 +247,8 @@ class Database:
         self.is_connected = True
 
         assert self._global_connection is None
-        assert self._global_transaction is None
 
-        self._global_connection = Connection(self, self.backend)
-        self._global_transaction = self._global_connection.transaction(force_rollback=True)
-        self._global_connection._connection_aenter_hook = self._global_transaction.__aenter__
+        self._global_connection = Connection(self, self.backend, force_rollback=True)
         await self.connect_hook()
 
     async def disconnect_hook(self) -> None:
@@ -272,17 +268,10 @@ class Database:
                 return None
 
         assert self._global_connection is not None
-        assert self._global_transaction is not None
         try:
             await self.disconnect_hook()
         finally:
-            if self._global_connection._connection_aenter_hook is None:
-                await self._global_transaction.__aexit__()
-            assert (
-                self._global_connection._connection_counter == 0
-            ), f"global connection active: {self._global_connection._connection_counter}"
-
-            self._global_transaction = None
+            await self._global_connection.__aexit__()
             self._global_connection = None
             self._connection = None
             try:

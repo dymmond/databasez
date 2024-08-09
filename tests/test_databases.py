@@ -515,7 +515,6 @@ async def test_connect_and_disconnect(database_mixed_url):
     assert database.ref_counter == 0
     assert not database.is_connected
     assert not database._global_connection
-    assert not database._global_transaction
 
 
 @pytest.mark.asyncio
