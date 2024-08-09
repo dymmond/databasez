@@ -186,7 +186,6 @@ class Database:
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
         self._global_connection: typing.Optional[Connection] = None
-        self._global_transaction: typing.Optional[Transaction] = None
 
         self.ref_counter: int = 0
         self.ref_lock: asyncio.Lock = asyncio.Lock()
@@ -232,6 +231,9 @@ class Database:
                 return True
         return False
 
+    async def connect_hook(self) -> None:
+        """Refcount protected connect hook"""
+
     async def connect(self) -> None:
         """
         Establish the connection pool.
@@ -245,11 +247,12 @@ class Database:
         self.is_connected = True
 
         assert self._global_connection is None
-        assert self._global_transaction is None
 
-        self._global_connection = Connection(self, self.backend)
-        self._global_transaction = self._global_connection.transaction(force_rollback=True)
-        await self._global_transaction.__aenter__()
+        self._global_connection = Connection(self, self.backend, force_rollback=True)
+        await self.connect_hook()
+
+    async def disconnect_hook(self) -> None:
+        """Refcount protected disconnect hook"""
 
     async def disconnect(self, force: bool = False) -> None:
         """
@@ -265,24 +268,21 @@ class Database:
                 return None
 
         assert self._global_connection is not None
-        assert self._global_transaction is not None
-
-        await self._global_transaction.__aexit__()
-        assert (
-            self._global_connection._connection_counter == 0
-        ), f"global connection active: {self._global_connection._connection_counter}"
-
-        self._global_transaction = None
-        self._global_connection = None
-        self._connection = None
-
-        await self.backend.disconnect()
-        logger.info(
-            "Disconnected from database %s",
-            self.url.obscure_password,
-            extra=DISCONNECT_EXTRA,
-        )
-        self.is_connected = False
+        try:
+            await self.disconnect_hook()
+        finally:
+            await self._global_connection.__aexit__()
+            self._global_connection = None
+            self._connection = None
+            try:
+                await self.backend.disconnect()
+                logger.info(
+                    "Disconnected from database %s",
+                    self.url.obscure_password,
+                    extra=DISCONNECT_EXTRA,
+                )
+            finally:
+                self.is_connected = False
 
     async def __aenter__(self) -> "Database":
         await self.connect()

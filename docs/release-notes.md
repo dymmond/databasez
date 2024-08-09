@@ -1,5 +1,16 @@
 # Release Notes
 
+## 0.9.2
+
+### Added
+
+- Expose customization hooks for disconnects, connects.
+
+### Fixed
+
+- Testclient has issues with missing permissions.
+- Lazy global connection.
+
 ## 0.9.1
 
 ### Added

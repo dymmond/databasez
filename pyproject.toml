@@ -141,10 +141,10 @@ ignore_errors = true
 addopts = ["--strict-config", "--strict-markers", "--pdbcls=IPython.terminal.debugger:Pdb"]
 xfail_strict = true
 junit_family = "xunit2"
-setup_timeout = 2
-execution_timeout = 20
+setup_timeout = 5
+execution_timeout = 10
 teardown_timeout = 5
-reruns = 3
+reruns = 1
 reruns_delay = 1
 
 [tool.hatch.build.targets.sdist]

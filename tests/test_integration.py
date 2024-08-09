@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 
 import pytest
@@ -11,7 +12,8 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from databasez import Database, DatabaseURL
+from databasez import Database
+from tests.shared_db import database_client, stop_database_client
 from tests.test_databases import DATABASE_URLS
 
 metadata = sqlalchemy.MetaData()
@@ -25,37 +27,13 @@ notes = sqlalchemy.Table(
 )
 
 
-@pytest.fixture(autouse=True, scope="module")
-def create_test_database():
+@pytest.fixture(params=DATABASE_URLS)
+def database_url(request):
     # Create test databases
-    for url in DATABASE_URLS:
-        database_url = str(DatabaseURL(url))
-        database_url = (
-            database_url.replace("sqlite+aiosqlite:", "sqlite:")
-            .replace("mssql+aioodbc:", "mssql+pyodbc:")
-            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
-            .replace("mysql+asyncmy:", "mysql+pymysql:")
-            .replace("mysql+aiomysql:", "mysql+pymysql:")
-        )
-
-        engine = sqlalchemy.create_engine(database_url)
-        metadata.create_all(engine)
-
-    # Run the test suite
-    yield
-
-    for url in DATABASE_URLS:
-        database_url = str(DatabaseURL(url))
-        database_url = (
-            database_url.replace("sqlite+aiosqlite:", "sqlite:")
-            .replace("mssql+aioodbc:", "mssql+pyodbc:")
-            .replace("postgresql+asyncpg:", "postgresql+psycopg:")
-            .replace("mysql+asyncmy:", "mysql+pymysql:")
-            .replace("mysql+aiomysql:", "mysql+pymysql:")
-        )
-
-        engine = sqlalchemy.create_engine(database_url)
-        metadata.drop_all(engine)
+    loop = asyncio.new_event_loop()
+    database = loop.run_until_complete(database_client(request.param, metadata))
+    yield str(database.url)
+    loop.run_until_complete(stop_database_client(database, metadata))
 
 
 def get_app(database_url):
@@ -119,7 +97,6 @@ def get_esmerald_app(database_url):
     return app
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 def test_integration(database_url):
     app = get_app(database_url)
 
@@ -139,7 +116,6 @@ def test_integration(database_url):
         assert response.json() == []
 
 
-@pytest.mark.parametrize("database_url", DATABASE_URLS)
 def test_integration_esmerald(database_url):
     app = get_esmerald_app(database_url)
 

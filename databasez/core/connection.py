@@ -19,7 +19,9 @@ if typing.TYPE_CHECKING:
 
 
 class Connection:
-    def __init__(self, database: Database, backend: interfaces.DatabaseBackend) -> None:
+    def __init__(
+        self, database: Database, backend: interfaces.DatabaseBackend, force_rollback: bool = False
+    ) -> None:
         self._database = database
         self._backend = backend
 
@@ -32,6 +34,7 @@ class Connection:
         self._transaction_stack: typing.List[Transaction] = []
 
         self._query_lock = asyncio.Lock()
+        self._force_rollback = force_rollback
         self.connection_transaction: typing.Optional[Transaction] = None
 
     async def __aenter__(self) -> Connection:
@@ -39,12 +42,22 @@ class Connection:
             self._connection_counter += 1
             try:
                 if self._connection_counter == 1:
+                    if self._database._global_connection is self:
+                        # on first init double increase, so it isn't terminated too early
+                        self._connection_counter += 1
                     raw_transaction = await self._connection.acquire()
                     if raw_transaction is not None:
                         self.connection_transaction = self.transaction(
-                            existing_transaction=raw_transaction
+                            existing_transaction=raw_transaction,
+                            force_rollback=self._force_rollback,
                         )
                         # we don't need to call __aenter__ of connection_transaction, it is not on the stack
+                    elif self._force_rollback:
+                        self.connection_transaction = self.transaction(
+                            force_rollback=self._force_rollback
+                        )
+                        # make re-entrant, we have already the connection lock
+                        await self.connection_transaction.start(True)
             except BaseException as e:
                 self._connection_counter -= 1
                 raise e
@@ -62,7 +75,10 @@ class Connection:
             if self._connection_counter == 0:
                 try:
                     if self.connection_transaction:
+                        # __aexit__ needs the connection_transaction parameter
                         await self.connection_transaction.__aexit__(exc_type, exc_value, traceback)
+                        # untie, for allowing gc
+                        self.connection_transaction = None
                 finally:
                     await self._connection.release()
                     self._database._connection = None
