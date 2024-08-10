@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import typing
 from functools import partial
+from threading import Thread
 
 async_wrapper_slots = (
     "_async_wrapped",
@@ -118,3 +119,18 @@ class AsyncWrapper:
                 raise StopAsyncIteration from None
 
         return fn3
+
+
+class ThreadPassingExceptions(Thread):
+    _exc_raised: typing.Any = None
+
+    def run(self) -> None:
+        try:
+            super().run()
+        except Exception as exc:
+            self._exc_raised = exc
+
+    def join(self, timeout=None) -> None:
+        super().join(timeout=timeout)
+        if self._exc_raised:
+            raise self._exc_raised

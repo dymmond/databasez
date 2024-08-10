@@ -9,6 +9,7 @@ from sqlalchemy_utils.functions.database import _sqlite_file_exists
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
+from databasez.utils import ThreadPassingExceptions
 
 
 async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
@@ -26,6 +27,8 @@ class DatabaseTestClient(Database):
     This client simply creates a "test_" from the database provided in the
     connection.
     """
+
+    testclient_operation_timeout: float = 4
 
     def __init__(
         self,
@@ -51,11 +54,8 @@ class DatabaseTestClient(Database):
             self.drop = getattr(url, "drop", drop_database)
             # only if explicit set to False
             if lazy_setup is False:
+                self.setup_protected()
                 self._setup_executed_init = True
-                try:
-                    asyncio.run(self.setup())
-                except RuntimeError:
-                    asyncio.get_event_loop().run_until(self.setup())
             super().__init__(url, force_rollback=force_rollback, **options)
             # fix url
             if str(self.url) != self.test_db_url:
@@ -70,11 +70,8 @@ class DatabaseTestClient(Database):
             self.drop = drop_database
             # if None or False
             if not lazy_setup:
+                self.setup_protected()
                 self._setup_executed_init = True
-                try:
-                    asyncio.run(self.setup())
-                except RuntimeError:
-                    asyncio.get_event_loop().run_until(self.setup())
 
             super().__init__(test_database_url, force_rollback=force_rollback, **options)
 
@@ -98,9 +95,17 @@ class DatabaseTestClient(Database):
                 except (ProgrammingError, OperationalError):
                     self.drop = False
 
+    def setup_protected(self) -> None:
+        thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
+        thread.start()
+        try:
+            thread.join(self.testclient_operation_timeout)
+        except TimeoutError:
+            pass
+
     async def connect_hook(self) -> None:
         if not self._setup_executed_init:
-            await self.setup()
+            self.setup_protected()
         await super().connect_hook()
 
     async def is_database_exist(self) -> Any:
@@ -266,10 +271,19 @@ class DatabaseTestClient(Database):
                     text = f"DROP DATABASE {quote(conn.async_connection, database)}"
                     await conn.execute(sa.text(text))
 
+    def drop_db_protected(self) -> None:
+        thread = ThreadPassingExceptions(
+            target=asyncio.run, args=[self.drop_database(self.test_db_url)]
+        )
+        thread.start()
+        try:
+            thread.join(self.testclient_operation_timeout)
+        except TimeoutError:
+            pass
+
     async def disconnect_hook(self) -> None:
+        # next connect the setup routine is reexecuted
+        self._setup_executed_init = False
         if self.drop:
-            try:
-                await self.drop_database(self.test_db_url)
-            except (ProgrammingError, OperationalError):
-                pass
+            self.drop_db_protected()
         await super().disconnect_hook()

@@ -5,15 +5,17 @@
 ### Added
 
 - Add lazy_setup parameter for testclient.
+- `disconnect` and `connect` return if they performed the setup/cleanup.
 
 ### Fixed
 
 - Restore eager setup behavior in testclient.
-- Fix drop_dabase with postgresql
+- Fix drop_dabase with postgresql.
+- Fix setup/disconnect hangups.
 
 ### Removed
 
-- Dependency on nest_asyncio.
+- Dependency on nest_asyncio. It is an archived repo.
 
 ## 0.9.2
 
