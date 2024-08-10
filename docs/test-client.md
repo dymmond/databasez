@@ -48,9 +48,13 @@ from databasez.testclient import DatabaseTestClient
     ```
 
 * **force_rollback** - This will ensure that all database connections are run within a transaction
-that rollbacks once the database is disconnected.
+                       that rollbacks once the database is disconnected.
 
-    <sup>Default: `False`</sup>
+    <sup>Default: `None`, copy default or False </sup>
+
+* **lazy_setup** - This sets up the db first up on connect not in init.
+
+    <sup>Default: `None`, True if copying a database or False otherwise</sup>
 
 * **use_existing** - Uses the existing `test_` database if previously created and not dropped.
 

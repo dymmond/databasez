@@ -58,7 +58,8 @@ Funding = "https://github.com/sponsors/tarsil"
 Source = "https://github.com/dymmond/databasez"
 
 [project.optional-dependencies]
-testing = ["nest_asyncio>=1.6.0,<2"]
+# for preventing failures
+testing = []
 aiomysql = ["aiomysql"]
 aioodbc = ["aioodbc"]
 aiosqlite = ["aiosqlite"]
@@ -70,7 +71,7 @@ mysql = ["asyncmy"]
 postgresql = ["asyncpg"]
 sqlite = ["aiosqlite"]
 
-all = ["databasez[testing,jdbc,mysql,aiomysql,odbc,postgresql,sqlite]"]
+all = ["databasez[jdbc,mysql,aiomysql,odbc,postgresql,sqlite]"]
 
 [tool.hatch.version]
 path = "databasez/__init__.py"

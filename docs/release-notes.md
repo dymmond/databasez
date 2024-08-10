@@ -1,5 +1,16 @@
 # Release Notes
 
+## Unreleased
+
+### Added
+
+- Add lazy_setup parameter for testclient.
+
+### Fixed
+
+- Restore eager setup behavior in testclient.
+- Fix drop_dabase with postgresql
+
 ## 0.9.2
 
 ### Added

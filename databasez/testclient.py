@@ -1,16 +1,14 @@
+import asyncio
 import os
 import typing
 from typing import Any
 
-import nest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy_utils.functions.database import _sqlite_file_exists
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
-
-nest_asyncio.apply()
 
 
 async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
@@ -36,9 +34,11 @@ class DatabaseTestClient(Database):
         force_rollback: typing.Union[bool, None] = None,
         use_existing: bool = False,
         drop_database: bool = False,
+        lazy_setup: typing.Union[bool, None] = None,
         test_prefix: str = "test_",
         **options: typing.Any,
     ):
+        self._setup_executed_init = False
         if isinstance(url, Database):
             test_database_url = (
                 url.url.replace(database=f"{test_prefix}{url.url.database}")
@@ -49,6 +49,13 @@ class DatabaseTestClient(Database):
             self.test_db_url = str(getattr(url, "test_db_url", test_database_url))
             self.use_existing = getattr(url, "use_existing", use_existing)
             self.drop = getattr(url, "drop", drop_database)
+            # only if explicit set to False
+            if lazy_setup is False:
+                self._setup_executed_init = True
+                try:
+                    asyncio.run(self.setup())
+                except RuntimeError:
+                    asyncio.get_event_loop().run_until(self.setup())
             super().__init__(url, force_rollback=force_rollback, **options)
             # fix url
             if str(self.url) != self.test_db_url:
@@ -61,10 +68,17 @@ class DatabaseTestClient(Database):
             self.test_db_url = str(test_database_url)
             self.use_existing = use_existing
             self.drop = drop_database
+            # if None or False
+            if not lazy_setup:
+                self._setup_executed_init = True
+                try:
+                    asyncio.run(self.setup())
+                except RuntimeError:
+                    asyncio.get_event_loop().run_until(self.setup())
 
             super().__init__(test_database_url, force_rollback=force_rollback, **options)
 
-    async def connect_hook(self) -> None:
+    async def setup(self) -> None:
         """
         Makes sure the database is created if does not exist or use existing
         if needed.
@@ -83,6 +97,10 @@ class DatabaseTestClient(Database):
                     await self.create_database(self.test_db_url)
                 except (ProgrammingError, OperationalError):
                     self.drop = False
+
+    async def connect_hook(self) -> None:
+        if not self._setup_executed_init:
+            await self.setup()
         await super().connect_hook()
 
     async def is_database_exist(self) -> Any:
