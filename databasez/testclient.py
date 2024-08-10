@@ -49,7 +49,7 @@ class DatabaseTestClient(Database):
             self.test_db_url = str(getattr(url, "test_db_url", test_database_url))
             self.use_existing = getattr(url, "use_existing", use_existing)
             self.drop = getattr(url, "drop", drop_database)
-            super().__init__(url, force_rollback=force_rollback)
+            super().__init__(url, force_rollback=force_rollback, **options)
             # fix url
             if str(self.url) != self.test_db_url:
                 self.url = test_database_url
@@ -69,16 +69,16 @@ class DatabaseTestClient(Database):
         Makes sure the database is created if does not exist or use existing
         if needed.
         """
+        db_does_exist = await self.database_exists(self.test_db_url)
         if not self.use_existing:
             try:
-                if await self.database_exists(self.test_db_url):
+                if db_does_exist:
                     await self.drop_database(self.test_db_url)
-                else:
-                    await self.create_database(self.test_db_url)
+                await self.create_database(self.test_db_url)
             except (ProgrammingError, OperationalError, TypeError):
                 self.drop = False
         else:
-            if not await self.database_exists(self.test_db_url):
+            if not db_does_exist:
                 try:
                     await self.create_database(self.test_db_url)
                 except (ProgrammingError, OperationalError):
@@ -91,7 +91,8 @@ class DatabaseTestClient(Database):
         """
         return await self.database_exists(self.test_db_url)
 
-    async def database_exists(self, url: typing.Union[str, "sa.URL", DatabaseURL]) -> Any:
+    @classmethod
+    async def database_exists(cls, url: typing.Union[str, "sa.URL", DatabaseURL]) -> bool:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
@@ -130,12 +131,13 @@ class DatabaseTestClient(Database):
                 except (ProgrammingError, OperationalError):
                     return False
 
+    @classmethod
     async def create_database(
-        self,
+        cls,
         url: typing.Union[str, "sa.URL", DatabaseURL],
         encoding: str = "utf8",
         template: typing.Any = None,
-    ) -> Any:
+    ) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
@@ -154,9 +156,9 @@ class DatabaseTestClient(Database):
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
-            db_client = Database(url, isolation_level="AUTOCOMMIT")
+            db_client = Database(url, isolation_level="AUTOCOMMIT", force_rollback=False)
         else:
-            db_client = Database(url)
+            db_client = Database(url, force_rollback=False)
         async with db_client:
             if dialect_name == "postgresql":
                 if not template:
@@ -186,7 +188,8 @@ class DatabaseTestClient(Database):
                     text = f"CREATE DATABASE {quote(conn, database)}"
                     await conn.execute(sa.text(text))
 
-    async def drop_database(self, url: typing.Union[str, "sa.URL", DatabaseURL]) -> Any:
+    @classmethod
+    async def drop_database(cls, url: typing.Union[str, "sa.URL", DatabaseURL]) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect = url.sqla_url.get_dialect(True)
@@ -206,40 +209,49 @@ class DatabaseTestClient(Database):
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
-            db_client = Database(url, isolation_level="AUTOCOMMIT")
+            db_client = Database(url, isolation_level="AUTOCOMMIT", force_rollback=False)
         else:
-            db_client = Database(url)
+            db_client = Database(url, force_rollback=False)
         async with db_client:
-            if dialect_name == "sqlite" and database != ":memory:":
-                if database:
+            if dialect_name == "sqlite" and database and database != ":memory:":
+                try:
                     os.remove(database)
-            elif dialect_name == "postgresql":
-                async with db_client.connection() as conn1:
-                    async with conn1.async_connection.begin() as conn:
-                        # no connection
-                        if dialect.server_version_info is None:
-                            return
-                        # Disconnect all users from the database we are dropping.
-                        version = dialect.server_version_info
-                        pid_column = "pid" if (version >= (9, 2)) else "procpid"
-                        text = """
-                        SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
-                        FROM pg_stat_activity
-                        WHERE pg_stat_activity.datname = '{database}'
-                        AND {pid_column} <> pg_backend_pid();
-                        """.format(pid_column=pid_column, database=database)
-                        await conn.execute(sa.text(text))
+                except FileNotFoundError:
+                    pass
+            elif dialect_name.startswith("postgres"):
+                async with db_client.connection() as conn:
+                    # Disconnect all users from the database we are dropping.
+                    server_version_raw = (
+                        await conn.fetch_val(
+                            "SELECT setting FROM pg_settings WHERE name = 'server_version'"
+                        )
+                    ).split(" ")[0]
+                    version = tuple(map(int, server_version_raw.split(".")))
+                    pid_column = "pid" if (version >= (9, 2)) else "procpid"
+                    quoted_db = quote(conn.async_connection, database)
+                    text = """
+                    SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
+                    FROM pg_stat_activity
+                    WHERE pg_stat_activity.datname = '{database}'
+                    AND {pid_column} <> pg_backend_pid();
+                    """.format(pid_column=pid_column, database=quoted_db)
+                    await conn.execute(text)
 
-                        # Drop the database.
-                        text = f"DROP DATABASE {quote(conn, database)}"
-                        await conn.execute(sa.text(text))
+                    # Drop the database.
+                    text = f"DROP DATABASE {quoted_db}"
+                    try:
+                        await conn.execute(text)
+                    except ProgrammingError:
+                        pass
             else:
-                async with db_client.connection() as conn1:
-                    async with conn1.async_connection.begin() as conn:
-                        text = f"DROP DATABASE {quote(conn, database)}"
-                        await conn.execute(sa.text(text))
+                async with db_client.connection() as conn:
+                    text = f"DROP DATABASE {quote(conn.async_connection, database)}"
+                    await conn.execute(sa.text(text))
 
     async def disconnect_hook(self) -> None:
         if self.drop:
-            await self.drop_database(self.test_db_url)
+            try:
+                await self.drop_database(self.test_db_url)
+            except (ProgrammingError, OperationalError):
+                pass
         await super().disconnect_hook()
