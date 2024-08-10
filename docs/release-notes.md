@@ -11,6 +11,10 @@
 - Restore eager setup behavior in testclient.
 - Fix drop_dabase with postgresql
 
+### Removed
+
+- Dependency on nest_asyncio.
+
 ## 0.9.2
 
 ### Added

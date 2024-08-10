@@ -17,7 +17,7 @@ if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_non_existing_normal(database_url):
-    test_db = DatabaseTestClient(database_url)
+    test_db = DatabaseTestClient(database_url, lazy_setup=True)
     async with Database(test_db) as database:
         assert database.is_connected
     async with Database(test_db) as database:
@@ -57,7 +57,7 @@ async def test_client_drop_existing(database_url):
     assert not await DatabaseTestClient.database_exists(str(db_url))
     del db_url
 
-    database = DatabaseTestClient(database_url, test_prefix="foobar")
+    database = DatabaseTestClient(database_url, test_prefix="foobar", lazy_setup=True)
     assert not await DatabaseTestClient.database_exists(database.test_db_url)
     await database.connect()
     assert await database.database_exists(database.test_db_url)
@@ -69,7 +69,7 @@ async def test_client_drop_existing(database_url):
     await database.disconnect()
     assert await database.database_exists(database.test_db_url)
     database2 = DatabaseTestClient(
-        database_url, test_prefix="foobar", use_existing=True, drop_database=True
+        database_url, test_prefix="foobar", use_existing=True, drop_database=True, lazy_setup=True
     )
     async with database2:
         async with database2.connection() as conn:
