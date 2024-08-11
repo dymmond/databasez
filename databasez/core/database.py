@@ -234,13 +234,13 @@ class Database:
     async def connect_hook(self) -> None:
         """Refcount protected connect hook"""
 
-    async def connect(self) -> None:
+    async def connect(self) -> bool:
         """
         Establish the connection pool.
         """
         if not await self.inc_refcount():
             assert self.is_connected, "ref_count < 0"
-            return None
+            return False
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
@@ -250,22 +250,23 @@ class Database:
 
         self._global_connection = Connection(self, self.backend, force_rollback=True)
         await self.connect_hook()
+        return True
 
     async def disconnect_hook(self) -> None:
         """Refcount protected disconnect hook"""
 
-    async def disconnect(self, force: bool = False) -> None:
+    async def disconnect(self, force: bool = False) -> bool:
         """
         Close all connections in the connection pool.
         """
         if not await self.decr_refcount() or force:
             if not self.is_connected:
                 logger.debug("Already disconnected, skipping disconnection")
-                return None
+                return False
             if force:
                 logger.warning("Force disconnect, despite refcount not 0")
             else:
-                return None
+                return False
 
         assert self._global_connection is not None
         try:
@@ -283,6 +284,7 @@ class Database:
                 )
             finally:
                 self.is_connected = False
+        return True
 
     async def __aenter__(self) -> "Database":
         await self.connect()

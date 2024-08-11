@@ -1,16 +1,15 @@
+import asyncio
 import os
 import typing
 from typing import Any
 
-import nest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy_utils.functions.database import _sqlite_file_exists
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
-
-nest_asyncio.apply()
+from databasez.utils import ThreadPassingExceptions
 
 
 async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
@@ -29,6 +28,8 @@ class DatabaseTestClient(Database):
     connection.
     """
 
+    testclient_operation_timeout: float = 4
+
     def __init__(
         self,
         url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
@@ -36,9 +37,11 @@ class DatabaseTestClient(Database):
         force_rollback: typing.Union[bool, None] = None,
         use_existing: bool = False,
         drop_database: bool = False,
+        lazy_setup: typing.Union[bool, None] = None,
         test_prefix: str = "test_",
         **options: typing.Any,
     ):
+        self._setup_executed_init = False
         if isinstance(url, Database):
             test_database_url = (
                 url.url.replace(database=f"{test_prefix}{url.url.database}")
@@ -49,7 +52,11 @@ class DatabaseTestClient(Database):
             self.test_db_url = str(getattr(url, "test_db_url", test_database_url))
             self.use_existing = getattr(url, "use_existing", use_existing)
             self.drop = getattr(url, "drop", drop_database)
-            super().__init__(url, force_rollback=force_rollback)
+            # only if explicit set to False
+            if lazy_setup is False:
+                self.setup_protected()
+                self._setup_executed_init = True
+            super().__init__(url, force_rollback=force_rollback, **options)
             # fix url
             if str(self.url) != self.test_db_url:
                 self.url = test_database_url
@@ -61,28 +68,44 @@ class DatabaseTestClient(Database):
             self.test_db_url = str(test_database_url)
             self.use_existing = use_existing
             self.drop = drop_database
+            # if None or False
+            if not lazy_setup:
+                self.setup_protected()
+                self._setup_executed_init = True
 
             super().__init__(test_database_url, force_rollback=force_rollback, **options)
 
-    async def connect_hook(self) -> None:
+    async def setup(self) -> None:
         """
         Makes sure the database is created if does not exist or use existing
         if needed.
         """
+        db_does_exist = await self.database_exists(self.test_db_url)
         if not self.use_existing:
             try:
-                if await self.database_exists(self.test_db_url):
+                if db_does_exist:
                     await self.drop_database(self.test_db_url)
-                else:
-                    await self.create_database(self.test_db_url)
+                await self.create_database(self.test_db_url)
             except (ProgrammingError, OperationalError, TypeError):
                 self.drop = False
         else:
-            if not await self.database_exists(self.test_db_url):
+            if not db_does_exist:
                 try:
                     await self.create_database(self.test_db_url)
                 except (ProgrammingError, OperationalError):
                     self.drop = False
+
+    def setup_protected(self) -> None:
+        thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
+        thread.start()
+        try:
+            thread.join(self.testclient_operation_timeout)
+        except TimeoutError:
+            pass
+
+    async def connect_hook(self) -> None:
+        if not self._setup_executed_init:
+            self.setup_protected()
         await super().connect_hook()
 
     async def is_database_exist(self) -> Any:
@@ -91,7 +114,8 @@ class DatabaseTestClient(Database):
         """
         return await self.database_exists(self.test_db_url)
 
-    async def database_exists(self, url: typing.Union[str, "sa.URL", DatabaseURL]) -> Any:
+    @classmethod
+    async def database_exists(cls, url: typing.Union[str, "sa.URL", DatabaseURL]) -> bool:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
@@ -130,12 +154,13 @@ class DatabaseTestClient(Database):
                 except (ProgrammingError, OperationalError):
                     return False
 
+    @classmethod
     async def create_database(
-        self,
+        cls,
         url: typing.Union[str, "sa.URL", DatabaseURL],
         encoding: str = "utf8",
         template: typing.Any = None,
-    ) -> Any:
+    ) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
@@ -154,9 +179,9 @@ class DatabaseTestClient(Database):
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
-            db_client = Database(url, isolation_level="AUTOCOMMIT")
+            db_client = Database(url, isolation_level="AUTOCOMMIT", force_rollback=False)
         else:
-            db_client = Database(url)
+            db_client = Database(url, force_rollback=False)
         async with db_client:
             if dialect_name == "postgresql":
                 if not template:
@@ -186,7 +211,8 @@ class DatabaseTestClient(Database):
                     text = f"CREATE DATABASE {quote(conn, database)}"
                     await conn.execute(sa.text(text))
 
-    async def drop_database(self, url: typing.Union[str, "sa.URL", DatabaseURL]) -> Any:
+    @classmethod
+    async def drop_database(cls, url: typing.Union[str, "sa.URL", DatabaseURL]) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect = url.sqla_url.get_dialect(True)
@@ -206,40 +232,58 @@ class DatabaseTestClient(Database):
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
-            db_client = Database(url, isolation_level="AUTOCOMMIT")
+            db_client = Database(url, isolation_level="AUTOCOMMIT", force_rollback=False)
         else:
-            db_client = Database(url)
+            db_client = Database(url, force_rollback=False)
         async with db_client:
-            if dialect_name == "sqlite" and database != ":memory:":
-                if database:
+            if dialect_name == "sqlite" and database and database != ":memory:":
+                try:
                     os.remove(database)
-            elif dialect_name == "postgresql":
-                async with db_client.connection() as conn1:
-                    async with conn1.async_connection.begin() as conn:
-                        # no connection
-                        if dialect.server_version_info is None:
-                            return
-                        # Disconnect all users from the database we are dropping.
-                        version = dialect.server_version_info
-                        pid_column = "pid" if (version >= (9, 2)) else "procpid"
-                        text = """
-                        SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
-                        FROM pg_stat_activity
-                        WHERE pg_stat_activity.datname = '{database}'
-                        AND {pid_column} <> pg_backend_pid();
-                        """.format(pid_column=pid_column, database=database)
-                        await conn.execute(sa.text(text))
+                except FileNotFoundError:
+                    pass
+            elif dialect_name.startswith("postgres"):
+                async with db_client.connection() as conn:
+                    # Disconnect all users from the database we are dropping.
+                    server_version_raw = (
+                        await conn.fetch_val(
+                            "SELECT setting FROM pg_settings WHERE name = 'server_version'"
+                        )
+                    ).split(" ")[0]
+                    version = tuple(map(int, server_version_raw.split(".")))
+                    pid_column = "pid" if (version >= (9, 2)) else "procpid"
+                    quoted_db = quote(conn.async_connection, database)
+                    text = """
+                    SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
+                    FROM pg_stat_activity
+                    WHERE pg_stat_activity.datname = '{database}'
+                    AND {pid_column} <> pg_backend_pid();
+                    """.format(pid_column=pid_column, database=quoted_db)
+                    await conn.execute(text)
 
-                        # Drop the database.
-                        text = f"DROP DATABASE {quote(conn, database)}"
-                        await conn.execute(sa.text(text))
+                    # Drop the database.
+                    text = f"DROP DATABASE {quoted_db}"
+                    try:
+                        await conn.execute(text)
+                    except ProgrammingError:
+                        pass
             else:
-                async with db_client.connection() as conn1:
-                    async with conn1.async_connection.begin() as conn:
-                        text = f"DROP DATABASE {quote(conn, database)}"
-                        await conn.execute(sa.text(text))
+                async with db_client.connection() as conn:
+                    text = f"DROP DATABASE {quote(conn.async_connection, database)}"
+                    await conn.execute(sa.text(text))
+
+    def drop_db_protected(self) -> None:
+        thread = ThreadPassingExceptions(
+            target=asyncio.run, args=[self.drop_database(self.test_db_url)]
+        )
+        thread.start()
+        try:
+            thread.join(self.testclient_operation_timeout)
+        except TimeoutError:
+            pass
 
     async def disconnect_hook(self) -> None:
+        # next connect the setup routine is reexecuted
+        self._setup_executed_init = False
         if self.drop:
-            await self.drop_database(self.test_db_url)
+            self.drop_db_protected()
         await super().disconnect_hook()
