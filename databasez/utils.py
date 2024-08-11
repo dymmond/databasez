@@ -130,7 +130,7 @@ class ThreadPassingExceptions(Thread):
         except Exception as exc:
             self._exc_raised = exc
 
-    def join(self, timeout=None) -> None:
+    def join(self, timeout: typing.Union[float, int, None]=None) -> None:
         super().join(timeout=timeout)
         if self._exc_raised:
             raise self._exc_raised
