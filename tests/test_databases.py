@@ -472,7 +472,7 @@ async def test_connect_and_disconnect(database_mixed_url):
     assert not database.force_rollback
     assert database.engine is None
     assert database.ref_counter == 0
-    await database.connect()
+    assert await database.connect()
     assert database.is_connected
     assert database.engine is not None
     assert database.ref_counter == 1
@@ -496,20 +496,21 @@ async def test_connect_and_disconnect(database_mixed_url):
 
     old_engine = database.engine
     assert database.ref_counter == 1
-    await database.disconnect()
+    assert await database.disconnect()
     assert not database.is_connected
     assert database.ref_counter == 0
 
     # connect and disconnect refcounting
-    await database.connect()
+    assert await database.connect()
     assert database.engine is not old_engine
     assert database.is_connected
     old_engine = database.engine
     # nest
-    async with database:
-        assert database.ref_counter == 2
-        assert database.engine is old_engine
-        assert database.is_connected
+    assert not await database.connect()
+    assert database.ref_counter == 2
+    assert database.engine is old_engine
+    assert database.is_connected
+    assert not await database.disconnect()
     assert database.ref_counter == 1
     await database.disconnect()
     assert database.ref_counter == 0
