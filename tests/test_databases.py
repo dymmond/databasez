@@ -162,6 +162,11 @@ async def test_queries(database_url):
         assert batched_iterate_results[1][0].text == "example3"
         assert batched_iterate_results[1][0].completed is True
 
+        # execute() after iterate
+        query = notes.insert()
+        values = {"text": "after_iterate", "completed": True}
+        defaults = await database.execute(query, values)
+
 
 @pytest.mark.asyncio
 async def test_queries_raw(database_url):

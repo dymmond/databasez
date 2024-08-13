@@ -138,11 +138,14 @@ class SQLAlchemyConnection(ConnectionBackend):
                     yield batch
                 return
 
-        async with (await connection.execution_options(yield_per=batch_size)).stream(  # type: ignore
+        await connection.execution_options(yield_per=batch_size)
+        async with connection.stream(  # type: ignore
             query
         ) as result:
             async for batch in result.partitions():
                 yield batch
+        # undo the connection change
+        await connection.execution_options(yield_per=0)
 
     async def execute_raw(self, stmt: typing.Any, value: typing.Any = None) -> typing.Any:
         connection = self.async_connection
