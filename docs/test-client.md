@@ -71,12 +71,17 @@ The defaults of all parameters except the url can be changed by providing in a s
 
 `testclient_default_<parameter name>`
 
-There is also a knob for the operation timeout (setting up DB, dropping databases):
+There are also 2 knobs for the operation timeout (setting up DB, dropping databases):
 
 `testclient_operation_timeout`
 
 Default: `4`.
 
+and the limit
+
+`testclient_operation_timeout_init` for the non-lazy setup in init of the database.
+
+Default: `8`.
 
 ### How to use it
 

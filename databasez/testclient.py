@@ -30,6 +30,7 @@ class DatabaseTestClient(Database):
 
     # knob for changing the timeout of the setup and tear down of the db
     testclient_operation_timeout: float = 4
+    testclient_operation_timeout_init: float = 8
     # is used for copying Database and DatabaseTestClientand providing an early url
     test_db_url: str
     # hooks for overwriting defaults of args with None
@@ -70,7 +71,7 @@ class DatabaseTestClient(Database):
             self.drop = getattr(url, "drop", drop_database)
             # only if explicit set to False
             if lazy_setup is False:
-                self.setup_protected()
+                self.setup_protected(self.testclient_operation_timeout_init)
                 self._setup_executed_init = True
             super().__init__(url, force_rollback=force_rollback, **options)
             # fix url
@@ -90,7 +91,7 @@ class DatabaseTestClient(Database):
             self.drop = drop_database
             # if None or False
             if not lazy_setup:
-                self.setup_protected()
+                self.setup_protected(self.testclient_operation_timeout_init)
                 self._setup_executed_init = True
 
             super().__init__(test_database_url, force_rollback=force_rollback, **options)
@@ -115,17 +116,17 @@ class DatabaseTestClient(Database):
                 except (ProgrammingError, OperationalError):
                     self.drop = False
 
-    def setup_protected(self) -> None:
+    def setup_protected(self, operation_timeout: float) -> None:
         thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
         thread.start()
         try:
-            thread.join(self.testclient_operation_timeout)
+            thread.join(operation_timeout)
         except TimeoutError:
             pass
 
     async def connect_hook(self) -> None:
         if not self._setup_executed_init:
-            self.setup_protected()
+            self.setup_protected(self.testclient_operation_timeout)
         await super().connect_hook()
 
     async def is_database_exist(self) -> Any:
