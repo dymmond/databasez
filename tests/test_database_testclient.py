@@ -83,7 +83,6 @@ async def test_client_drop_existing(database_url):
         assert not await database2.database_exists(database.test_db_url)
 
 
-
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_client_overwrite_defaults(database_url):
@@ -99,7 +98,6 @@ async def test_client_overwrite_defaults(database_url):
     # lazy setup
     assert database._setup_executed_init is False
     assert not await database.database_exists(database.test_db_url)
-
 
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
