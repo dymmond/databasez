@@ -27,20 +27,35 @@ class DatabaseTestClient(Database):
     This client simply creates a "test_" from the database provided in the
     connection.
     """
-
+    # knob for changing the timeout of the setup and tear down of the db
     testclient_operation_timeout: float = 4
+    # is used for copying Database and DatabaseTestClientand providing an early url
+    test_db_url: str
+    # hooks for overwriting defaults of args with None
+    testclient_default_force_rollback: bool = False
+    testclient_default_lazy_setup: bool = False
+    # customization hooks
+    testclient_default_use_existing: bool = False
+    testclient_default_drop_database: bool = False
+    testclient_default_test_prefix: str = "test_"
 
     def __init__(
         self,
         url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
         *,
         force_rollback: typing.Union[bool, None] = None,
-        use_existing: bool = False,
-        drop_database: bool = False,
+        use_existing: typing.Union[bool, None] = None,
+        drop_database: typing.Union[bool, None] = None,
         lazy_setup: typing.Union[bool, None] = None,
-        test_prefix: str = "test_",
+        test_prefix: typing.Union[str, None] = None,
         **options: typing.Any,
     ):
+        if use_existing is None:
+            use_existing = self.testclient_default_use_existing
+        if drop_database is None:
+            drop_database = self.testclient_default_drop_database
+        if test_prefix is None:
+            test_prefix = self.testclient_default_test_prefix
         self._setup_executed_init = False
         if isinstance(url, Database):
             test_database_url = (
@@ -61,6 +76,10 @@ class DatabaseTestClient(Database):
             if str(self.url) != self.test_db_url:
                 self.url = test_database_url
         else:
+            if lazy_setup is None:
+                lazy_setup = self.testclient_default_lazy_setup
+            if force_rollback is None:
+                force_rollback = self.testclient_default_force_rollback
             url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
             test_database_url = (
                 url.replace(database=f"{test_prefix}{url.database}") if test_prefix else url
