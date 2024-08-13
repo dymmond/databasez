@@ -40,33 +40,48 @@ from databasez.testclient import DatabaseTestClient
 
 ### Parameters
 
-* **url** - The database url for your database. This can be in a string format or in a
-`databasez.DatabaseURL`.
-
-    ```python
-    from databasez import DatabaseURL
-    ```
+* **url** - The database url for your database.
+            It supports the same types like normal Database objects and has a special handling for subclasses of DatabaseTestClient.
 
 * **force_rollback** - This will ensure that all database connections are run within a transaction
                        that rollbacks once the database is disconnected.
 
-    <sup>Default: `None`, copy default or False </sup>
+    <sup>Default: `None`, copy default or `testclient_default_force_rollback` (defaults to `False`) </sup>
 
 * **lazy_setup** - This sets up the db first up on connect not in init.
 
-    <sup>Default: `None`, True if copying a database or False otherwise</sup>
+    <sup>Default: `None`, True if copying a database or `testclient_default_lazy_setup` (defaults to `False`)</sup>
 
 * **use_existing** - Uses the existing `test_` database if previously created and not dropped.
 
-    <sup>Default: `False`</sup>
+    <sup>Default: `testclient_default_use_existing` (defaults to `False`)</sup>
 
-* **drop_database** - Ensures that after the tests, the database is dropped.
+* **drop_database** - Ensures that after the tests, the database is dropped. The corresponding attribute is `drop`.
+                      When the setup fails, it is automatically set to `False`.
 
-    <sup>Default: `False`</sup>
+    <sup>Default: `testclient_default_drop_database` (defaults to `False`)</sup>
 
 * **test_prefix** - Allow a custom test prefix or leave empty to use the url instead without changes.
 
-    <sup>Default: `test_`</sup>
+    <sup>Default: `testclient_default_test_prefix` (defaults to `test_`)</sup>
+
+### Subclassing
+
+The defaults of all parameters except the url can be changed by providing in a subclass a different value for the attribute:
+
+`testclient_default_<parameter name>`
+
+There are also 2 knobs for the operation timeout (setting up DB, dropping databases):
+
+`testclient_operation_timeout`
+
+Default: `4`.
+
+and the limit
+
+`testclient_operation_timeout_init` for the non-lazy setup in init of the database.
+
+Default: `8`.
 
 ### How to use it
 

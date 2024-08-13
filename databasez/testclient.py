@@ -28,19 +28,36 @@ class DatabaseTestClient(Database):
     connection.
     """
 
+    # knob for changing the timeout of the setup and tear down of the db
     testclient_operation_timeout: float = 4
+    testclient_operation_timeout_init: float = 8
+    # is used for copying Database and DatabaseTestClientand providing an early url
+    test_db_url: str
+    # hooks for overwriting defaults of args with None
+    testclient_default_force_rollback: bool = False
+    testclient_default_lazy_setup: bool = False
+    # customization hooks
+    testclient_default_use_existing: bool = False
+    testclient_default_drop_database: bool = False
+    testclient_default_test_prefix: str = "test_"
 
     def __init__(
         self,
         url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
         *,
         force_rollback: typing.Union[bool, None] = None,
-        use_existing: bool = False,
-        drop_database: bool = False,
+        use_existing: typing.Union[bool, None] = None,
+        drop_database: typing.Union[bool, None] = None,
         lazy_setup: typing.Union[bool, None] = None,
-        test_prefix: str = "test_",
+        test_prefix: typing.Union[str, None] = None,
         **options: typing.Any,
     ):
+        if use_existing is None:
+            use_existing = self.testclient_default_use_existing
+        if drop_database is None:
+            drop_database = self.testclient_default_drop_database
+        if test_prefix is None:
+            test_prefix = self.testclient_default_test_prefix
         self._setup_executed_init = False
         if isinstance(url, Database):
             test_database_url = (
@@ -54,13 +71,17 @@ class DatabaseTestClient(Database):
             self.drop = getattr(url, "drop", drop_database)
             # only if explicit set to False
             if lazy_setup is False:
-                self.setup_protected()
+                self.setup_protected(self.testclient_operation_timeout_init)
                 self._setup_executed_init = True
             super().__init__(url, force_rollback=force_rollback, **options)
             # fix url
             if str(self.url) != self.test_db_url:
                 self.url = test_database_url
         else:
+            if lazy_setup is None:
+                lazy_setup = self.testclient_default_lazy_setup
+            if force_rollback is None:
+                force_rollback = self.testclient_default_force_rollback
             url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
             test_database_url = (
                 url.replace(database=f"{test_prefix}{url.database}") if test_prefix else url
@@ -70,7 +91,7 @@ class DatabaseTestClient(Database):
             self.drop = drop_database
             # if None or False
             if not lazy_setup:
-                self.setup_protected()
+                self.setup_protected(self.testclient_operation_timeout_init)
                 self._setup_executed_init = True
 
             super().__init__(test_database_url, force_rollback=force_rollback, **options)
@@ -95,17 +116,17 @@ class DatabaseTestClient(Database):
                 except (ProgrammingError, OperationalError):
                     self.drop = False
 
-    def setup_protected(self) -> None:
+    def setup_protected(self, operation_timeout: float) -> None:
         thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
         thread.start()
         try:
-            thread.join(self.testclient_operation_timeout)
+            thread.join(operation_timeout)
         except TimeoutError:
             pass
 
     async def connect_hook(self) -> None:
         if not self._setup_executed_init:
-            self.setup_protected()
+            self.setup_protected(self.testclient_operation_timeout)
         await super().connect_hook()
 
     async def is_database_exist(self) -> Any:

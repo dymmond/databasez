@@ -1,17 +1,19 @@
 # Release Notes
 
-## Unreleased
+## 0.9.3
 
 ### Added
 
 - Add lazy_setup parameter for testclient.
 - `disconnect` and `connect` return if they performed the setup/cleanup.
+- Add backward compatible overwrites of defaults to the TestClient.
 
 ### Fixed
 
 - Restore eager setup behavior in testclient.
 - Fix drop_dabase with postgresql.
 - Fix setup/disconnect hangups.
+- Fix ancient docs deps.
 
 ### Removed
 

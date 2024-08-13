@@ -14,6 +14,10 @@ if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 
+class LazyTestClient(DatabaseTestClient):
+    testclient_default_lazy_setup: bool = True
+
+
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_non_existing_normal(database_url):
@@ -77,3 +81,29 @@ async def test_client_drop_existing(database_url):
             await conn.fetch_all("select * from FOOBAR")
     if database2.drop:
         assert not await database2.database_exists(database.test_db_url)
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_client_overwrite_defaults(database_url):
+    class DummyTestClient(LazyTestClient):
+        testclient_default_use_existing = True
+        testclient_default_drop_database = True
+        testclient_default_test_prefix = "foobar123"
+
+    database = DummyTestClient(database_url)
+    assert "foobar123" in database.test_db_url
+    assert database.use_existing is True
+    assert database.drop is True
+    # lazy setup
+    assert database._setup_executed_init is False
+    assert not await database.database_exists(database.test_db_url)
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.parametrize("source_db_class", [Database, LazyTestClient])
+def test_client_copy(source_db_class, database_url):
+    ref_db = Database(database_url)
+    source_db = source_db_class(database_url, force_rollback=True)
+    copied = DatabaseTestClient(source_db, lazy_setup=True)
+    assert copied.url.database == f"test_{ref_db.url.database}"
