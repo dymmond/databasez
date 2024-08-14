@@ -36,3 +36,19 @@ class Connection(SQLAlchemyConnection):
             async with owner.transaction():
                 async for batch in super().batched_iterate(query, batch_size):
                     yield batch
+
+    async def iterate(
+        self, query: "ClauseElement", batch_size: typing.Optional[int] = None
+    ) -> typing.AsyncGenerator[typing.Any, None]:
+        # postgres needs a transaction for iterate
+        if self.in_transaction():
+            owner = self.owner
+            assert owner is not None
+            async for row in super().iterate(query, batch_size):
+                yield row
+        else:
+            owner = self.owner
+            assert owner is not None
+            async with owner.transaction():
+                async for row in super().iterate(query, batch_size):
+                    yield row
