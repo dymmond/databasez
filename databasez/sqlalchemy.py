@@ -138,11 +138,42 @@ class SQLAlchemyConnection(ConnectionBackend):
                     yield batch
                 return
 
-        async with (await connection.execution_options(yield_per=batch_size)).stream(  # type: ignore
-            query
-        ) as result:
-            async for batch in result.partitions():
-                yield batch
+        await connection.execution_options(yield_per=batch_size)
+        try:
+            async with connection.stream(  # type: ignore
+                query
+            ) as result:
+                async for batch in result.partitions():
+                    yield batch
+        finally:
+            # undo the connection change
+            await connection.execution_options(yield_per=0)
+
+    async def iterate(
+        self, query: ClauseElement, batch_size: typing.Optional[int] = None
+    ) -> typing.AsyncGenerator[typing.Any, None]:
+        connection = self.async_connection
+        assert connection is not None, "Connection is not acquired"
+        database = self.database
+        assert database
+        if batch_size is None:
+            batch_size = database.default_batch_size
+
+        if not connection.dialect.supports_server_side_cursors:
+            with await self.execute_raw(query) as result:
+                for row in result.fetchall():
+                    yield row
+                return
+        await connection.execution_options(yield_per=batch_size)
+        try:
+            async with connection.stream(  # type: ignore
+                query
+            ) as result:
+                async for row in result:
+                    yield row
+        finally:
+            # undo the connection change
+            await connection.execution_options(yield_per=0)
 
     async def execute_raw(self, stmt: typing.Any, value: typing.Any = None) -> typing.Any:
         connection = self.async_connection

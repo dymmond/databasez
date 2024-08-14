@@ -242,6 +242,55 @@ async def test_ddl_queries(database_url):
             await database.execute(query)
 
 
+@pytest.mark.asyncio
+async def test_connection_after_iterate(database_url):
+    """
+    Test that the connection is correctly resetted.
+    """
+
+    async with Database(database_url, force_rollback=True) as database:
+        # execute() before iterate
+        query = notes.insert()
+        values = {"text": "example1", "completed": True}
+        defaults = await database.execute(query, values)
+        assert defaults.id == 1
+        query = "SELECT * FROM notes"
+        results = []
+        async for result in database.iterate(query=query, chunk_size=2):
+            results.append(result)
+        assert len(results) == 1
+
+        # execute() after iterate
+        query = notes.insert()
+        values = {"text": "after_iterate", "completed": True}
+        defaults = await database.execute(query, values)
+
+
+@pytest.mark.asyncio
+async def test_connection_after_batched_iterate(database_url):
+    """
+    Test that the connection is correctly resetted.
+    """
+
+    async with Database(database_url, force_rollback=True) as database:
+        # execute() before batched_iterate
+        query = notes.insert()
+        values = {"text": "example1", "completed": True}
+        defaults = await database.execute(query, values)
+        assert defaults.id == 1
+        query = "SELECT * FROM notes"
+        results = []
+        async for result in database.batched_iterate(query=query, batch_size=2):
+            results.append(result)
+        assert len(results) == 1
+        assert len(results[0]) == 1
+
+        # execute() after batched_iterate
+        query = notes.insert()
+        values = {"text": "after_iterate", "completed": True}
+        defaults = await database.execute(query, values)
+
+
 @pytest.mark.parametrize("exception", [Exception, asyncio.CancelledError])
 @pytest.mark.asyncio
 async def test_queries_after_error(database_url, exception):

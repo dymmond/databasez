@@ -1,5 +1,15 @@
 # Release Notes
 
+## Unreleased
+
+### Changed
+
+- Implement iterate in sqlalchemy base class (before it was a forward to batched_iterate).
+
+### Fixed
+
+- iterate and batched_iterate misconfigure connection.
+
 ## 0.9.3
 
 ### Added
