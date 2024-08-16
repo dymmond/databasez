@@ -1,5 +1,12 @@
 # Release Notes
 
+
+## 0.9.5
+
+### Fixed
+
+- `disconnect_hook` was called too early.
+
 ## 0.9.4
 
 ### Changed
