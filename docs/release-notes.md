@@ -6,6 +6,7 @@
 ### Fixed
 
 - `disconnect_hook` was called too early.
+- `connect_hook` was called too late.
 
 ## 0.9.4
 
