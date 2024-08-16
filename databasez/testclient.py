@@ -187,6 +187,7 @@ class DatabaseTestClient(Database):
         dialect_name = url.sqla_url.get_dialect(True).name
         dialect_driver = url.sqla_url.get_dialect(True).driver
 
+        # we don't want to connect to a not existing db
         if dialect_name == "postgresql":
             url = url.replace(database="postgres")
         elif dialect_name == "mssql":
@@ -223,6 +224,7 @@ class DatabaseTestClient(Database):
 
             elif dialect_name == "sqlite" and database != ":memory:":
                 if database:
+                    # create a sqlite file
                     async with db_client.engine.begin() as conn:  # type: ignore
                         await conn.execute(sa.text("CREATE TABLE DB(id int)"))
                         await conn.execute(sa.text("DROP TABLE DB"))
