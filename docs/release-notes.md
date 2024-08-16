@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## 0.9.4
 
 ### Changed
 
