@@ -232,7 +232,7 @@ class Database:
         return False
 
     async def connect_hook(self) -> None:
-        """Refcount protected connect hook"""
+        """Refcount protected connect hook. Executed after engine and global connection setup."""
 
     async def connect(self) -> bool:
         """
@@ -253,7 +253,7 @@ class Database:
         return True
 
     async def disconnect_hook(self) -> None:
-        """Refcount protected disconnect hook"""
+        """Refcount protected disconnect hook. Executed after connection cleanup but before engine disconnect."""
 
     async def disconnect(self, force: bool = False) -> bool:
         """
@@ -268,13 +268,13 @@ class Database:
             else:
                 return False
 
-        assert self._global_connection is not None
         try:
-            await self.disconnect_hook()
-        finally:
+            assert self._global_connection is not None
             await self._global_connection.__aexit__()
             self._global_connection = None
             self._connection = None
+            await self.disconnect_hook()
+        finally:
             try:
                 await self.backend.disconnect()
                 logger.info(
