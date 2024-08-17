@@ -18,6 +18,7 @@ class LazyTestClient(DatabaseTestClient):
     testclient_default_lazy_setup: bool = True
 
 
+# BaseExceptions are harder to catch so test against them
 class HookException(BaseException):
     pass
 
