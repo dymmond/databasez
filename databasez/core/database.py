@@ -241,13 +241,17 @@ class Database:
         if not await self.inc_refcount():
             assert self.is_connected, "ref_count < 0"
             return False
+        try:
+            await self.connect_hook()
+        except BaseException as exc:
+            await self.decr_refcount()
+            raise exc
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
         self.is_connected = True
 
         assert self._global_connection is None
-        await self.connect_hook()
 
         self._global_connection = Connection(self, self.backend, force_rollback=True)
         return True
@@ -273,17 +277,15 @@ class Database:
             await self._global_connection.__aexit__()
             self._global_connection = None
             self._connection = None
-            await self.disconnect_hook()
         finally:
-            try:
-                await self.backend.disconnect()
-                logger.info(
-                    "Disconnected from database %s",
-                    self.url.obscure_password,
-                    extra=DISCONNECT_EXTRA,
-                )
-            finally:
-                self.is_connected = False
+            logger.info(
+                "Disconnected from database %s",
+                self.url.obscure_password,
+                extra=DISCONNECT_EXTRA,
+            )
+            self.is_connected = False
+            await self.backend.disconnect()
+            await self.disconnect_hook()
         return True
 
     async def __aenter__(self) -> "Database":

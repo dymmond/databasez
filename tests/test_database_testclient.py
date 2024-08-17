@@ -18,6 +18,23 @@ class LazyTestClient(DatabaseTestClient):
     testclient_default_lazy_setup: bool = True
 
 
+class HookException(BaseException):
+    pass
+
+
+class FailingConnectTestClient(LazyTestClient):
+    async def connect_hook(self) -> None:
+        raise HookException()
+
+
+class FailingDisconnectTestClient(LazyTestClient):
+    async def connect_hook(self) -> None:
+        pass
+
+    async def disconnect_hook(self) -> None:
+        raise HookException()
+
+
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
 async def test_non_existing_normal(database_url):
@@ -107,3 +124,27 @@ def test_client_copy(source_db_class, database_url):
     source_db = source_db_class(database_url, force_rollback=True)
     copied = DatabaseTestClient(source_db, lazy_setup=True)
     assert copied.url.database == f"test_{ref_db.url.database}"
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_client_fails_on_connect_hook(database_url):
+    database = FailingConnectTestClient(database_url)
+    with pytest.raises(HookException):
+        async with database:
+            pass
+    assert database.is_connected == False
+    # return True, would connect again
+    assert await database.inc_refcount()
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_client_fails_on_disconnect_hook(database_url):
+    database = FailingDisconnectTestClient(database_url)
+    with pytest.raises(HookException):
+        async with database:
+            pass
+    assert database.is_connected == False
+    # return True, would connect again
+    assert await database.inc_refcount()
