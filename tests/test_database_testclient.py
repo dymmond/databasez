@@ -145,7 +145,18 @@ async def test_client_fails_on_disconnect_hook(database_url):
     database = FailingDisconnectTestClient(database_url)
     with pytest.raises(HookException):
         async with database:
-            pass
+            assert database.is_connected == True
     assert database.is_connected == False
     # return True, would connect again
     assert await database.inc_refcount()
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_client_fails_during_op(database_url):
+    # mssql cannot drop master db
+    database = LazyTestClient(database_url, use_existing=True)
+    with pytest.raises(HookException):
+        async with database:
+            raise HookException()
+    assert database.is_connected == False

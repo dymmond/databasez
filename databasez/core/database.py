@@ -232,7 +232,7 @@ class Database:
         return False
 
     async def connect_hook(self) -> None:
-        """Refcount protected connect hook. Executed after engine and before global connection setup."""
+        """Refcount protected connect hook. Executed begore engine and global connection setup."""
 
     async def connect(self) -> bool:
         """
@@ -257,7 +257,7 @@ class Database:
         return True
 
     async def disconnect_hook(self) -> None:
-        """Refcount protected disconnect hook. Executed after connection cleanup but before engine disconnect."""
+        """Refcount protected disconnect hook. Executed after connection, engine cleanup."""
 
     async def disconnect(self, force: bool = False) -> bool:
         """
