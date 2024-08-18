@@ -7,6 +7,7 @@
 
 - `disconnect_hook` was called too early.
 - `connect_hook` was called too late.
+- `pos` not passed through in fetch_one.
 
 ## 0.9.4
 

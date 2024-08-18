@@ -315,7 +315,7 @@ class Database:
         pos: int = 0,
     ) -> typing.Optional[interfaces.Record]:
         async with self.connection() as connection:
-            return await connection.fetch_one(query, values)
+            return await connection.fetch_one(query, values, pos=pos)
 
     async def fetch_val(
         self,
