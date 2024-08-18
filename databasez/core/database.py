@@ -232,7 +232,7 @@ class Database:
         return False
 
     async def connect_hook(self) -> None:
-        """Refcount protected connect hook"""
+        """Refcount protected connect hook. Executed begore engine and global connection setup."""
 
     async def connect(self) -> bool:
         """
@@ -241,6 +241,11 @@ class Database:
         if not await self.inc_refcount():
             assert self.is_connected, "ref_count < 0"
             return False
+        try:
+            await self.connect_hook()
+        except BaseException as exc:
+            await self.decr_refcount()
+            raise exc
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
@@ -249,11 +254,10 @@ class Database:
         assert self._global_connection is None
 
         self._global_connection = Connection(self, self.backend, force_rollback=True)
-        await self.connect_hook()
         return True
 
     async def disconnect_hook(self) -> None:
-        """Refcount protected disconnect hook"""
+        """Refcount protected disconnect hook. Executed after connection, engine cleanup."""
 
     async def disconnect(self, force: bool = False) -> bool:
         """
@@ -268,22 +272,20 @@ class Database:
             else:
                 return False
 
-        assert self._global_connection is not None
         try:
-            await self.disconnect_hook()
-        finally:
+            assert self._global_connection is not None
             await self._global_connection.__aexit__()
             self._global_connection = None
             self._connection = None
-            try:
-                await self.backend.disconnect()
-                logger.info(
-                    "Disconnected from database %s",
-                    self.url.obscure_password,
-                    extra=DISCONNECT_EXTRA,
-                )
-            finally:
-                self.is_connected = False
+        finally:
+            logger.info(
+                "Disconnected from database %s",
+                self.url.obscure_password,
+                extra=DISCONNECT_EXTRA,
+            )
+            self.is_connected = False
+            await self.backend.disconnect()
+            await self.disconnect_hook()
         return True
 
     async def __aenter__(self) -> "Database":
