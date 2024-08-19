@@ -260,13 +260,28 @@ class SQLAlchemyDatabase(DatabaseBackend):
         database_url: DatabaseURL,
         **options: typing.Any,
     ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
+        # we have our own logic
+        options.setdefault("pool_reset_on_return", None)
+        new_query_options = dict(database_url.options)
+        for param in ["ssl", "echo", "echo_pool"]:
+            if param in new_query_options:
+                assert param not in options
+                value = typing.cast(str, new_query_options.pop(param))
+                options[param] = value.lower() in {"true", ""}
+        if "isolation_level" in new_query_options:
+            assert "isolation_level" not in options
+            options["isolation_level"] = typing.cast(str, new_query_options.pop(param))
+        for param in ["pool_size", "max_overflow"]:
+            if param in new_query_options:
+                assert param not in options
+                options[param] = int(typing.cast(str, new_query_options.pop(param)))
+        if "pool_recycle" in new_query_options:
+            assert "pool_recycle" not in options
+            options["pool_recycle"] = float(
+                typing.cast(str, new_query_options.pop("pool_recycle"))
+            )
         if self.default_isolation_level is not None:
             options.setdefault("isolation_level", self.default_isolation_level)
-        new_query_options = dict(database_url.options)
-        if "ssl" in new_query_options:
-            assert "ssl" not in options
-            ssl = typing.cast(str, new_query_options.pop("ssl"))
-            options["ssl"] = {"true": True, "false": False}.get(ssl.lower(), ssl.lower())
         return database_url.replace(options=new_query_options), options
 
     def json_serializer(self, inp: dict) -> str:

@@ -60,7 +60,7 @@ Databasez was built for Python 3.8+ and on the top of the newest **SQLAlchemy 2*
 simple asyncio support for a range of databases.
 
 ### Special notes
-This package couldn't exist without [Databases](https://www.encode.io/databasex/) and the continuous work
+This package couldn't exist without [Databases](https://www.encode.io/databases/) and the continuous work
 done by the amazing team behind it. For that reason, thank you!
 
 ## Installation
@@ -69,24 +69,16 @@ done by the amazing team behind it. For that reason, thank you!
 $ pip install databasez
 ```
 
-If you are interested in using the [test client](./test-client.md), you can also install:
-
-```shell
-$ pip install databasez[testing]
-```
+If you are interested in using the [test client](./test-client.md), you can just use it.
 
 ## What does databasez support at the moment
 
-Databasez currently supports `sqlite`, `postgres`, `mysql` and `sql server`. More drivers can and
-will be added in the future.
+Databasez currently supports nearly all async drivers of sqlalchemy.
 
-Database drivers supported are:
+If this is not enough there are two special dialects with restricted features:
 
-* [asyncpg][asyncpg] - For postgres.
-* [aiomysql][aiomysql] - For MySQL/MariaDB.
-* [asyncmy][asyncmy] - For MySQL/MariaDB.
-* [aiosqlite][aiosqlite] - For SQLite.
-* [aioodbc][aioodbc] - For MSSQL (SQL Server).
+- jdbc: can load nearly any jdbc driver
+- dbapi2: can load nearly any dbapi2 driver (python standard), async as well as sync.
 
 ### Driver installation
 
