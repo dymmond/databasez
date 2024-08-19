@@ -125,11 +125,12 @@ Options which will be transformed are in `databasez/sqlalchemy.py` in `extract_o
 
 Some transformed options are:
 
-- ssl: enable ssl
-- echo: enable echo
-- echo_pool: enable echo for pool
-- pool_size: maximal amount of connections
-- pool_recycle: maximal duration a connection may live
+- ssl: enable ssl.
+- echo: enable echo.
+- echo_pool: enable echo for pool.
+- pool_size: maximal amount of connections, int (former name: min_size).
+- max_overflow: maximal amount of connections, int (former name: max_size).
+- pool_recycle: maximal duration a connection may live, float.
 
 
 ## Connection options as a dictionary
