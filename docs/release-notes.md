@@ -3,6 +3,10 @@
 
 ## 0.9.5
 
+### Changed
+
+- Extract more options by default from query options.
+
 ### Fixed
 
 - `disconnect_hook` was called too early.
