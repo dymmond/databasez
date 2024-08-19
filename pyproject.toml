@@ -211,7 +211,7 @@ TEST_DATABASE_URLS = """
 sqlite+aiosqlite:///testsuite.sqlite3,\
 mysql+aiomysql://username:passwsss*1348394#@localhost:3306/testsuite,\
 mysql+asyncmy://username:passwsss*1348394#@localhost:3306/testsuite,\
-postgresql+psycopg://username:passwsss*1348394#@localhost:5432/testsuite,\
+postgresql+psycopg://username:passwsss*1348394#@localhost:5432/testsuite&pool_size=5,\
 postgresql+asyncpg://username:passwsss*1348394#@localhost:5432/testsuite,\
-mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&Encrypt=Optional\
+mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&Encrypt=Optional&pool_recycle=10\
 """

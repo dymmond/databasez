@@ -3,7 +3,8 @@ import copy
 
 from databasez import Database
 
-database = Database("sqlite+aiosqlite:///example.db")
+# non captured arguments are passed through to create_async_engine
+database = Database("sqlite+aiosqlite:///example.db", echo=True)
 await database.connect()
 
 # Create a table.

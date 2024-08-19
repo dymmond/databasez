@@ -108,8 +108,8 @@ and for configuring the connection pool.
 # Use an SSL connection.
 database = Database('postgresql+asyncpg://localhost/example?ssl=true')
 
-# Use a connection pool of between 5-20 connections.
-database = Database('mysql+aiomysql://localhost/example?min_size=5&max_size=20')
+# Use an SSL connection and configure pool
+database = Database('postgresql+asyncpg://localhost/example?ssl=true&pool_size=20')
 ```
 
 You can also use keyword arguments to pass in any connection options.
@@ -117,8 +117,20 @@ Available keyword arguments may differ between database backends. Keywords can b
 This means also the keyword extraction works like in sqlalchemy
 
 ```python
-database = Database('postgresql+asyncpg://localhost/example', ssl=True, min_size=5, max_size=20)
+database = Database('postgresql+asyncpg://localhost/example', ssl=True, pool_size=20)
 ```
+
+Note: not all query values are morphed into kwargs arguments.
+Options which will be transformed are in `databasez/sqlalchemy.py` in `extract_options`
+
+Some transformed options are:
+
+- ssl: enable ssl
+- echo: enable echo
+- echo_pool: enable echo for pool
+- pool_size: maximal amount of connections
+- pool_recycle: maximal duration a connection may live
+
 
 ## Connection options as a dictionary
 
@@ -139,7 +151,7 @@ Databasez expects a python dictionary like object with the following structure.
         "user": ...,
         "password": ...,
         "database": ...,
-        "options": {
+        "options": {  # only query
             "driver": ... # In case of MSSQL
             "ssl": ...
         }
