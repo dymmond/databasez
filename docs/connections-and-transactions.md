@@ -131,6 +131,7 @@ Some transformed options are:
 - pool_size: maximal amount of connections, int (former name: min_size).
 - max_overflow: maximal amount of connections, int (former name: max_size).
 - pool_recycle: maximal duration a connection may live, float.
+- isolation_level: isolation_level, str.
 
 
 ## Connection options as a dictionary

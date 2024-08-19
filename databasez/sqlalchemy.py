@@ -260,14 +260,17 @@ class SQLAlchemyDatabase(DatabaseBackend):
         database_url: DatabaseURL,
         **options: typing.Any,
     ) -> typing.Tuple[DatabaseURL, typing.Dict[str, typing.Any]]:
-        if self.default_isolation_level is not None:
-            options.setdefault("isolation_level", self.default_isolation_level)
+        # we have our own logic
+        options.setdefault("pool_reset_on_return", None)
         new_query_options = dict(database_url.options)
         for param in ["ssl", "echo", "echo_pool"]:
             if param in new_query_options:
                 assert param not in options
                 value = typing.cast(str, new_query_options.pop(param))
                 options[param] = value.lower() in {"true", ""}
+        if "isolation_level" in new_query_options:
+            assert "isolation_level" not in options
+            options["isolation_level"] = typing.cast(str, new_query_options.pop(param))
         for param in ["pool_size", "max_overflow"]:
             if param in new_query_options:
                 assert param not in options
@@ -277,6 +280,8 @@ class SQLAlchemyDatabase(DatabaseBackend):
             options["pool_recycle"] = float(
                 typing.cast(str, new_query_options.pop("pool_recycle"))
             )
+        if self.default_isolation_level is not None:
+            options.setdefault("isolation_level", self.default_isolation_level)
         return database_url.replace(options=new_query_options), options
 
     def json_serializer(self, inp: dict) -> str:
