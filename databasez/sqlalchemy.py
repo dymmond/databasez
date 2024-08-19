@@ -270,10 +270,10 @@ class SQLAlchemyDatabase(DatabaseBackend):
                 options[param] = value.lower() in {"true", ""}
         if "pool_size" in new_query_options:
             assert "pool_size" not in options
-            options["pool_size"] = int(new_query_options["pool_size"])
+            options["pool_size"] = int(typing.cast(str, new_query_options["pool_size"]))
         if "pool_recycle" in new_query_options:
             assert "pool_recycle" not in options
-            options["pool_recycle"] = int(new_query_options["pool_recycle"])
+            options["pool_recycle"] = int(typing.cast(str, new_query_options["pool_recycle"]))
         return database_url.replace(options=new_query_options), options
 
     def json_serializer(self, inp: dict) -> str:
