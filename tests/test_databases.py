@@ -1,6 +1,8 @@
 import asyncio
+import contextvars
 import datetime
 import decimal
+import functools
 import os
 from collections.abc import Sequence
 from unittest.mock import patch
@@ -53,6 +55,17 @@ for value in DATABASE_URLS:
 
 MIXED_DATABASE_CONFIG_URLS = [*DATABASE_URLS, *DATABASE_CONFIG_URLS]
 MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATABASE_URLS)]
+
+
+try:
+    to_thread = asyncio.to_thread
+except AttributeError:
+    # for py <= 3.8
+    async def to_thread(func, /, *args, **kwargs):
+        loop = asyncio.get_running_loop()
+        ctx = contextvars.copy_context()
+        func_call = functools.partial(ctx.run, func, *args, **kwargs)
+        return await loop.run_in_executor(None, func_call)
 
 
 @pytest.fixture(params=DATABASE_URLS)
@@ -871,7 +884,7 @@ async def test_multi_thread(database_url, force_rollback):
                 await database.execute("WAITFOR DELAY '00:00:00.300'")
 
         async def wrap_in_thread():
-            await asyncio.to_thread(asyncio.run, db_lookup(True))
+            await to_thread(asyncio.run, db_lookup(True))
 
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
 
@@ -887,11 +900,11 @@ async def test_multi_thread_db_contextmanager(database_url):
                 ops = []
                 while depth >= 0:
                     depth -= 1
-                    ops.append(asyncio.to_thread(asyncio.run, db_connect(depth=depth)))
+                    ops.append(to_thread(asyncio.run, db_connect(depth=depth)))
                 await asyncio.gather(*ops)
             assert new_database.ref_counter == 0
 
-        await asyncio.to_thread(asyncio.run, db_connect())
+        await to_thread(asyncio.run, db_connect())
     assert database.ref_counter == 0
 
 
@@ -903,7 +916,7 @@ async def test_multi_thread_db_connect_fails(database_url):
             await database.connect()
 
         with pytest.raises(RuntimeError):
-            await asyncio.to_thread(asyncio.run, db_connect())
+            await to_thread(asyncio.run, db_connect())
 
 
 @pytest.mark.asyncio
