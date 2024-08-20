@@ -161,6 +161,7 @@ def multiloop_protector(
     fail_with_different_loop: bool, wrap_context_manager: bool = False
 ) -> typing.Callable[[MultiloopProtectorCallable], MultiloopProtectorCallable]:
     """For multiple threads or other reasons why the loop changes"""
+
     # True works with all methods False only for methods of Database
     # needs _loop attribute to check against
     def _decorator(fn: MultiloopProtectorCallable) -> MultiloopProtectorCallable:
