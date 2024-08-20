@@ -1,6 +1,8 @@
 import asyncio
+import contextvars
 import datetime
 import decimal
+import functools
 import os
 from collections.abc import Sequence
 from unittest.mock import patch
@@ -53,6 +55,17 @@ for value in DATABASE_URLS:
 
 MIXED_DATABASE_CONFIG_URLS = [*DATABASE_URLS, *DATABASE_CONFIG_URLS]
 MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATABASE_URLS)]
+
+
+try:
+    to_thread = asyncio.to_thread
+except AttributeError:
+    # for py <= 3.8
+    async def to_thread(func, /, *args, **kwargs):
+        loop = asyncio.get_running_loop()
+        ctx = contextvars.copy_context()
+        func_call = functools.partial(ctx.run, func, *args, **kwargs)
+        return await loop.run_in_executor(None, func_call)
 
 
 @pytest.fixture(params=DATABASE_URLS)
@@ -843,6 +856,67 @@ async def test_concurrent_access_on_single_connection(database_url):
                 await database.execute("WAITFOR DELAY '00:00:00.300'")
 
         await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
+
+
+@pytest.mark.parametrize("force_rollback", [True, False])
+@pytest.mark.asyncio
+async def test_multi_thread(database_url, force_rollback):
+    database_url = DatabaseURL(str(database_url.url))
+    async with Database(database_url, force_rollback=force_rollback) as database:
+        database._non_copied_attribute = True
+
+        async def db_lookup(in_thread):
+            async with database.connection() as conn:
+                if in_thread:
+                    assert not hasattr(conn._database, "_non_copied_attribute")
+                else:
+                    assert hasattr(conn._database, "_non_copied_attribute")
+                assert bool(conn._database.force_rollback) == force_rollback
+            if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+                return
+            if database_url.dialect.startswith("postgres"):
+                await database.fetch_one("SELECT pg_sleep(0.3)")
+            elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
+                "mariadb"
+            ):
+                await database.fetch_one("SELECT SLEEP(0.3)")
+            elif database_url.dialect.startswith("mssql"):
+                await database.execute("WAITFOR DELAY '00:00:00.300'")
+
+        async def wrap_in_thread():
+            await to_thread(asyncio.run, db_lookup(True))
+
+        await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
+
+
+@pytest.mark.asyncio
+async def test_multi_thread_db_contextmanager(database_url):
+    async with Database(database_url, force_rollback=False) as database:
+
+        async def db_connect(depth=3):
+            # many parallel and nested threads
+            async with database as new_database:
+                await new_database.fetch_one("SELECT 1")
+                ops = []
+                while depth >= 0:
+                    depth -= 1
+                    ops.append(to_thread(asyncio.run, db_connect(depth=depth)))
+                await asyncio.gather(*ops)
+            assert new_database.ref_counter == 0
+
+        await to_thread(asyncio.run, db_connect())
+    assert database.ref_counter == 0
+
+
+@pytest.mark.asyncio
+async def test_multi_thread_db_connect_fails(database_url):
+    async with Database(database_url, force_rollback=True) as database:
+
+        async def db_connect():
+            await database.connect()
+
+        with pytest.raises(RuntimeError):
+            await to_thread(asyncio.run, db_connect())
 
 
 @pytest.mark.asyncio

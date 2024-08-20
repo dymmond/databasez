@@ -11,6 +11,7 @@ from functools import lru_cache
 from types import TracebackType
 
 from databasez import interfaces
+from databasez.utils import multiloop_protector
 
 from .connection import Connection
 from .databaseurl import DatabaseURL
@@ -60,6 +61,12 @@ def init() -> None:
         connection_name="SQLAlchemyConnection",
         transaction_name="SQLAlchemyTransaction",
     )
+
+
+# we need a dict to ensure the references are kept
+ACTIVE_DATABASES: ContextVar[typing.Optional[typing.Dict[typing.Any, Database]]] = ContextVar(
+    "ACTIVE_DATABASES", default=None
+)
 
 
 ACTIVE_FORCE_ROLLBACKS: ContextVar[
@@ -142,6 +149,7 @@ class Database:
     """
 
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
+    _loop: typing.Any = None
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
     options: typing.Any
@@ -234,6 +242,7 @@ class Database:
     async def connect_hook(self) -> None:
         """Refcount protected connect hook. Executed begore engine and global connection setup."""
 
+    @multiloop_protector(True)
     async def connect(self) -> bool:
         """
         Establish the connection pool.
@@ -246,6 +255,7 @@ class Database:
         except BaseException as exc:
             await self.decr_refcount()
             raise exc
+        self._loop = asyncio.get_event_loop()
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
@@ -259,6 +269,7 @@ class Database:
     async def disconnect_hook(self) -> None:
         """Refcount protected disconnect hook. Executed after connection, engine cleanup."""
 
+    @multiloop_protector(True)
     async def disconnect(self, force: bool = False) -> bool:
         """
         Close all connections in the connection pool.
@@ -285,12 +296,25 @@ class Database:
             )
             self.is_connected = False
             await self.backend.disconnect()
+            self._loop = None
             await self.disconnect_hook()
         return True
 
     async def __aenter__(self) -> "Database":
-        await self.connect()
-        return self
+        loop = asyncio.get_running_loop()
+        database = self
+        if self._loop is not None and loop != self._loop:
+            dbs = ACTIVE_DATABASES.get()
+            if dbs is None:
+                dbs = {}
+            else:
+                dbs = dbs.copy()
+            database = self.__copy__()
+            dbs[loop] = database
+            # it is always a copy required to prevent sideeffects between the contexts
+            ACTIVE_DATABASES.set(dbs)
+        await database.connect()
+        return database
 
     async def __aexit__(
         self,
@@ -298,8 +322,15 @@ class Database:
         exc_value: typing.Optional[BaseException] = None,
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
-        await self.disconnect()
+        loop = asyncio.get_running_loop()
+        database = self
+        if self._loop is not None and loop != self._loop:
+            dbs = ACTIVE_DATABASES.get()
+            if dbs is not None:
+                database = dbs.pop(loop, database)
+        await database.disconnect()
 
+    @multiloop_protector(False)
     async def fetch_all(
         self,
         query: typing.Union[ClauseElement, str],
@@ -308,6 +339,7 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_all(query, values)
 
+    @multiloop_protector(False)
     async def fetch_one(
         self,
         query: typing.Union[ClauseElement, str],
@@ -316,7 +348,9 @@ class Database:
     ) -> typing.Optional[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values, pos=pos)
+            assert connection._connection_counter == 1
 
+    @multiloop_protector(False)
     async def fetch_val(
         self,
         query: typing.Union[ClauseElement, str],
@@ -327,6 +361,7 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_val(query, values, column=column, pos=pos)
 
+    @multiloop_protector(False)
     async def execute(
         self,
         query: typing.Union[ClauseElement, str],
@@ -335,12 +370,14 @@ class Database:
         async with self.connection() as connection:
             return await connection.execute(query, values)
 
+    @multiloop_protector(False)
     async def execute_many(
         self, query: typing.Union[ClauseElement, str], values: typing.Any = None
     ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
         async with self.connection() as connection:
             return await connection.execute_many(query, values)
 
+    @multiloop_protector(False)
     async def iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -351,6 +388,7 @@ class Database:
             async for record in connection.iterate(query, values, chunk_size):
                 yield record
 
+    @multiloop_protector(False)
     async def batched_iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -362,9 +400,11 @@ class Database:
             async for records in connection.batched_iterate(query, values, batch_size):
                 yield batch_wrapper(records)
 
+    @multiloop_protector(True)
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
+    @multiloop_protector(False)
     async def run_sync(
         self,
         fn: typing.Callable[..., typing.Any],
@@ -374,23 +414,28 @@ class Database:
         async with self.connection() as connection:
             return await connection.run_sync(fn, *args, **kwargs)
 
+    @multiloop_protector(False)
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
             await connection.create_all(meta, **kwargs)
 
+    @multiloop_protector(False)
     async def drop_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs)
 
+    @multiloop_protector(False, wrap_context_manager=True)
     def connection(self) -> Connection:
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
 
-        if not self._connection:
-            self._connection = Connection(self, self.backend)
+        if self._connection is None:
+            _connection = self._connection = Connection(self, self.backend)
+            return _connection
         return self._connection
 
     @property
+    @multiloop_protector(True)
     def engine(self) -> typing.Optional[AsyncEngine]:
         return self.backend.engine
 
