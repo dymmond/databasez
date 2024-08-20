@@ -1,6 +1,13 @@
 # Release Notes
 
 
+## 0.9.6
+
+### Fixed
+
+- Databasez is now threadsafe.
+
+
 ## 0.9.5
 
 ### Changed

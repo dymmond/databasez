@@ -63,6 +63,12 @@ def init() -> None:
     )
 
 
+# we need a dict to ensure the references are kept
+ACTIVE_DATABASES: ContextVar[typing.Optional[typing.Dict[typing.Any, Database]]] = ContextVar(
+    "ACTIVE_DATABASES", default=None
+)
+
+
 ACTIVE_FORCE_ROLLBACKS: ContextVar[
     typing.Optional[weakref.WeakKeyDictionary[ForceRollback, bool]]
 ] = ContextVar("ACTIVE_FORCE_ROLLBACKS", default=None)
@@ -295,8 +301,20 @@ class Database:
         return True
 
     async def __aenter__(self) -> "Database":
-        await self.connect()
-        return self
+        loop = asyncio.get_running_loop()
+        database = self
+        if self._loop is not None and loop != self._loop:
+            dbs = ACTIVE_DATABASES.get()
+            if dbs is None:
+                dbs = {}
+            else:
+                dbs = dbs.copy()
+            database = self.__copy__()
+            dbs[loop] = database
+            # it is always a copy required to prevent sideeffects between the contexts
+            ACTIVE_DATABASES.set(dbs)
+        await database.connect()
+        return database
 
     async def __aexit__(
         self,
@@ -304,7 +322,13 @@ class Database:
         exc_value: typing.Optional[BaseException] = None,
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
-        await self.disconnect()
+        loop = asyncio.get_running_loop()
+        database = self
+        if self._loop is not None and loop != self._loop:
+            dbs = ACTIVE_DATABASES.get()
+            if dbs is not None:
+                database = dbs.pop(loop, database)
+        await database.disconnect()
 
     @thread_protector(False)
     async def fetch_all(
@@ -324,6 +348,7 @@ class Database:
     ) -> typing.Optional[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values, pos=pos)
+            assert connection._connection_counter == 1
 
     @thread_protector(False)
     async def fetch_val(
@@ -404,8 +429,9 @@ class Database:
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
 
-        if not self._connection:
-            self._connection = Connection(self, self.backend)
+        if self._connection is None:
+            _connection = self._connection = Connection(self, self.backend)
+            return _connection
         return self._connection
 
     @property

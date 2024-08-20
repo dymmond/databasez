@@ -849,8 +849,6 @@ async def test_concurrent_access_on_single_connection(database_url):
 @pytest.mark.asyncio
 async def test_multi_thread(database_url, force_rollback):
     database_url = DatabaseURL(str(database_url.url))
-    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
-        pytest.skip("Test requires sleep function")
     async with Database(database_url, force_rollback=force_rollback) as database:
         database._non_copied_attribute = True
 
@@ -876,6 +874,36 @@ async def test_multi_thread(database_url, force_rollback):
             await asyncio.to_thread(asyncio.run, db_lookup(True))
 
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
+
+
+@pytest.mark.asyncio
+async def test_multi_thread_db_contextmanager(database_url):
+    async with Database(database_url, force_rollback=False) as database:
+
+        async def db_connect(depth=3):
+            # many parallel and nested threads
+            async with database as new_database:
+                await new_database.fetch_one("SELECT 1")
+                ops = []
+                while depth >= 0:
+                    depth -= 1
+                    ops.append(asyncio.to_thread(asyncio.run, db_connect(depth=depth)))
+                await asyncio.gather(*ops)
+            assert new_database.ref_counter == 0
+
+        await asyncio.to_thread(asyncio.run, db_connect())
+    assert database.ref_counter == 0
+
+
+@pytest.mark.asyncio
+async def test_multi_thread_db_connect_fails(database_url):
+    async with Database(database_url, force_rollback=True) as database:
+
+        async def db_connect():
+            await database.connect()
+
+        with pytest.raises(RuntimeError):
+            await asyncio.to_thread(asyncio.run, db_connect())
 
 
 @pytest.mark.asyncio
