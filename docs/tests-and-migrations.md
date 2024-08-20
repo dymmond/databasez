@@ -59,4 +59,4 @@ as using `metadata.create_all(engine)` to setup the database tables.
 based on Alembic and integrates with **Databasez**.
 
 [alembic]: https://alembic.sqlalchemy.org/en/latest/
-[edgy]: https://edgy.dymmon
+[edgy]: https://edgy.dymmond.com
