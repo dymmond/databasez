@@ -137,11 +137,11 @@ class ThreadPassingExceptions(Thread):
             raise self._exc_raised
 
 
-ThreadProtectorCallable = typing.TypeVar("ThreadProtectorCallable", bound=typing.Callable)
+MultiloopProtectorCallable = typing.TypeVar("MultiloopProtectorCallable", bound=typing.Callable)
 
 
 async def _async_helper(
-    database: typing.Any, fn: ThreadProtectorCallable, *args: typing.Any, **kwargs: typing.Any
+    database: typing.Any, fn: MultiloopProtectorCallable, *args: typing.Any, **kwargs: typing.Any
 ) -> typing.Any:
     # copy
     async with database.__class__(database) as new_database:
@@ -150,19 +150,20 @@ async def _async_helper(
 
 @asynccontextmanager
 async def _contextmanager_helper(
-    database: typing.Any, fn: ThreadProtectorCallable, *args: typing.Any, **kwargs: typing.Any
+    database: typing.Any, fn: MultiloopProtectorCallable, *args: typing.Any, **kwargs: typing.Any
 ) -> typing.Any:
     async with database.__copy__() as new_database:
         async with fn(new_database, *args, **kwargs) as result:
             yield result
 
 
-def thread_protector(
+def multiloop_protector(
     fail_with_different_loop: bool, wrap_context_manager: bool = False
-) -> typing.Callable[[ThreadProtectorCallable], ThreadProtectorCallable]:
+) -> typing.Callable[[MultiloopProtectorCallable], MultiloopProtectorCallable]:
+    """For multiple threads or other reasons why the loop changes"""
     # True works with all methods False only for methods of Database
     # needs _loop attribute to check against
-    def _decorator(fn: ThreadProtectorCallable) -> ThreadProtectorCallable:
+    def _decorator(fn: MultiloopProtectorCallable) -> MultiloopProtectorCallable:
         @wraps(fn)
         def wrapper(self: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
             try:
@@ -177,6 +178,6 @@ def thread_protector(
                 return _async_helper(self, fn, *args, **kwargs)
             return fn(self, *args, **kwargs)
 
-        return typing.cast(ThreadProtectorCallable, wrapper)
+        return typing.cast(MultiloopProtectorCallable, wrapper)
 
     return _decorator

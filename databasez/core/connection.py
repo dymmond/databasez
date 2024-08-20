@@ -8,7 +8,7 @@ from types import TracebackType
 from sqlalchemy import text
 
 from databasez import interfaces
-from databasez.utils import thread_protector
+from databasez.utils import multiloop_protector
 
 from .transaction import Transaction
 
@@ -38,7 +38,7 @@ class Connection:
         self._force_rollback = force_rollback
         self.connection_transaction: typing.Optional[Transaction] = None
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def __aenter__(self) -> Connection:
         async with self._connection_lock:
             self._connection_counter += 1
@@ -89,7 +89,7 @@ class Connection:
     def _loop(self) -> typing.Any:
         return self._database._loop
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def fetch_all(
         self,
         query: typing.Union[ClauseElement, str],
@@ -99,7 +99,7 @@ class Connection:
         async with self._query_lock:
             return await self._connection.fetch_all(built_query)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def fetch_one(
         self,
         query: typing.Union[ClauseElement, str],
@@ -110,7 +110,7 @@ class Connection:
         async with self._query_lock:
             return await self._connection.fetch_one(built_query, pos=pos)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def fetch_val(
         self,
         query: typing.Union[ClauseElement, str],
@@ -122,7 +122,7 @@ class Connection:
         async with self._query_lock:
             return await self._connection.fetch_val(built_query, column, pos=pos)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def execute(
         self,
         query: typing.Union[ClauseElement, str],
@@ -136,7 +136,7 @@ class Connection:
             async with self._query_lock:
                 return await self._connection.execute(query, values)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def execute_many(
         self, query: typing.Union[ClauseElement, str], values: typing.Any = None
     ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
@@ -148,7 +148,7 @@ class Connection:
             async with self._query_lock:
                 return await self._connection.execute_many(query, values)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -160,7 +160,7 @@ class Connection:
             async for record in self._connection.iterate(built_query, batch_size):
                 yield record
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def batched_iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -172,7 +172,7 @@ class Connection:
             async for records in self._connection.batched_iterate(built_query, batch_size):
                 yield records
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def run_sync(
         self,
         fn: typing.Callable[..., typing.Any],
@@ -182,25 +182,25 @@ class Connection:
         async with self._query_lock:
             return await self._connection.run_sync(fn, *args, **kwargs)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         await self.run_sync(meta.create_all, **kwargs)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def drop_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         await self.run_sync(meta.drop_all, **kwargs)
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(weakref.ref(self), force_rollback, **kwargs)
 
     @property
-    @thread_protector(True)
+    @multiloop_protector(True)
     def async_connection(self) -> typing.Any:
         """The first layer (sqlalchemy)."""
         return self._connection.async_connection
 
-    @thread_protector(True)
+    @multiloop_protector(True)
     async def get_raw_connection(self) -> typing.Any:
         """The real raw connection (driver)."""
         return await self.async_connection.get_raw_connection()

@@ -5,7 +5,7 @@
 
 ### Fixed
 
-- Databasez is now threadsafe.
+- Databasez is now threadsafe (and multiloop safe).
 
 
 ## 0.9.5
