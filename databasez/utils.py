@@ -1,7 +1,8 @@
 import asyncio
 import inspect
 import typing
-from functools import partial
+from contextlib import asynccontextmanager
+from functools import partial, wraps
 from threading import Thread
 
 async_wrapper_slots = (
@@ -134,3 +135,48 @@ class ThreadPassingExceptions(Thread):
         super().join(timeout=timeout)
         if self._exc_raised:
             raise self._exc_raised
+
+
+ThreadProtectorCallable = typing.TypeVar("ThreadProtectorCallable", bound=typing.Callable)
+
+
+async def _async_helper(
+    database: typing.Any, fn: ThreadProtectorCallable, *args: typing.Any, **kwargs: typing.Any
+) -> typing.Any:
+    # copy
+    async with database.__class__(database) as new_database:
+        return await fn(new_database, *args, **kwargs)
+
+
+@asynccontextmanager
+async def _contextmanager_helper(
+    database: typing.Any, fn: ThreadProtectorCallable, *args: typing.Any, **kwargs: typing.Any
+) -> typing.Any:
+    async with database.__copy__() as new_database:
+        async with fn(new_database, *args, **kwargs) as result:
+            yield result
+
+
+def thread_protector(
+    fail_with_different_loop: bool, wrap_context_manager: bool = False
+) -> typing.Callable[[ThreadProtectorCallable], ThreadProtectorCallable]:
+    # True works with all methods False only for methods of Database
+    # needs _loop attribute to check against
+    def _decorator(fn: ThreadProtectorCallable) -> ThreadProtectorCallable:
+        @wraps(fn)
+        def wrapper(self: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None and self._loop is not None and loop != self._loop:
+                if fail_with_different_loop:
+                    raise RuntimeError("Different loop used")
+                if wrap_context_manager:
+                    return _contextmanager_helper(self, fn, *args, **kwargs)
+                return _async_helper(self, fn, *args, **kwargs)
+            return fn(self, *args, **kwargs)
+
+        return typing.cast(ThreadProtectorCallable, wrapper)
+
+    return _decorator

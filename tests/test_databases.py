@@ -845,6 +845,39 @@ async def test_concurrent_access_on_single_connection(database_url):
         await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
 
 
+@pytest.mark.parametrize("force_rollback", [True, False])
+@pytest.mark.asyncio
+async def test_multi_thread(database_url, force_rollback):
+    database_url = DatabaseURL(str(database_url.url))
+    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+        pytest.skip("Test requires sleep function")
+    async with Database(database_url, force_rollback=force_rollback) as database:
+        database._non_copied_attribute = True
+
+        async def db_lookup(in_thread):
+            async with database.connection() as conn:
+                if in_thread:
+                    assert not hasattr(conn._database, "_non_copied_attribute")
+                else:
+                    assert hasattr(conn._database, "_non_copied_attribute")
+                assert bool(conn._database.force_rollback) == force_rollback
+            if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+                return
+            if database_url.dialect.startswith("postgres"):
+                await database.fetch_one("SELECT pg_sleep(0.3)")
+            elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
+                "mariadb"
+            ):
+                await database.fetch_one("SELECT SLEEP(0.3)")
+            elif database_url.dialect.startswith("mssql"):
+                await database.execute("WAITFOR DELAY '00:00:00.300'")
+
+        async def wrap_in_thread():
+            await asyncio.to_thread(asyncio.run, db_lookup(True))
+
+        await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
+
+
 @pytest.mark.asyncio
 async def test_global_connection_is_initialized_lazily(database_url):
     """

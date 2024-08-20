@@ -11,6 +11,7 @@ from functools import lru_cache
 from types import TracebackType
 
 from databasez import interfaces
+from databasez.utils import thread_protector
 
 from .connection import Connection
 from .databaseurl import DatabaseURL
@@ -142,6 +143,7 @@ class Database:
     """
 
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
+    _loop: typing.Any = None
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
     options: typing.Any
@@ -234,6 +236,7 @@ class Database:
     async def connect_hook(self) -> None:
         """Refcount protected connect hook. Executed begore engine and global connection setup."""
 
+    @thread_protector(True)
     async def connect(self) -> bool:
         """
         Establish the connection pool.
@@ -246,6 +249,7 @@ class Database:
         except BaseException as exc:
             await self.decr_refcount()
             raise exc
+        self._loop = asyncio.get_event_loop()
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
@@ -259,6 +263,7 @@ class Database:
     async def disconnect_hook(self) -> None:
         """Refcount protected disconnect hook. Executed after connection, engine cleanup."""
 
+    @thread_protector(True)
     async def disconnect(self, force: bool = False) -> bool:
         """
         Close all connections in the connection pool.
@@ -285,6 +290,7 @@ class Database:
             )
             self.is_connected = False
             await self.backend.disconnect()
+            self._loop = None
             await self.disconnect_hook()
         return True
 
@@ -300,6 +306,7 @@ class Database:
     ) -> None:
         await self.disconnect()
 
+    @thread_protector(False)
     async def fetch_all(
         self,
         query: typing.Union[ClauseElement, str],
@@ -308,6 +315,7 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_all(query, values)
 
+    @thread_protector(False)
     async def fetch_one(
         self,
         query: typing.Union[ClauseElement, str],
@@ -317,6 +325,7 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values, pos=pos)
 
+    @thread_protector(False)
     async def fetch_val(
         self,
         query: typing.Union[ClauseElement, str],
@@ -327,6 +336,7 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_val(query, values, column=column, pos=pos)
 
+    @thread_protector(False)
     async def execute(
         self,
         query: typing.Union[ClauseElement, str],
@@ -335,12 +345,14 @@ class Database:
         async with self.connection() as connection:
             return await connection.execute(query, values)
 
+    @thread_protector(False)
     async def execute_many(
         self, query: typing.Union[ClauseElement, str], values: typing.Any = None
     ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
         async with self.connection() as connection:
             return await connection.execute_many(query, values)
 
+    @thread_protector(False)
     async def iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -351,6 +363,7 @@ class Database:
             async for record in connection.iterate(query, values, chunk_size):
                 yield record
 
+    @thread_protector(False)
     async def batched_iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -362,9 +375,11 @@ class Database:
             async for records in connection.batched_iterate(query, values, batch_size):
                 yield batch_wrapper(records)
 
+    @thread_protector(True)
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
+    @thread_protector(False)
     async def run_sync(
         self,
         fn: typing.Callable[..., typing.Any],
@@ -374,14 +389,17 @@ class Database:
         async with self.connection() as connection:
             return await connection.run_sync(fn, *args, **kwargs)
 
+    @thread_protector(False)
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
             await connection.create_all(meta, **kwargs)
 
+    @thread_protector(False)
     async def drop_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs)
 
+    @thread_protector(False, wrap_context_manager=True)
     def connection(self) -> Connection:
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
@@ -391,6 +409,7 @@ class Database:
         return self._connection
 
     @property
+    @thread_protector(True)
     def engine(self) -> typing.Optional[AsyncEngine]:
         return self.backend.engine
 
