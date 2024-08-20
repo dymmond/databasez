@@ -1,6 +1,16 @@
 # Release Notes
 
 
+## 0.9.7
+
+### Added
+
+- It is now possible to use connect(), disconnect() instead of a async contextmanager in multithread scenarios.
+
+### Fixed
+
+- Database calls are forwarded to subdatabase when possible. This unbreaks using not the returned database object.
+
 ## 0.9.6
 
 ### Fixed

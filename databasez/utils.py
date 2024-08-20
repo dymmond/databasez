@@ -158,7 +158,7 @@ async def _contextmanager_helper(
 
 
 def multiloop_protector(
-    fail_with_different_loop: bool, wrap_context_manager: bool = False
+    fail_with_different_loop: bool, wrap_context_manager: bool = False, inject_parent: bool = False
 ) -> typing.Callable[[MultiloopProtectorCallable], MultiloopProtectorCallable]:
     """For multiple threads or other reasons why the loop changes"""
 
@@ -167,16 +167,26 @@ def multiloop_protector(
     def _decorator(fn: MultiloopProtectorCallable) -> MultiloopProtectorCallable:
         @wraps(fn)
         def wrapper(self: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+            if inject_parent:
+                assert "parent_database" not in kwargs, '"parent_database" is a reserved keyword'
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = None
             if loop is not None and self._loop is not None and loop != self._loop:
-                if fail_with_different_loop:
-                    raise RuntimeError("Different loop used")
-                if wrap_context_manager:
-                    return _contextmanager_helper(self, fn, *args, **kwargs)
-                return _async_helper(self, fn, *args, **kwargs)
+                # redirect call if self is Database and loop is in sub databases referenced
+                # afaik we can careless continue use the old database object from a subloop and all protected
+                # methods are forwarded
+                if hasattr(self, "_databases_map") and loop in self._databases_map:
+                    if inject_parent:
+                        kwargs["parent_database"] = self
+                    self = self._databases_map[loop]
+                else:
+                    if fail_with_different_loop:
+                        raise RuntimeError("Different loop used")
+                    if wrap_context_manager:
+                        return _contextmanager_helper(self, fn, *args, **kwargs)
+                    return _async_helper(self, fn, *args, **kwargs)
             return fn(self, *args, **kwargs)
 
         return typing.cast(MultiloopProtectorCallable, wrapper)
