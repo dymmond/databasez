@@ -220,6 +220,14 @@ class Database:
         return self._connection
 
     async def inc_refcount(self) -> bool:
+        """
+        Internal method to bump the ref_count.
+
+        Return True if ref_count is 0, False otherwise.
+
+        Should not be used outside of tests. Use connect and hooks instead.
+        Not multithreading safe!
+        """
         async with self.ref_lock:
             self.ref_counter += 1
             # on the first call is count is 1 because of the former +1
@@ -228,6 +236,14 @@ class Database:
         return False
 
     async def decr_refcount(self) -> bool:
+        """
+        Internal method to decrease the ref_count.
+
+        Return True if ref_count drops to 0, False otherwise.
+
+        Should not be used outside of tests. Use disconnect and hooks instead.
+        Not multithreading safe!
+        """
         async with self.ref_lock:
             self.ref_counter -= 1
             # on the last call, the count is 0
