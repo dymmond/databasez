@@ -149,6 +149,7 @@ class Database:
     url: DatabaseURL
     options: typing.Any
     is_connected: bool = False
+    _call_hooks: bool = True
     _force_rollback: ForceRollback
     # descriptor
     force_rollback = ForceRollbackDescriptor()
@@ -168,6 +169,7 @@ class Database:
             self.backend = url.backend.__copy__()
             self.url = url.url
             self.options = url.options
+            self._call_hooks = url._call_hooks
             if force_rollback is None:
                 force_rollback = bool(url.force_rollback)
         else:
@@ -262,27 +264,32 @@ class Database:
         if self._loop is not None and loop != self._loop:
             # copy when not in map
             if loop not in self._databases_map:
-                self._databases_map[loop] = self.__copy__()
+                # prevent side effects of connect_hook
+                database = self.__copy__()
+                database._call_hooks = False
+                assert self._global_connection
+                database._global_connection = await self._global_connection.__aenter__()
+                self._databases_map[loop] = database
             # forward call
             return await self._databases_map[loop].connect()
 
         if not await self.inc_refcount():
             assert self.is_connected, "ref_count < 0"
             return False
-        try:
-            await self.connect_hook()
-        except BaseException as exc:
-            await self.decr_refcount()
-            raise exc
+        if self._call_hooks:
+            try:
+                await self.connect_hook()
+            except BaseException as exc:
+                await self.decr_refcount()
+                raise exc
         self._loop = asyncio.get_event_loop()
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
         self.is_connected = True
 
-        assert self._global_connection is None
-
-        self._global_connection = Connection(self, self.backend, force_rollback=True)
+        if self._global_connection is None:
+            self._global_connection = Connection(self, self.backend, force_rollback=True)
         return True
 
     async def disconnect_hook(self) -> None:
@@ -327,7 +334,8 @@ class Database:
             self.is_connected = False
             await self.backend.disconnect()
             self._loop = None
-            await self.disconnect_hook()
+            if self._call_hooks:
+                await self.disconnect_hook()
         return True
 
     async def __aenter__(self) -> "Database":
@@ -439,7 +447,7 @@ class Database:
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs)
 
-    @multiloop_protector(False, wrap_context_manager=True)
+    @multiloop_protector(False)
     def connection(self) -> Connection:
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
