@@ -1,9 +1,9 @@
 import asyncio
 import inspect
 import typing
-from contextlib import asynccontextmanager
 from functools import partial, wraps
 from threading import Thread
+from types import TracebackType
 
 async_wrapper_slots = (
     "_async_wrapped",
@@ -140,25 +140,98 @@ class ThreadPassingExceptions(Thread):
 MultiloopProtectorCallable = typing.TypeVar("MultiloopProtectorCallable", bound=typing.Callable)
 
 
-async def _async_helper(
-    database: typing.Any, fn: MultiloopProtectorCallable, *args: typing.Any, **kwargs: typing.Any
-) -> typing.Any:
-    # copy
-    async with database.__class__(database) as new_database:
-        return await fn(new_database, *args, **kwargs)
+class AsyncHelperDatabase:
+    def __init__(
+        self,
+        database: typing.Any,
+        fn: typing.Callable,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> None:
+        self.database = database.__copy__()
+        self.fn = partial(fn, self.database, *args, **kwargs)
+        self.ctm = None
+
+    async def call(self) -> typing.Any:
+        async with self.database:
+            return await self.fn()
+
+    def __await__(self) -> typing.Any:
+        return self.call().__await__()
+
+    async def __aenter__(self) -> typing.Any:
+        await self.database.__aenter__()
+        self.ctm = self.fn()
+        return await self.ctm.__aenter__()
+
+    async def __aexit__(
+        self,
+        exc_type: typing.Optional[typing.Type[BaseException]] = None,
+        exc_value: typing.Optional[BaseException] = None,
+        traceback: typing.Optional[TracebackType] = None,
+    ) -> None:
+        assert self.ctm is not None
+        try:
+            await self.ctm.__aexit__(exc_type, exc_value, traceback)
+        finally:
+            await self.database.__aexit__()
 
 
-@asynccontextmanager
-async def _contextmanager_helper(
-    database: typing.Any, fn: MultiloopProtectorCallable, *args: typing.Any, **kwargs: typing.Any
-) -> typing.Any:
-    async with database.__copy__() as new_database:
-        async with fn(new_database, *args, **kwargs) as result:
-            yield result
+class AsyncHelperConnection:
+    def __init__(
+        self,
+        connection: typing.Any,
+        fn: typing.Callable,
+        *args: typing.Any,
+        **kwargs: typing.Any,
+    ) -> None:
+        self.connection = connection
+        self.fn = partial(fn, self.connection, *args, **kwargs)
+        self.ctm = None
+
+    async def call(self) -> typing.Any:
+        async with self.connection:
+            result = self.fn()
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+
+    async def acall(self) -> typing.Any:
+        return asyncio.run_coroutine_threadsafe(self.call(), self.connection._loop).result()
+
+    def __await__(self) -> typing.Any:
+        return self.acall().__await__()
+
+    async def enter_intern(self) -> typing.Any:
+        await self.connection.__aenter__()
+        self.ctm = await self.call()
+        return await self.ctm.__aenter__()
+
+    async def exit_intern(self) -> typing.Any:
+        assert self.ctm is not None
+        try:
+            await self.ctm.__aexit__()
+        finally:
+            self.ctm = None
+            await self.connection.__aexit__()
+
+    async def __aenter__(self) -> typing.Any:
+        return asyncio.run_coroutine_threadsafe(
+            self.enter_intern(), self.connection._loop
+        ).result()
+
+    async def __aexit__(
+        self,
+        exc_type: typing.Optional[typing.Type[BaseException]] = None,
+        exc_value: typing.Optional[BaseException] = None,
+        traceback: typing.Optional[TracebackType] = None,
+    ) -> None:
+        assert self.ctm is not None
+        asyncio.run_coroutine_threadsafe(self.exit_intern(), self.connection._loop).result()
 
 
 def multiloop_protector(
-    fail_with_different_loop: bool, wrap_context_manager: bool = False
+    fail_with_different_loop: bool, inject_parent: bool = False
 ) -> typing.Callable[[MultiloopProtectorCallable], MultiloopProtectorCallable]:
     """For multiple threads or other reasons why the loop changes"""
 
@@ -167,16 +240,29 @@ def multiloop_protector(
     def _decorator(fn: MultiloopProtectorCallable) -> MultiloopProtectorCallable:
         @wraps(fn)
         def wrapper(self: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+            if inject_parent:
+                assert "parent_database" not in kwargs, '"parent_database" is a reserved keyword'
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = None
             if loop is not None and self._loop is not None and loop != self._loop:
-                if fail_with_different_loop:
-                    raise RuntimeError("Different loop used")
-                if wrap_context_manager:
-                    return _contextmanager_helper(self, fn, *args, **kwargs)
-                return _async_helper(self, fn, *args, **kwargs)
+                # redirect call if self is Database and loop is in sub databases referenced
+                # afaik we can careless continue use the old database object from a subloop and all protected
+                # methods are forwarded
+                if hasattr(self, "_databases_map") and loop in self._databases_map:
+                    if inject_parent:
+                        kwargs["parent_database"] = self
+                    self = self._databases_map[loop]
+                else:
+                    if fail_with_different_loop:
+                        raise RuntimeError("Different loop used")
+                    helper = (
+                        AsyncHelperDatabase
+                        if hasattr(self, "_databases_map")
+                        else AsyncHelperConnection
+                    )
+                    return helper(self, fn, *args, **kwargs)
             return fn(self, *args, **kwargs)
 
         return typing.cast(MultiloopProtectorCallable, wrapper)

@@ -2,6 +2,8 @@ import os
 import typing
 from pathlib import Path
 
+# ensure jpype.dbapi2 is initialized. Prevent race condition.
+import jpype.dbapi2  # noqa
 from jpype import addClassPath, isJVMStarted, startJVM
 
 from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction

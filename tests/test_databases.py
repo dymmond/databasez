@@ -889,14 +889,27 @@ async def test_multi_thread(database_url, force_rollback):
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
 
 
+@pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
-async def test_multi_thread_db_contextmanager(database_url):
-    async with Database(database_url, force_rollback=False) as database:
+async def test_multi_thread_db_contextmanager(database_url, force_rollback):
+    async with Database(database_url, force_rollback=force_rollback) as database:
+        query = notes.insert().values(text="examplecontext", completed=True)
+        await database.execute(query)
 
         async def db_connect(depth=3):
             # many parallel and nested threads
             async with database as new_database:
-                await new_database.fetch_one("SELECT 1")
+                query = notes.select()
+                result = await database.fetch_one(query)
+                assert result.text == "examplecontext"
+                assert result.completed is True
+                # test delegate to sub database
+                assert database.engine is new_database.engine
+                # also this shouldn't fail because redirected
+                old_refcount = new_database.ref_counter
+                await database.connect()
+                assert new_database.ref_counter == old_refcount + 1
+                await database.disconnect()
                 ops = []
                 while depth >= 0:
                     depth -= 1
@@ -906,17 +919,47 @@ async def test_multi_thread_db_contextmanager(database_url):
 
         await to_thread(asyncio.run, db_connect())
     assert database.ref_counter == 0
+    if force_rollback:
+        async with database:
+            query = notes.select()
+            result = await database.fetch_one(query)
+            assert result is None
 
 
 @pytest.mark.asyncio
-async def test_multi_thread_db_connect_fails(database_url):
+async def test_multi_thread_db_connect(database_url):
     async with Database(database_url, force_rollback=True) as database:
 
         async def db_connect():
             await database.connect()
+            await database.fetch_one("SELECT 1")
+            await database.disconnect()
+
+        await to_thread(asyncio.run, db_connect())
+
+
+@pytest.mark.asyncio
+async def test_multi_thread_db_fails(database_url):
+    async with Database(database_url, force_rollback=True) as database:
+
+        async def db_connect():
+            # not in same loop
+            database.disconnect()
 
         with pytest.raises(RuntimeError):
             await to_thread(asyncio.run, db_connect())
+
+
+@pytest.mark.asyncio
+async def test_error_on_passed_parent_database(database_url):
+    database = Database(database_url)
+    # don't allow specifying parent_database
+    with pytest.raises(AssertionError):
+        await database.disconnect(parent_database=None)
+    with pytest.raises(AssertionError):
+        await database.disconnect(parent_database="")
+    with pytest.raises(TypeError):
+        await database.disconnect(False, None)
 
 
 @pytest.mark.asyncio

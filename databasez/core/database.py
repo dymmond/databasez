@@ -63,12 +63,6 @@ def init() -> None:
     )
 
 
-# we need a dict to ensure the references are kept
-ACTIVE_DATABASES: ContextVar[typing.Optional[typing.Dict[typing.Any, Database]]] = ContextVar(
-    "ACTIVE_DATABASES", default=None
-)
-
-
 ACTIVE_FORCE_ROLLBACKS: ContextVar[
     typing.Optional[weakref.WeakKeyDictionary[ForceRollback, bool]]
 ] = ContextVar("ACTIVE_FORCE_ROLLBACKS", default=None)
@@ -149,11 +143,13 @@ class Database:
     """
 
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
+    _databases_map: typing.Dict[typing.Any, Database]
     _loop: typing.Any = None
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
     options: typing.Any
     is_connected: bool = False
+    _call_hooks: bool = True
     _force_rollback: ForceRollback
     # descriptor
     force_rollback = ForceRollbackDescriptor()
@@ -173,6 +169,7 @@ class Database:
             self.backend = url.backend.__copy__()
             self.url = url.url
             self.options = url.options
+            self._call_hooks = url._call_hooks
             if force_rollback is None:
                 force_rollback = bool(url.force_rollback)
         else:
@@ -190,6 +187,7 @@ class Database:
         self._force_rollback = ForceRollback(force_rollback)
         self.backend.owner = self
         self._connection_map = weakref.WeakKeyDictionary()
+        self._databases_map = {}
 
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
@@ -224,6 +222,14 @@ class Database:
         return self._connection
 
     async def inc_refcount(self) -> bool:
+        """
+        Internal method to bump the ref_count.
+
+        Return True if ref_count is 0, False otherwise.
+
+        Should not be used outside of tests. Use connect and hooks instead.
+        Not multithreading safe!
+        """
         async with self.ref_lock:
             self.ref_counter += 1
             # on the first call is count is 1 because of the former +1
@@ -232,6 +238,14 @@ class Database:
         return False
 
     async def decr_refcount(self) -> bool:
+        """
+        Internal method to decrease the ref_count.
+
+        Return True if ref_count drops to 0, False otherwise.
+
+        Should not be used outside of tests. Use disconnect and hooks instead.
+        Not multithreading safe!
+        """
         async with self.ref_lock:
             self.ref_counter -= 1
             # on the last call, the count is 0
@@ -242,38 +256,53 @@ class Database:
     async def connect_hook(self) -> None:
         """Refcount protected connect hook. Executed begore engine and global connection setup."""
 
-    @multiloop_protector(True)
     async def connect(self) -> bool:
         """
         Establish the connection pool.
         """
+        loop = asyncio.get_running_loop()
+        if self._loop is not None and loop != self._loop:
+            # copy when not in map
+            if loop not in self._databases_map:
+                # prevent side effects of connect_hook
+                database = self.__copy__()
+                database._call_hooks = False
+                assert self._global_connection
+                database._global_connection = await self._global_connection.__aenter__()
+                self._databases_map[loop] = database
+            # forward call
+            return await self._databases_map[loop].connect()
+
         if not await self.inc_refcount():
             assert self.is_connected, "ref_count < 0"
             return False
-        try:
-            await self.connect_hook()
-        except BaseException as exc:
-            await self.decr_refcount()
-            raise exc
+        if self._call_hooks:
+            try:
+                await self.connect_hook()
+            except BaseException as exc:
+                await self.decr_refcount()
+                raise exc
         self._loop = asyncio.get_event_loop()
 
         await self.backend.connect(self.url, **self.options)
         logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
         self.is_connected = True
 
-        assert self._global_connection is None
-
-        self._global_connection = Connection(self, self.backend, force_rollback=True)
+        if self._global_connection is None:
+            self._global_connection = Connection(self, self.backend, force_rollback=True)
         return True
 
     async def disconnect_hook(self) -> None:
         """Refcount protected disconnect hook. Executed after connection, engine cleanup."""
 
-    @multiloop_protector(True)
-    async def disconnect(self, force: bool = False) -> bool:
+    @multiloop_protector(True, inject_parent=True)
+    async def disconnect(
+        self, force: bool = False, *, parent_database: typing.Optional[Database] = None
+    ) -> bool:
         """
         Close all connections in the connection pool.
         """
+        # parent_database is injected and should not be specified manually
         if not await self.decr_refcount() or force:
             if not self.is_connected:
                 logger.debug("Already disconnected, skipping disconnection")
@@ -282,6 +311,14 @@ class Database:
                 logger.warning("Force disconnect, despite refcount not 0")
             else:
                 return False
+        if parent_database is not None:
+            loop = asyncio.get_running_loop()
+            del parent_database._databases_map[loop]
+        if force:
+            for sub_database in self._databases_map.values():
+                await sub_database.disconnect(True)
+            self._databases_map = {}
+        assert not self._databases_map, "sub databases still active"
 
         try:
             assert self._global_connection is not None
@@ -297,23 +334,15 @@ class Database:
             self.is_connected = False
             await self.backend.disconnect()
             self._loop = None
-            await self.disconnect_hook()
+            if self._call_hooks:
+                await self.disconnect_hook()
         return True
 
     async def __aenter__(self) -> "Database":
+        await self.connect()
+        # get right database
         loop = asyncio.get_running_loop()
-        database = self
-        if self._loop is not None and loop != self._loop:
-            dbs = ACTIVE_DATABASES.get()
-            if dbs is None:
-                dbs = {}
-            else:
-                dbs = dbs.copy()
-            database = self.__copy__()
-            dbs[loop] = database
-            # it is always a copy required to prevent sideeffects between the contexts
-            ACTIVE_DATABASES.set(dbs)
-        await database.connect()
+        database = self._databases_map.get(loop, self)
         return database
 
     async def __aexit__(
@@ -322,13 +351,7 @@ class Database:
         exc_value: typing.Optional[BaseException] = None,
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
-        loop = asyncio.get_running_loop()
-        database = self
-        if self._loop is not None and loop != self._loop:
-            dbs = ACTIVE_DATABASES.get()
-            if dbs is not None:
-                database = dbs.pop(loop, database)
-        await database.disconnect()
+        await self.disconnect()
 
     @multiloop_protector(False)
     async def fetch_all(
@@ -424,7 +447,7 @@ class Database:
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs)
 
-    @multiloop_protector(False, wrap_context_manager=True)
+    @multiloop_protector(False)
     def connection(self) -> Connection:
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
