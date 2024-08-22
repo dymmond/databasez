@@ -148,20 +148,22 @@ class AsyncHelperDatabase:
         *args: typing.Any,
         **kwargs: typing.Any,
     ) -> None:
-        self.database = database.__copy__()
-        self.fn = partial(fn, self.database, *args, **kwargs)
+        self.database = database
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
         self.ctm = None
 
     async def call(self) -> typing.Any:
-        async with self.database:
-            return await self.fn()
+        async with self.database as database:
+            return await self.fn(database, *self.args, **self.kwargs)
 
     def __await__(self) -> typing.Any:
         return self.call().__await__()
 
     async def __aenter__(self) -> typing.Any:
-        await self.database.__aenter__()
-        self.ctm = self.fn()
+        database = await self.database.__aenter__()
+        self.ctm = self.fn(database, *self.args, **self.kwargs)
         return await self.ctm.__aenter__()
 
     async def __aexit__(

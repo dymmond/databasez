@@ -264,10 +264,13 @@ class Database:
         if self._loop is not None and loop != self._loop:
             # copy when not in map
             if loop not in self._databases_map:
+                assert (
+                    self._global_connection is not None
+                ), "global connection should have been set"
+                # correctly initialize force_rollback with parent value
+                database = self.__class__(self, force_rollback=bool(self.force_rollback))
                 # prevent side effects of connect_hook
-                database = self.__copy__()
                 database._call_hooks = False
-                assert self._global_connection
                 database._global_connection = await self._global_connection.__aenter__()
                 self._databases_map[loop] = database
             # forward call
@@ -353,7 +356,6 @@ class Database:
     ) -> None:
         await self.disconnect()
 
-    @multiloop_protector(False)
     async def fetch_all(
         self,
         query: typing.Union[ClauseElement, str],
@@ -362,7 +364,6 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_all(query, values)
 
-    @multiloop_protector(False)
     async def fetch_one(
         self,
         query: typing.Union[ClauseElement, str],
@@ -373,7 +374,6 @@ class Database:
             return await connection.fetch_one(query, values, pos=pos)
             assert connection._connection_counter == 1
 
-    @multiloop_protector(False)
     async def fetch_val(
         self,
         query: typing.Union[ClauseElement, str],
@@ -384,7 +384,6 @@ class Database:
         async with self.connection() as connection:
             return await connection.fetch_val(query, values, column=column, pos=pos)
 
-    @multiloop_protector(False)
     async def execute(
         self,
         query: typing.Union[ClauseElement, str],
@@ -393,14 +392,12 @@ class Database:
         async with self.connection() as connection:
             return await connection.execute(query, values)
 
-    @multiloop_protector(False)
     async def execute_many(
         self, query: typing.Union[ClauseElement, str], values: typing.Any = None
     ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
         async with self.connection() as connection:
             return await connection.execute_many(query, values)
 
-    @multiloop_protector(False)
     async def iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -411,7 +408,6 @@ class Database:
             async for record in connection.iterate(query, values, chunk_size):
                 yield record
 
-    @multiloop_protector(False)
     async def batched_iterate(
         self,
         query: typing.Union[ClauseElement, str],
@@ -427,7 +423,6 @@ class Database:
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
-    @multiloop_protector(False)
     async def run_sync(
         self,
         fn: typing.Callable[..., typing.Any],
@@ -437,12 +432,10 @@ class Database:
         async with self.connection() as connection:
             return await connection.run_sync(fn, *args, **kwargs)
 
-    @multiloop_protector(False)
     async def create_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
             await connection.create_all(meta, **kwargs)
 
-    @multiloop_protector(False)
     async def drop_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs)

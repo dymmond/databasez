@@ -863,14 +863,9 @@ async def test_concurrent_access_on_single_connection(database_url):
 async def test_multi_thread(database_url, force_rollback):
     database_url = DatabaseURL(str(database_url.url))
     async with Database(database_url, force_rollback=force_rollback) as database:
-        database._non_copied_attribute = True
 
         async def db_lookup(in_thread):
             async with database.connection() as conn:
-                if in_thread:
-                    assert not hasattr(conn._database, "_non_copied_attribute")
-                else:
-                    assert hasattr(conn._database, "_non_copied_attribute")
                 assert bool(conn._database.force_rollback) == force_rollback
             if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
                 return
@@ -895,10 +890,12 @@ async def test_multi_thread_db_contextmanager(database_url, force_rollback):
     async with Database(database_url, force_rollback=force_rollback) as database:
         query = notes.insert().values(text="examplecontext", completed=True)
         await database.execute(query)
+        database._non_copied_attribute = True
 
         async def db_connect(depth=3):
             # many parallel and nested threads
             async with database as new_database:
+                assert not hasattr(new_database, "_non_copied_attribute")
                 query = notes.select()
                 result = await database.fetch_one(query)
                 assert result.text == "examplecontext"
