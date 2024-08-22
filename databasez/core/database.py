@@ -449,6 +449,8 @@ class Database:
 
     @multiloop_protector(False)
     def connection(self) -> Connection:
+        if not self.is_connected:
+            raise RuntimeError("Database is not connected")
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
 
