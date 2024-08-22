@@ -295,5 +295,6 @@ class SQLAlchemyDatabase(DatabaseBackend):
 
     async def disconnect(self) -> None:
         engine = self.engine
+        self.engine = None
         assert engine is not None, "database is not initialized"
         await engine.dispose()
