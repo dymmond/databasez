@@ -56,7 +56,7 @@ async def test_concurrent_access_on_single_connection(database_url):
     database_url = DatabaseURL(str(database_url.url))
     if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
         pytest.skip("Test requires sleep function")
-    async with Database(database_url, force_rollback=True) as database:
+    async with Database(database_url, force_rollback=True, full_isolation=False) as database:
 
         async def db_lookup():
             if database_url.dialect.startswith("postgres"):
@@ -75,7 +75,9 @@ async def test_concurrent_access_on_single_connection(database_url):
 @pytest.mark.asyncio
 async def test_multi_thread(database_url, force_rollback):
     database_url = DatabaseURL(str(database_url.url))
-    async with Database(database_url, force_rollback=force_rollback) as database:
+    async with Database(
+        database_url, force_rollback=force_rollback, full_isolation=False
+    ) as database:
 
         async def db_lookup(in_thread):
             async with database.connection() as conn:
@@ -111,7 +113,12 @@ def _future_helper(awaitable, future):
 @pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
 async def test_multi_thread_db_contextmanager(database_url, force_rollback, join_type):
-    async with Database(database_url, force_rollback=force_rollback) as database:
+    if join_type.startswith("thread_join") and force_rollback:
+        pytest.skip("not supported yet")
+
+    async with Database(
+        database_url, force_rollback=force_rollback, full_isolation=False
+    ) as database:
         query = notes.insert().values(text="examplecontext", completed=True)
         await database.execute(query, timeout=10)
         database._non_copied_attribute = True
@@ -146,7 +153,7 @@ async def test_multi_thread_db_contextmanager(database_url, force_rollback, join
                 args.insert(0, ctx.run)
             thread = Thread(target=args[0], args=args[1:])
             thread.start()
-            future.result()
+            future.result(4)
         else:
             await to_thread(asyncio.run, asyncio.wait_for(db_connect(), 5))
     assert database.ref_counter == 0

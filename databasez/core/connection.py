@@ -33,14 +33,16 @@ def _init_thread(database: Database, is_initialized: Event) -> None:
         loop.run_forever()
     except RuntimeError:
         pass
-    task.result()
     try:
-        loop.run_until_complete(database.disconnect())
-        loop.run_until_complete(loop.shutdown_asyncgens())
+        task.result()
     finally:
-        del task
-        loop.close()
-        database._loop = None
+        try:
+            loop.run_until_complete(database.disconnect())
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            del task
+            loop.close()
+            database._loop = None
 
 
 class Connection:
@@ -54,7 +56,9 @@ class Connection:
         self._full_isolation = full_isolation
         self._database = database
         if full_isolation:
-            self._database = database.__class__(database, force_rollback=force_rollback)
+            self._database = database.__class__(
+                database, force_rollback=force_rollback, full_isolation=False
+            )
             self._database._call_hooks = False
             self._database._global_connection = self
         self._backend = backend
@@ -77,11 +81,23 @@ class Connection:
         if self._full_isolation:
             ctx = copy_context()
             is_initialized = Event()
-            self._isolation_thread = Thread(
-                target=ctx.run, args=[_init_thread, self._database, is_initialized], daemon=False
+            self._isolation_thread = thread = Thread(
+                target=ctx.run,
+                args=[
+                    _init_thread,
+                    self._database.__class__(
+                        self._database, force_rollback=True, full_isolation=False
+                    ),
+                    is_initialized,
+                ],
+                daemon=False,
             )
-            self._isolation_thread.start()
+            thread.start()
             is_initialized.wait()
+            if not thread.is_alive():
+                thread = self._isolation_thread
+                self._isolation_thread = None
+                thread.join()
 
         async with self._connection_lock:
             self._connection_counter += 1
@@ -134,9 +150,12 @@ class Connection:
         finally:
             if closing and self._full_isolation:
                 assert self._isolation_thread is not None
-                self._database._loop.stop()
-                self._isolation_thread.join()
+                thread = self._isolation_thread
+                loop = self._database._loop
                 self._isolation_thread = None
+                if loop:
+                    loop.stop()
+                thread.join()
 
     @property
     def _loop(self) -> typing.Any:

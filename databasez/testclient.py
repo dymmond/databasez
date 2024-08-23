@@ -34,6 +34,7 @@ class DatabaseTestClient(Database):
     # is used for copying Database and DatabaseTestClientand providing an early url
     test_db_url: str
     # hooks for overwriting defaults of args with None
+    testclient_default_full_isolation: bool = False
     testclient_default_force_rollback: bool = False
     testclient_default_lazy_setup: bool = False
     # customization hooks
@@ -47,6 +48,7 @@ class DatabaseTestClient(Database):
         *,
         force_rollback: typing.Union[bool, None] = None,
         use_existing: typing.Union[bool, None] = None,
+        full_isolation: typing.Union[bool, None] = None,
         drop_database: typing.Union[bool, None] = None,
         lazy_setup: typing.Union[bool, None] = None,
         test_prefix: typing.Union[str, None] = None,
@@ -56,6 +58,8 @@ class DatabaseTestClient(Database):
             use_existing = self.testclient_default_use_existing
         if drop_database is None:
             drop_database = self.testclient_default_drop_database
+        if full_isolation is None:
+            full_isolation = self.testclient_default_full_isolation
         if test_prefix is None:
             test_prefix = self.testclient_default_test_prefix
         self._setup_executed_init = False
@@ -144,7 +148,7 @@ class DatabaseTestClient(Database):
             text = "SELECT 1 FROM pg_database WHERE datname='%s'" % database
             for db in (database, "postgres", "template1", "template0", None):
                 url = url.replace(database=db)
-                async with Database(url) as db_client:
+                async with Database(url, full_isolation=False, force_rollback=False) as db_client:
                     try:
                         return bool(await _get_scalar_result(db_client.engine, sa.text(text)))
                     except (ProgrammingError, OperationalError):
@@ -157,7 +161,7 @@ class DatabaseTestClient(Database):
                 "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
                 "WHERE SCHEMA_NAME = '%s'" % database
             )
-            async with Database(url) as db_client:
+            async with Database(url, full_isolation=False, force_rollback=False) as db_client:
                 return bool(await _get_scalar_result(db_client.engine, sa.text(text)))
 
         elif dialect_name == "sqlite":
@@ -169,7 +173,7 @@ class DatabaseTestClient(Database):
                 return True
         else:
             text = "SELECT 1"
-            async with Database(url) as db_client:
+            async with Database(url, full_isolation=False, force_rollback=False) as db_client:
                 try:
                     return bool(await _get_scalar_result(db_client.engine, sa.text(text)))
                 except (ProgrammingError, OperationalError):
@@ -201,9 +205,11 @@ class DatabaseTestClient(Database):
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
-            db_client = Database(url, isolation_level="AUTOCOMMIT", force_rollback=False)
+            db_client = Database(
+                url, isolation_level="AUTOCOMMIT", force_rollback=False, full_isolation=False
+            )
         else:
-            db_client = Database(url, force_rollback=False)
+            db_client = Database(url, force_rollback=False, full_isolation=False)
         async with db_client:
             if dialect_name == "postgresql":
                 if not template:
@@ -255,9 +261,11 @@ class DatabaseTestClient(Database):
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
         ):
-            db_client = Database(url, isolation_level="AUTOCOMMIT", force_rollback=False)
+            db_client = Database(
+                url, isolation_level="AUTOCOMMIT", force_rollback=False, full_isolation=False
+            )
         else:
-            db_client = Database(url, force_rollback=False)
+            db_client = Database(url, force_rollback=False, full_isolation=False)
         async with db_client:
             if dialect_name == "sqlite" and database and database != ":memory:":
                 try:

@@ -294,7 +294,9 @@ class Database:
         self.is_connected = True
 
         if self._global_connection is None:
-            connection = Connection(self, self.backend, force_rollback=True, full_isolation=self._full_isolation)
+            connection = Connection(
+                self, self.backend, force_rollback=True, full_isolation=self._full_isolation
+            )
             self._global_connection = connection
         return True
 
@@ -321,9 +323,13 @@ class Database:
             loop = asyncio.get_running_loop()
             del parent_database._databases_map[loop]
         if force:
-            for sub_database in self._databases_map.values():
-                await sub_database.disconnect(True)
-            self._databases_map = {}
+            if self._databases_map:
+                assert not self._databases_map, "sub databases still active, force terminate them"
+                for sub_database in self._databases_map.values():
+                    asyncio.run_coroutine_threadsafe(
+                        sub_database.disconnect(True), sub_database._loop
+                    )
+                self._databases_map = {}
         assert not self._databases_map, "sub databases still active"
 
         try:

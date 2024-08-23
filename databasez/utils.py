@@ -145,12 +145,14 @@ def _run_with_timeout(inp: typing.Any, timeout: typing.Optional[float]) -> typin
         inp = asyncio.wait_for(inp, timeout=timeout)
     return inp
 
+
 async def _arun_with_timeout(inp: typing.Any, timeout: typing.Optional[float]) -> typing.Any:
     if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
         inp = await asyncio.wait_for(inp, timeout=timeout)
     elif inspect.isawaitable(inp):
         return await inp
     return inp
+
 
 class AsyncHelperDatabase:
     def __init__(

@@ -24,6 +24,11 @@ from databasez import Database
 
   <sup>Default: `None`</sup>
 
+* **full_isolation** - Special mode for using force_rollback with nested queries. This parameter fully isolates the global connection
+                       in an extra thread. This way it is possible to use blocking operations.
+
+  <sup>Default: `None`</sup>
+
 * **config** - A python like dictionary as alternative to the `url` that contains the information
 to connect to the database.
 
@@ -35,6 +40,8 @@ to connect to the database.
     Be careful when setting up the `url` or `config`. You can use one or the other but not both
     at the same time.
 
+!!! Warning
+    `full_isolation` is not mature and shouldn't be used in production code.
 
 **Attributes***
 

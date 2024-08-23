@@ -1,6 +1,14 @@
 # Release Notes
 
 
+## 0.10.0
+
+
+### Added
+
+- `full_isolation` parameter. Isolate the force_rollback Connection in a thread.
+
+
 ## 0.9.7
 
 ### Added
