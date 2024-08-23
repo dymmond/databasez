@@ -140,31 +140,49 @@ class ThreadPassingExceptions(Thread):
 MultiloopProtectorCallable = typing.TypeVar("MultiloopProtectorCallable", bound=typing.Callable)
 
 
+def _run_with_timeout(inp: typing.Any, timeout: typing.Optional[float]) -> typing.Any:
+    if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
+        inp = asyncio.wait_for(inp, timeout=timeout)
+    return inp
+
+async def _arun_with_timeout(inp: typing.Any, timeout: typing.Optional[float]) -> typing.Any:
+    if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
+        inp = await asyncio.wait_for(inp, timeout=timeout)
+    elif inspect.isawaitable(inp):
+        return await inp
+    return inp
+
 class AsyncHelperDatabase:
     def __init__(
         self,
         database: typing.Any,
         fn: typing.Callable,
-        *args: typing.Any,
-        **kwargs: typing.Any,
+        args: typing.Any,
+        kwargs: typing.Any,
+        timeout: typing.Optional[float],
     ) -> None:
         self.database = database
         self.fn = fn
         self.args = args
         self.kwargs = kwargs
+        self.timeout = timeout
         self.ctm = None
 
     async def call(self) -> typing.Any:
         async with self.database as database:
-            return await self.fn(database, *self.args, **self.kwargs)
+            return await _arun_with_timeout(
+                self.fn(database, *self.args, **self.kwargs), self.timeout
+            )
 
     def __await__(self) -> typing.Any:
         return self.call().__await__()
 
     async def __aenter__(self) -> typing.Any:
         database = await self.database.__aenter__()
-        self.ctm = self.fn(database, *self.args, **self.kwargs)
-        return await self.ctm.__aenter__()
+        self.ctm = await _arun_with_timeout(
+            self.fn(database, *self.args, **self.kwargs), timeout=self.timeout
+        )
+        return await _arun_with_timeout(self.ctm.__aenter__(), self.timeout)
 
     async def __aexit__(
         self,
@@ -174,7 +192,9 @@ class AsyncHelperDatabase:
     ) -> None:
         assert self.ctm is not None
         try:
-            await self.ctm.__aexit__(exc_type, exc_value, traceback)
+            await _arun_with_timeout(
+                self.ctm.__aexit__(exc_type, exc_value, traceback), self.timeout
+            )
         finally:
             await self.database.__aexit__()
 
@@ -184,18 +204,19 @@ class AsyncHelperConnection:
         self,
         connection: typing.Any,
         fn: typing.Callable,
-        *args: typing.Any,
-        **kwargs: typing.Any,
+        args: typing.Any,
+        kwargs: typing.Any,
+        timeout: typing.Optional[float],
     ) -> None:
         self.connection = connection
         self.fn = partial(fn, self.connection, *args, **kwargs)
+        self.timeout = timeout
         self.ctm = None
 
     async def call(self) -> typing.Any:
         async with self.connection:
-            result = self.fn()
-            if inspect.isawaitable(result):
-                result = await result
+            # is automatically awaited
+            result = await _arun_with_timeout(self.fn(), self.timeout)
             return result
 
     async def acall(self) -> typing.Any:
@@ -207,7 +228,7 @@ class AsyncHelperConnection:
     async def enter_intern(self) -> typing.Any:
         await self.connection.__aenter__()
         self.ctm = await self.call()
-        return await self.ctm.__aenter__()
+        return await _arun_with_timeout(self.ctm.__aenter__(), self.timeout)
 
     async def exit_intern(self) -> typing.Any:
         assert self.ctm is not None
@@ -241,7 +262,12 @@ def multiloop_protector(
     # needs _loop attribute to check against
     def _decorator(fn: MultiloopProtectorCallable) -> MultiloopProtectorCallable:
         @wraps(fn)
-        def wrapper(self: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        def wrapper(
+            self: typing.Any,
+            *args: typing.Any,
+            timeout: typing.Optional[float] = None,
+            **kwargs: typing.Any,
+        ) -> typing.Any:
             if inject_parent:
                 assert "parent_database" not in kwargs, '"parent_database" is a reserved keyword'
             try:
@@ -264,8 +290,8 @@ def multiloop_protector(
                         if hasattr(self, "_databases_map")
                         else AsyncHelperConnection
                     )
-                    return helper(self, fn, *args, **kwargs)
-            return fn(self, *args, **kwargs)
+                    return helper(self, fn, args, kwargs, timeout=timeout)
+            return _run_with_timeout(fn(self, *args, **kwargs), timeout=timeout)
 
         return typing.cast(MultiloopProtectorCallable, wrapper)
 

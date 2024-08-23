@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import typing
 import weakref
+from contextvars import copy_context
+from threading import Event, Thread
 from types import TracebackType
 
 from sqlalchemy import text
@@ -19,11 +21,42 @@ if typing.TYPE_CHECKING:
     from .database import Database
 
 
+async def _startup(database: Database, is_initialized: Event) -> None:
+    await database.connect()
+    is_initialized.set()
+
+
+def _init_thread(database: Database, is_initialized: Event) -> None:
+    loop = asyncio.new_event_loop()
+    task = loop.create_task(_startup(database, is_initialized))
+    try:
+        loop.run_forever()
+    except RuntimeError:
+        pass
+    task.result()
+    try:
+        loop.run_until_complete(database.disconnect())
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    finally:
+        del task
+        loop.close()
+        database._loop = None
+
+
 class Connection:
     def __init__(
-        self, database: Database, backend: interfaces.DatabaseBackend, force_rollback: bool = False
+        self,
+        database: Database,
+        backend: interfaces.DatabaseBackend,
+        force_rollback: bool = False,
+        full_isolation: bool = False,
     ) -> None:
+        self._full_isolation = full_isolation
         self._database = database
+        if full_isolation:
+            self._database = database.__class__(database, force_rollback=force_rollback)
+            self._database._call_hooks = False
+            self._database._global_connection = self
         self._backend = backend
 
         self._connection_lock = asyncio.Lock()
@@ -37,9 +70,19 @@ class Connection:
         self._query_lock = asyncio.Lock()
         self._force_rollback = force_rollback
         self.connection_transaction: typing.Optional[Transaction] = None
+        self._isolation_thread: typing.Optional[Thread] = None
 
     @multiloop_protector(False)
     async def __aenter__(self) -> Connection:
+        if self._full_isolation:
+            ctx = copy_context()
+            is_initialized = Event()
+            self._isolation_thread = Thread(
+                target=ctx.run, args=[_init_thread, self._database, is_initialized], daemon=False
+            )
+            self._isolation_thread.start()
+            is_initialized.wait()
+
         async with self._connection_lock:
             self._connection_counter += 1
             try:
@@ -72,19 +115,28 @@ class Connection:
         exc_value: typing.Optional[BaseException] = None,
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
-        async with self._connection_lock:
-            assert self._connection is not None
-            self._connection_counter -= 1
-            if self._connection_counter == 0:
-                try:
-                    if self.connection_transaction:
-                        # __aexit__ needs the connection_transaction parameter
-                        await self.connection_transaction.__aexit__(exc_type, exc_value, traceback)
-                        # untie, for allowing gc
-                        self.connection_transaction = None
-                finally:
-                    await self._connection.release()
-                    self._database._connection = None
+        closing = False
+        try:
+            async with self._connection_lock:
+                assert self._connection is not None
+                self._connection_counter -= 1
+                if self._connection_counter == 0:
+                    closing = True
+                    try:
+                        if self.connection_transaction:
+                            # __aexit__ needs the connection_transaction parameter
+                            await self.connection_transaction.__aexit__()
+                            # untie, for allowing gc
+                            self.connection_transaction = None
+                    finally:
+                        await self._connection.release()
+                        self._database._connection = None
+        finally:
+            if closing and self._full_isolation:
+                assert self._isolation_thread is not None
+                self._database._loop.stop()
+                self._isolation_thread.join()
+                self._isolation_thread = None
 
     @property
     def _loop(self) -> typing.Any:
@@ -191,7 +243,6 @@ class Connection:
     async def drop_all(self, meta: MetaData, **kwargs: typing.Any) -> None:
         await self.run_sync(meta.drop_all, **kwargs)
 
-    @multiloop_protector(False)
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(weakref.ref(self), force_rollback, **kwargs)
 

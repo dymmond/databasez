@@ -2,6 +2,8 @@ import asyncio
 import contextvars
 import functools
 import os
+from concurrent.futures import Future
+from threading import Thread
 
 import pyodbc
 import pytest
@@ -95,12 +97,23 @@ async def test_multi_thread(database_url, force_rollback):
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
 
 
+def _future_helper(awaitable, future):
+    try:
+        future.set_result(asyncio.run(awaitable))
+    except BaseException as exc:
+        future.set_exception(exc)
+
+
+@pytest.mark.parametrize(
+    "join_type",
+    ["to_thread"],  # , "thread_join_with_context", "thread_join_without_context"]
+)
 @pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
-async def test_multi_thread_db_contextmanager(database_url, force_rollback):
+async def test_multi_thread_db_contextmanager(database_url, force_rollback, join_type):
     async with Database(database_url, force_rollback=force_rollback) as database:
         query = notes.insert().values(text="examplecontext", completed=True)
-        await database.execute(query)
+        await database.execute(query, timeout=10)
         database._non_copied_attribute = True
 
         async def db_connect(depth=3):
@@ -125,7 +138,17 @@ async def test_multi_thread_db_contextmanager(database_url, force_rollback):
                 await asyncio.gather(*ops)
             assert new_database.ref_counter == 0
 
-        await to_thread(asyncio.run, db_connect())
+        if join_type.startswith("thread_join"):
+            future = Future()
+            args = [_future_helper, asyncio.wait_for(db_connect(), 5), future]
+            if join_type == "thread_join_with_context":
+                ctx = contextvars.copy_context()
+                args.insert(0, ctx.run)
+            thread = Thread(target=args[0], args=args[1:])
+            thread.start()
+            future.result()
+        else:
+            await to_thread(asyncio.run, asyncio.wait_for(db_connect(), 5))
     assert database.ref_counter == 0
     if force_rollback:
         async with database:
