@@ -25,7 +25,9 @@ from databasez import Database
   <sup>Default: `None`</sup>
 
 * **full_isolation** - Special mode for using force_rollback with nested queries. This parameter fully isolates the global connection
-                       in an extra thread. This way it is possible to use blocking operations.
+                       in an extra thread. This way it is possible to use blocking operations like locks with force_rollback.
+                       This parameter has no use when used without force_rollback and causes a slightly slower setup (Lock is initialized).
+                       It is required for edgy or other frameworks which use threads in tests and the force_rollback parameter.
 
   <sup>Default: `None`</sup>
 

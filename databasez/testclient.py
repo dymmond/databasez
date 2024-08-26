@@ -34,7 +34,7 @@ class DatabaseTestClient(Database):
     # is used for copying Database and DatabaseTestClientand providing an early url
     test_db_url: str
     # hooks for overwriting defaults of args with None
-    testclient_default_full_isolation: bool = False
+    testclient_default_full_isolation: bool = True
     testclient_default_force_rollback: bool = False
     testclient_default_lazy_setup: bool = False
     # customization hooks

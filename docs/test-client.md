@@ -48,6 +48,14 @@ from databasez.testclient import DatabaseTestClient
 
     <sup>Default: `None`, copy default or `testclient_default_force_rollback` (defaults to `False`) </sup>
 
+* **full_isolation** - Special mode for using force_rollback with nested queries. This parameter fully isolates the global connection
+                       in an extra thread. This way it is possible to use blocking operations like locks with force_rollback.
+                       This parameter has no use when used without force_rollback and causes a slightly slower setup (Lock is initialized).
+                       It is required for edgy or other frameworks which use threads in tests and the force_rollback parameter.
+                       For the DatabaseTestClient it is enabled by default.
+
+    <sup>Default: `None`, copy default or `testclient_default_full_isolation` (defaults to `True`) </sup>
+
 * **lazy_setup** - This sets up the db first up on connect not in init.
 
     <sup>Default: `None`, True if copying a database or `testclient_default_lazy_setup` (defaults to `False`)</sup>

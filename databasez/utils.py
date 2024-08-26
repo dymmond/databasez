@@ -184,7 +184,7 @@ class AsyncHelperDatabase:
         self.ctm = await _arun_with_timeout(
             self.fn(database, *self.args, **self.kwargs), timeout=self.timeout
         )
-        return await _arun_with_timeout(self.ctm.__aenter__(), self.timeout)
+        return await self.ctm.__aenter__()
 
     async def __aexit__(
         self,
@@ -194,9 +194,7 @@ class AsyncHelperDatabase:
     ) -> None:
         assert self.ctm is not None
         try:
-            await _arun_with_timeout(
-                self.ctm.__aexit__(exc_type, exc_value, traceback), self.timeout
-            )
+            await _arun_with_timeout(self.ctm.__aexit__(exc_type, exc_value, traceback), None)
         finally:
             await self.database.__aexit__()
 
@@ -230,7 +228,7 @@ class AsyncHelperConnection:
     async def enter_intern(self) -> typing.Any:
         await self.connection.__aenter__()
         self.ctm = await self.call()
-        return await _arun_with_timeout(self.ctm.__aenter__(), self.timeout)
+        return await self.ctm.__aenter__()
 
     async def exit_intern(self) -> typing.Any:
         assert self.ctm is not None
@@ -256,7 +254,7 @@ class AsyncHelperConnection:
 
 
 def multiloop_protector(
-    fail_with_different_loop: bool, inject_parent: bool = False
+    fail_with_different_loop: bool, inject_parent: bool = False, passthrough_timeout: bool = False
 ) -> typing.Callable[[MultiloopProtectorCallable], MultiloopProtectorCallable]:
     """For multiple threads or other reasons why the loop changes"""
 
@@ -267,9 +265,11 @@ def multiloop_protector(
         def wrapper(
             self: typing.Any,
             *args: typing.Any,
-            timeout: typing.Optional[float] = None,
             **kwargs: typing.Any,
         ) -> typing.Any:
+            timeout: typing.Optional[float] = None
+            if not passthrough_timeout and "timeout" in kwargs:
+                timeout = kwargs.pop("timeout")
             if inject_parent:
                 assert "parent_database" not in kwargs, '"parent_database" is a reserved keyword'
             try:

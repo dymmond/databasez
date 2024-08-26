@@ -150,6 +150,7 @@ class Database:
     options: typing.Any
     is_connected: bool = False
     _call_hooks: bool = True
+    _full_isolation: bool = False
     _force_rollback: ForceRollback
     # descriptor
     force_rollback = ForceRollbackDescriptor()
@@ -398,7 +399,11 @@ class Database:
     ) -> typing.Any:
         async with self.connection() as connection:
             return await connection.fetch_val(
-                query, values, column=column, pos=pos, timeout=timeout
+                query,
+                values,
+                column=column,
+                pos=pos,
+                timeout=timeout,
             )
 
     async def execute(
@@ -435,14 +440,21 @@ class Database:
         query: typing.Union[ClauseElement, str],
         values: typing.Optional[dict] = None,
         batch_size: typing.Optional[int] = None,
-        batch_wrapper: typing.Union[BatchCallable] = tuple,
+        batch_wrapper: BatchCallable = tuple,
         timeout: typing.Optional[float] = None,
     ) -> typing.AsyncGenerator[BatchCallableResult, None]:
         async with self.connection() as connection:
-            async for records in connection.batched_iterate(
-                query, values, batch_size, timeout=timeout
+            async for batch in typing.cast(
+                typing.AsyncGenerator["BatchCallableResult", None],
+                connection.batched_iterate(
+                    query,
+                    values,
+                    batch_wrapper=batch_wrapper,
+                    batch_size=batch_size,
+                    timeout=timeout,
+                ),
             ):
-                yield batch_wrapper(records)
+                yield batch
 
     def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
@@ -470,18 +482,23 @@ class Database:
             await connection.drop_all(meta, **kwargs, timeout=timeout)
 
     @multiloop_protector(False)
-    def _non_global_connection(self) -> Connection:
+    def _non_global_connection(
+        self,
+        timeout: typing.Optional[
+            float
+        ] = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> Connection:
         if self._connection is None:
             _connection = self._connection = Connection(self)
             return _connection
         return self._connection
 
-    def connection(self) -> Connection:
+    def connection(self, timeout: typing.Optional[float] = None) -> Connection:
         if not self.is_connected:
             raise RuntimeError("Database is not connected")
         if self.force_rollback:
             return typing.cast(Connection, self._global_connection)
-        return self._non_global_connection()
+        return self._non_global_connection(timeout=timeout)
 
     @property
     @multiloop_protector(True)

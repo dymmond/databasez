@@ -7,6 +7,11 @@
 ### Added
 
 - `full_isolation` parameter. Isolate the force_rollback Connection in a thread.
+- Timeouts for operations.
+
+### Fixed
+
+- `batched_iterate` interface of `Connection` differed from the one of `Database`.
 
 
 ## 0.9.7
