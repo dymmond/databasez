@@ -12,6 +12,9 @@
 ### Fixed
 
 - `batched_iterate` interface of `Connection` differed from the one of `Database`.
+- `iterate` interface of `Connection` differed from the one of `Database`.
+- Hooks were called on automatically created Database objects.
+- More multithreading safety.
 
 
 ## 0.9.7
