@@ -110,14 +110,17 @@ def _future_helper(awaitable, future):
     "join_type",
     ["to_thread"],  # , "thread_join_with_context", "thread_join_without_context"]
 )
+@pytest.mark.parametrize("full_isolation", [True, False])
 @pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
-async def test_multi_thread_db_contextmanager(database_url, force_rollback, join_type):
+async def test_multi_thread_db_contextmanager(
+    database_url, force_rollback, full_isolation, join_type
+):
     if join_type.startswith("thread_join") and force_rollback:
         pytest.skip("not supported yet")
 
     async with Database(
-        database_url, force_rollback=force_rollback, full_isolation=False
+        database_url, force_rollback=force_rollback, full_isolation=True
     ) as database:
         query = notes.insert().values(text="examplecontext", completed=True)
         await database.execute(query, timeout=10)

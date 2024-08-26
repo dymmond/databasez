@@ -160,7 +160,7 @@ class Database:
         *,
         force_rollback: typing.Union[bool, None] = None,
         config: typing.Optional["DictAny"] = None,
-        full_isolation: bool = False,
+        full_isolation: typing.Union[bool, None] = None,
         **options: typing.Any,
     ):
         init()
@@ -173,6 +173,8 @@ class Database:
             self._call_hooks = url._call_hooks
             if force_rollback is None:
                 force_rollback = bool(url.force_rollback)
+            if full_isolation is None:
+                full_isolation = bool(url._full_isolation)
         else:
             url = DatabaseURL(url)
             if config and "connection" in config:
@@ -185,6 +187,8 @@ class Database:
             )
             if force_rollback is None:
                 force_rollback = False
+            if full_isolation is None:
+                full_isolation = False
         self._full_isolation = full_isolation
         self._force_rollback = ForceRollback(force_rollback)
         self.backend.owner = self
@@ -270,7 +274,9 @@ class Database:
                     self._global_connection is not None
                 ), "global connection should have been set"
                 # correctly initialize force_rollback with parent value
-                database = self.__class__(self, force_rollback=bool(self.force_rollback))
+                database = self.__class__(
+                    self, force_rollback=bool(self.force_rollback), full_isolation=False
+                )
                 # prevent side effects of connect_hook
                 database._call_hooks = False
                 database._global_connection = await self._global_connection.__aenter__()
@@ -294,9 +300,7 @@ class Database:
         self.is_connected = True
 
         if self._global_connection is None:
-            connection = Connection(
-                self, self.backend, force_rollback=True, full_isolation=self._full_isolation
-            )
+            connection = Connection(self, force_rollback=True)
             self._global_connection = connection
         return True
 
@@ -334,9 +338,7 @@ class Database:
 
         try:
             assert self._global_connection is not None
-            # prevent loop
-            if not self._global_connection._full_isolation:
-                await self._global_connection.__aexit__()
+            await self._global_connection.__aexit__()
             self._global_connection = None
             self._connection = None
         finally:
@@ -470,7 +472,7 @@ class Database:
     @multiloop_protector(False)
     def _non_global_connection(self) -> Connection:
         if self._connection is None:
-            _connection = self._connection = Connection(self, self.backend)
+            _connection = self._connection = Connection(self)
             return _connection
         return self._connection
 

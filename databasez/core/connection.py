@@ -4,7 +4,7 @@ import asyncio
 import typing
 import weakref
 from contextvars import copy_context
-from threading import Event, Thread
+from threading import Event, Thread, current_thread
 from types import TracebackType
 
 from sqlalchemy import text
@@ -23,6 +23,7 @@ if typing.TYPE_CHECKING:
 
 async def _startup(database: Database, is_initialized: Event) -> None:
     await database.connect()
+    await database._global_connection._aenter()
     is_initialized.set()
 
 
@@ -49,19 +50,15 @@ class Connection:
     def __init__(
         self,
         database: Database,
-        backend: interfaces.DatabaseBackend,
         force_rollback: bool = False,
-        full_isolation: bool = False,
     ) -> None:
-        self._full_isolation = full_isolation
-        self._database = database
-        if full_isolation:
+        self._orig_database = self._database = database
+        if self._full_isolation:
             self._database = database.__class__(
                 database, force_rollback=force_rollback, full_isolation=False
             )
             self._database._call_hooks = False
             self._database._global_connection = self
-        self._backend = backend
 
         self._connection_lock = asyncio.Lock()
         self._connection = self._backend.connection()
@@ -77,28 +74,7 @@ class Connection:
         self._isolation_thread: typing.Optional[Thread] = None
 
     @multiloop_protector(False)
-    async def __aenter__(self) -> Connection:
-        if self._full_isolation:
-            ctx = copy_context()
-            is_initialized = Event()
-            self._isolation_thread = thread = Thread(
-                target=ctx.run,
-                args=[
-                    _init_thread,
-                    self._database.__class__(
-                        self._database, force_rollback=True, full_isolation=False
-                    ),
-                    is_initialized,
-                ],
-                daemon=False,
-            )
-            thread.start()
-            is_initialized.wait()
-            if not thread.is_alive():
-                thread = self._isolation_thread
-                self._isolation_thread = None
-                thread.join()
-
+    async def _aenter(self) -> None:
         async with self._connection_lock:
             self._connection_counter += 1
             try:
@@ -122,9 +98,48 @@ class Connection:
             except BaseException as e:
                 self._connection_counter -= 1
                 raise e
+
+    async def __aenter__(self) -> Connection:
+        if self._full_isolation and self._isolation_thread is None:
+            is_initialized = Event()
+            ctx = copy_context()
+            self._isolation_thread = thread = Thread(
+                target=ctx.run,
+                args=[
+                    _init_thread,
+                    self._database,
+                    is_initialized,
+                ],
+                daemon=True,
+            )
+            thread.start()
+            is_initialized.wait()
+            if not thread.is_alive():
+                self._isolation_thread = None
+                thread.join()
+        else:
+            await self._aenter()
         return self
 
     @multiloop_protector(False)
+    async def _aexit(self) -> bool:
+        closing = False
+        async with self._connection_lock:
+            assert self._connection is not None
+            self._connection_counter -= 1
+            if self._connection_counter == 0:
+                closing = True
+                try:
+                    if self.connection_transaction:
+                        # __aexit__ needs the connection_transaction parameter
+                        await self.connection_transaction.__aexit__()
+                        # untie, for allowing gc
+                        self.connection_transaction = None
+                finally:
+                    await self._connection.release()
+                    self._database._connection = None
+        return closing
+
     async def __aexit__(
         self,
         exc_type: typing.Optional[typing.Type[BaseException]] = None,
@@ -133,33 +148,31 @@ class Connection:
     ) -> None:
         closing = False
         try:
-            async with self._connection_lock:
-                assert self._connection is not None
-                self._connection_counter -= 1
-                if self._connection_counter == 0:
-                    closing = True
-                    try:
-                        if self.connection_transaction:
-                            # __aexit__ needs the connection_transaction parameter
-                            await self.connection_transaction.__aexit__()
-                            # untie, for allowing gc
-                            self.connection_transaction = None
-                    finally:
-                        await self._connection.release()
-                        self._database._connection = None
+            closing = await self._aexit()
         finally:
-            if closing and self._full_isolation:
-                assert self._isolation_thread is not None
-                thread = self._isolation_thread
-                loop = self._database._loop
-                self._isolation_thread = None
-                if loop:
-                    loop.stop()
-                thread.join()
+            print("connection count", self._connection_counter)
+            thread = self._isolation_thread
+            if closing and self._full_isolation and thread is not None:
+                running_thread = current_thread()
+                # we stop from outside
+                if running_thread != thread:
+                    loop = self._database._loop
+                    self._isolation_thread = None
+                    if loop:
+                        loop.stop()
+                    thread.join()
 
     @property
     def _loop(self) -> typing.Any:
         return self._database._loop
+
+    @property
+    def _backend(self) -> typing.Any:
+        return self._database.backend
+
+    @property
+    def _full_isolation(self) -> typing.Any:
+        return self._orig_database._full_isolation
 
     @multiloop_protector(False)
     async def fetch_all(
