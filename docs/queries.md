@@ -49,7 +49,7 @@ execute it with databasez.
 ## Queries
 
 Since you can use [SQLAlchemy core](https://docs.sqlalchemy.org/en/20/core/), that also means you
-can also use the queries. Check out the [official tutorial](https://docs.sqlalchemy.org/en/14/core/tutorial.html).
+can also use the queries. Check out the [official tutorial](https://docs.sqlalchemy.org/en/20/tutorial/).
 
 ```python
 {!> ../docs_src/queries/queries.py !}

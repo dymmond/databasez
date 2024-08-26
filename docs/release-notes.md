@@ -1,6 +1,22 @@
 # Release Notes
 
 
+## 0.10.0
+
+
+### Added
+
+- `full_isolation` parameter. Isolate the force_rollback Connection in a thread.
+- Timeouts for operations.
+
+### Fixed
+
+- `batched_iterate` interface of `Connection` differed from the one of `Database`.
+- `iterate` interface of `Connection` differed from the one of `Database`.
+- Hooks were called on automatically created Database objects.
+- More multithreading safety.
+
+
 ## 0.9.7
 
 ### Added
