@@ -300,7 +300,7 @@ class Database:
         self.is_connected = True
 
         if self._global_connection is None:
-            connection = Connection(self, force_rollback=True)
+            connection = Connection(self, force_rollback=True, full_isolation=self._full_isolation)
             self._global_connection = connection
         return True
 

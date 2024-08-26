@@ -71,12 +71,28 @@ async def test_concurrent_access_on_single_connection(database_url):
         await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
 
 
+def _future_helper(awaitable, future):
+    try:
+        future.set_result(asyncio.run(awaitable))
+    except BaseException as exc:
+        future.set_exception(exc)
+
+
+@pytest.mark.parametrize(
+    "join_type,full_isolation",
+    [
+        ("to_thread", False),
+        ("to_thread", True),
+        ("thread_join_with_context", True),
+        ("thread_join_without_context", True),
+    ],
+)
 @pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
-async def test_multi_thread(database_url, force_rollback):
+async def test_multi_thread_db(database_url, force_rollback, join_type, full_isolation):
     database_url = DatabaseURL(str(database_url.url))
     async with Database(
-        database_url, force_rollback=force_rollback, full_isolation=False
+        database_url, force_rollback=force_rollback, full_isolation=full_isolation
     ) as database:
 
         async def db_lookup(in_thread):
@@ -94,33 +110,37 @@ async def test_multi_thread(database_url, force_rollback):
                 await database.execute("WAITFOR DELAY '00:00:00.300'")
 
         async def wrap_in_thread():
-            await to_thread(asyncio.run, db_lookup(True))
+            if join_type.startswith("thread_join"):
+                future = Future()
+                args = [_future_helper, asyncio.wait_for(db_lookup(True), 3), future]
+                if join_type == "thread_join_with_context":
+                    ctx = contextvars.copy_context()
+                    args.insert(0, ctx.run)
+                thread = Thread(target=args[0], args=args[1:])
+                thread.start()
+                future.result(4)
+            else:
+                await to_thread(asyncio.run, asyncio.wait_for(db_lookup(True), 3))
 
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
 
 
-def _future_helper(awaitable, future):
-    try:
-        future.set_result(asyncio.run(awaitable))
-    except BaseException as exc:
-        future.set_exception(exc)
-
-
 @pytest.mark.parametrize(
-    "join_type",
-    ["to_thread"],  # , "thread_join_with_context", "thread_join_without_context"]
+    "join_type,full_isolation",
+    [
+        ("to_thread", False),
+        ("to_thread", True),
+        ("thread_join_with_context", True),
+        ("thread_join_without_context", True),
+    ],
 )
-@pytest.mark.parametrize("full_isolation", [True, False])
 @pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
 async def test_multi_thread_db_contextmanager(
-    database_url, force_rollback, full_isolation, join_type
+    database_url, force_rollback, join_type, full_isolation
 ):
-    if join_type.startswith("thread_join") and force_rollback:
-        pytest.skip("not supported yet")
-
     async with Database(
-        database_url, force_rollback=force_rollback, full_isolation=True
+        database_url, force_rollback=force_rollback, full_isolation=full_isolation
     ) as database:
         query = notes.insert().values(text="examplecontext", completed=True)
         await database.execute(query, timeout=10)
@@ -150,7 +170,7 @@ async def test_multi_thread_db_contextmanager(
 
         if join_type.startswith("thread_join"):
             future = Future()
-            args = [_future_helper, asyncio.wait_for(db_connect(), 5), future]
+            args = [_future_helper, asyncio.wait_for(db_connect(), 3), future]
             if join_type == "thread_join_with_context":
                 ctx = contextvars.copy_context()
                 args.insert(0, ctx.run)
@@ -158,7 +178,7 @@ async def test_multi_thread_db_contextmanager(
             thread.start()
             future.result(4)
         else:
-            await to_thread(asyncio.run, asyncio.wait_for(db_connect(), 5))
+            await to_thread(asyncio.run, asyncio.wait_for(db_connect(), 3))
     assert database.ref_counter == 0
     if force_rollback:
         async with database:

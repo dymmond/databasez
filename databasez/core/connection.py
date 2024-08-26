@@ -4,7 +4,7 @@ import asyncio
 import typing
 import weakref
 from contextvars import copy_context
-from threading import Event, Thread, current_thread
+from threading import Event, RLock, Thread, current_thread
 from types import TracebackType
 
 from sqlalchemy import text
@@ -48,18 +48,19 @@ def _init_thread(database: Database, is_initialized: Event) -> None:
 
 class Connection:
     def __init__(
-        self,
-        database: Database,
-        force_rollback: bool = False,
+        self, database: Database, force_rollback: bool = False, full_isolation: bool = False
     ) -> None:
         self._orig_database = self._database = database
+        self._full_isolation = full_isolation
+        self._connection_thread_lock: typing.Optional[RLock] = None
+        self._isolation_thread: typing.Optional[Thread] = None
         if self._full_isolation:
             self._database = database.__class__(
                 database, force_rollback=force_rollback, full_isolation=False
             )
             self._database._call_hooks = False
             self._database._global_connection = self
-
+            self._connection_thread_lock = RLock()
         self._connection_lock = asyncio.Lock()
         self._connection = self._backend.connection()
         self._connection.owner = self
@@ -71,7 +72,6 @@ class Connection:
         self._query_lock = asyncio.Lock()
         self._force_rollback = force_rollback
         self.connection_transaction: typing.Optional[Transaction] = None
-        self._isolation_thread: typing.Optional[Thread] = None
 
     @multiloop_protector(False)
     async def _aenter(self) -> None:
@@ -100,29 +100,33 @@ class Connection:
                 raise e
 
     async def __aenter__(self) -> Connection:
-        if self._full_isolation and self._isolation_thread is None:
-            is_initialized = Event()
-            ctx = copy_context()
-            self._isolation_thread = thread = Thread(
-                target=ctx.run,
-                args=[
-                    _init_thread,
-                    self._database,
-                    is_initialized,
-                ],
-                daemon=True,
-            )
-            thread.start()
-            is_initialized.wait()
-            if not thread.is_alive():
-                self._isolation_thread = None
-                thread.join()
-        else:
+        initialized = False
+        if self._full_isolation:
+            assert self._connection_thread_lock is not None
+            with self._connection_thread_lock:
+                if self._isolation_thread is None:
+                    initialized = True
+                    is_initialized = Event()
+                    ctx = copy_context()
+                    self._isolation_thread = thread = Thread(
+                        target=ctx.run,
+                        args=[
+                            _init_thread,
+                            self._database,
+                            is_initialized,
+                        ],
+                        daemon=True,
+                    )
+                    thread.start()
+                    is_initialized.wait()
+                    if not thread.is_alive():
+                        self._isolation_thread = None
+                        thread.join()
+        if not initialized:
             await self._aenter()
         return self
 
-    @multiloop_protector(False)
-    async def _aexit(self) -> bool:
+    async def _aexit_raw(self) -> bool:
         closing = False
         async with self._connection_lock:
             assert self._connection is not None
@@ -140,27 +144,35 @@ class Connection:
                     self._database._connection = None
         return closing
 
+    async def _aexit(self) -> typing.Optional[Thread]:
+        if self._full_isolation:
+            assert self._connection_thread_lock is not None
+            with self._connection_thread_lock:
+                if await self._aexit_raw():
+                    loop = self._database._loop
+                    thread = self._isolation_thread
+                    if loop is not None:
+                        loop.stop()
+                    else:
+                        self._isolation_thread = None
+                    return thread
+        else:
+            await self._aexit_raw()
+            return None
+
+    @multiloop_protector(False)
     async def __aexit__(
         self,
         exc_type: typing.Optional[typing.Type[BaseException]] = None,
         exc_value: typing.Optional[BaseException] = None,
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
-        closing = False
+        thread = None
         try:
-            closing = await self._aexit()
+            thread = await self._aexit()
         finally:
-            print("connection count", self._connection_counter)
-            thread = self._isolation_thread
-            if closing and self._full_isolation and thread is not None:
-                running_thread = current_thread()
-                # we stop from outside
-                if running_thread != thread:
-                    loop = self._database._loop
-                    self._isolation_thread = None
-                    if loop:
-                        loop.stop()
-                    thread.join()
+            if thread is not None and thread is not current_thread():
+                thread.join()
 
     @property
     def _loop(self) -> typing.Any:
@@ -169,10 +181,6 @@ class Connection:
     @property
     def _backend(self) -> typing.Any:
         return self._database.backend
-
-    @property
-    def _full_isolation(self) -> typing.Any:
-        return self._orig_database._full_isolation
 
     @multiloop_protector(False)
     async def fetch_all(
