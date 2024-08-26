@@ -270,11 +270,14 @@ class Connection:
     ) -> typing.AsyncGenerator[interfaces.Record, None]:
         built_query = self._build_query(query, values)
         if timeout is None or timeout <= 0:
-            next_fn: typing.Callable[[typing.Any], typing.Awaitable[interfaces.Record]] = anext
+            # anext is available in python 3.10
+
+            async def next_fn(inp: typing.Any) -> interfaces.Record:
+                return await aiterator.__anext__()
         else:
 
             async def next_fn(inp: typing.Any) -> interfaces.Record:
-                return await asyncio.wait_for(anext(aiterator), timeout=timeout)
+                return await asyncio.wait_for(aiterator.__anext__(), timeout=timeout)
 
         async with self._query_lock:
             aiterator = self._connection.iterate(built_query, chunk_size).__aiter__()
@@ -295,13 +298,14 @@ class Connection:
     ) -> typing.AsyncGenerator[BatchCallableResult, None]:
         built_query = self._build_query(query, values)
         if timeout is None or timeout <= 0:
-            next_fn: typing.Callable[
-                [typing.Any], typing.Awaitable[typing.Sequence[interfaces.Record]]
-            ] = anext
+            # anext is available in python 3.10
+
+            async def next_fn(inp: typing.Any) -> typing.Sequence[interfaces.Record]:
+                return await aiterator.__anext__()
         else:
 
             async def next_fn(inp: typing.Any) -> typing.Sequence[interfaces.Record]:
-                return await asyncio.wait_for(anext(aiterator), timeout=timeout)
+                return await asyncio.wait_for(aiterator.__anext__(), timeout=timeout)
 
         async with self._query_lock:
             aiterator = self._connection.batched_iterate(built_query, batch_size).__aiter__()
