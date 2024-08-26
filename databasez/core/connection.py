@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import typing
 import weakref
 from contextvars import copy_context
@@ -25,7 +26,13 @@ if typing.TYPE_CHECKING:
 
 async def _startup(database: Database, is_initialized: Event) -> None:
     await database.connect()
-    await database._global_connection._aenter()  # type: ignore
+    _global_connection = typing.cast(Connection, database._global_connection)
+    await _global_connection._aenter()
+    if sys.version_info < (3, 10):
+        # for old python versions <3.10 the locks must be created in the same event loop
+        _global_connection._query_lock = asyncio.Lock()
+        _global_connection._connection_lock = asyncio.Lock()
+        _global_connection._transaction_lock = asyncio.Lock()
     is_initialized.set()
 
 
@@ -63,15 +70,16 @@ class Connection:
             self._database._call_hooks = False
             self._database._global_connection = self
             self._connection_thread_lock = RLock()
+        # the asyncio locks are overwritten in python versions < 3.10 when using full_isolation
+        self._query_lock = asyncio.Lock()
         self._connection_lock = asyncio.Lock()
+        self._transaction_lock = asyncio.Lock()
         self._connection = self._backend.connection()
         self._connection.owner = self
         self._connection_counter = 0
 
-        self._transaction_lock = asyncio.Lock()
         self._transaction_stack: typing.List[Transaction] = []
 
-        self._query_lock = asyncio.Lock()
         self._force_rollback = force_rollback
         self.connection_transaction: typing.Optional[Transaction] = None
 
