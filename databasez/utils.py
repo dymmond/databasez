@@ -1,9 +1,45 @@
 import asyncio
+import contextvars
 import inspect
 import typing
 from functools import partial, wraps
 from threading import Thread
 from types import TracebackType
+
+DATABASEZ_RESULT_TIMEOUT: typing.Optional[float] = None
+DATABASEZ_WRAP_IN_THREAD: bool = False
+
+try:
+    to_thread = asyncio.to_thread
+except AttributeError:
+    # for py <= 3.8
+    async def to_thread(
+        func: typing.Any, /, *args: typing.Any, **kwargs: typing.Any
+    ) -> typing.Any:
+        loop = asyncio.get_running_loop()
+        ctx = contextvars.copy_context()
+        func_call = partial(ctx.run, func, *args, **kwargs)
+        return await loop.run_in_executor(None, func_call)
+
+
+def _run_coroutine_threadsafe_result_shim(
+    coro: typing.Coroutine, loop: asyncio.BaseEventLoop
+) -> typing.Any:
+    assert loop.is_running(), "loop is closed"
+    return asyncio.run_coroutine_threadsafe(coro, loop).result(DATABASEZ_RESULT_TIMEOUT)
+
+
+async def arun_coroutine_threadsafe(
+    coro: typing.Coroutine, loop: asyncio.BaseEventLoop
+) -> typing.Any:
+    running_loop = asyncio.get_running_loop()
+    if running_loop is loop:
+        return await coro
+    elif not DATABASEZ_WRAP_IN_THREAD:
+        return _run_coroutine_threadsafe_result_shim(coro, loop)
+    else:
+        return await to_thread(_run_coroutine_threadsafe_result_shim, coro, loop)
+
 
 async_wrapper_slots = (
     "_async_wrapped",
@@ -220,7 +256,7 @@ class AsyncHelperConnection:
             return result
 
     async def acall(self) -> typing.Any:
-        return asyncio.run_coroutine_threadsafe(self.call(), self.connection._loop).result()
+        return await arun_coroutine_threadsafe(self.call(), self.connection._loop)
 
     def __await__(self) -> typing.Any:
         return self.acall().__await__()
@@ -239,9 +275,7 @@ class AsyncHelperConnection:
             await self.connection.__aexit__()
 
     async def __aenter__(self) -> typing.Any:
-        return asyncio.run_coroutine_threadsafe(
-            self.enter_intern(), self.connection._loop
-        ).result()
+        return await arun_coroutine_threadsafe(self.enter_intern(), self.connection._loop)
 
     async def __aexit__(
         self,
@@ -250,7 +284,7 @@ class AsyncHelperConnection:
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
         assert self.ctm is not None
-        asyncio.run_coroutine_threadsafe(self.exit_intern(), self.connection._loop).result()
+        await arun_coroutine_threadsafe(self.exit_intern(), self.connection._loop)
 
 
 def multiloop_protector(

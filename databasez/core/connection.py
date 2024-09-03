@@ -5,7 +5,7 @@ import sys
 import typing
 import weakref
 from contextvars import copy_context
-from threading import Event, RLock, Thread, current_thread
+from threading import Event, Lock, Thread, current_thread
 from types import TracebackType
 
 from sqlalchemy import text
@@ -38,21 +38,19 @@ async def _startup(database: Database, is_initialized: Event) -> None:
 
 def _init_thread(database: Database, is_initialized: Event) -> None:
     loop = asyncio.new_event_loop()
+    # keep reference
     task = loop.create_task(_startup(database, is_initialized))
     try:
-        loop.run_forever()
-    except RuntimeError:
-        pass
-    try:
-        task.result()
-    finally:
         try:
-            loop.run_until_complete(database.disconnect())
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        finally:
-            del task
-            loop.close()
-            database._loop = None
+            loop.run_forever()
+        except RuntimeError:
+            pass
+        loop.run_until_complete(database.disconnect())
+        loop.run_until_complete(loop.shutdown_asyncgens())
+    finally:
+        del task
+        loop.close()
+        database._loop = None
 
 
 class Connection:
@@ -61,7 +59,7 @@ class Connection:
     ) -> None:
         self._orig_database = self._database = database
         self._full_isolation = full_isolation
-        self._connection_thread_lock: typing.Optional[RLock] = None
+        self._connection_thread_lock: typing.Optional[Lock] = None
         self._isolation_thread: typing.Optional[Thread] = None
         if self._full_isolation:
             self._database = database.__class__(
@@ -69,7 +67,7 @@ class Connection:
             )
             self._database._call_hooks = False
             self._database._global_connection = self
-            self._connection_thread_lock = RLock()
+            self._connection_thread_lock = Lock()
         # the asyncio locks are overwritten in python versions < 3.10 when using full_isolation
         self._query_lock = asyncio.Lock()
         self._connection_lock = asyncio.Lock()
@@ -113,6 +111,7 @@ class Connection:
         initialized = False
         if self._full_isolation:
             assert self._connection_thread_lock is not None
+            thread: typing.Optional[Thread] = None
             with self._connection_thread_lock:
                 if self._isolation_thread is None:
                     initialized = True
@@ -128,10 +127,13 @@ class Connection:
                         daemon=True,
                     )
                     thread.start()
-                    is_initialized.wait()
-                    if not thread.is_alive():
-                        self._isolation_thread = None
-                        thread.join()
+                    while not is_initialized.wait(1):
+                        if not thread.is_alive():
+                            self._isolation_thread = None
+                            break
+            if thread is not None and not thread.is_alive():
+                thread.join(10)
+                raise Exception("Cannot start full isolation thread")
         if not initialized:
             await self._aenter()
         return self
@@ -161,6 +163,7 @@ class Connection:
                 if await self._aexit_raw():
                     loop = self._database._loop
                     thread = self._isolation_thread
+                    # after stopping the _isolation_thread is removed in thread
                     if loop is not None:
                         loop.stop()
                     else:
