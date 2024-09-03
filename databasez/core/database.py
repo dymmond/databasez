@@ -11,7 +11,7 @@ from functools import lru_cache
 from types import TracebackType
 
 from databasez import interfaces
-from databasez.utils import multiloop_protector
+from databasez.utils import arun_coroutine_threadsafe, multiloop_protector
 
 from .connection import Connection
 from .databaseurl import DatabaseURL
@@ -331,7 +331,7 @@ class Database:
             if self._databases_map:
                 assert not self._databases_map, "sub databases still active, force terminate them"
                 for sub_database in self._databases_map.values():
-                    asyncio.run_coroutine_threadsafe(
+                    await arun_coroutine_threadsafe(
                         sub_database.disconnect(True), sub_database._loop
                     )
                 self._databases_map = {}
