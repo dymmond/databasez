@@ -145,6 +145,7 @@ junit_family = "xunit2"
 setup_timeout = 5
 execution_timeout = 10
 teardown_timeout = 5
+asyncio_default_fixture_loop_scope = "module"
 reruns = 1
 reruns_delay = 1
 
@@ -183,7 +184,7 @@ serve = "mkdocs serve --dev-addr localhost:8000"
 features = ["all"]
 extra-dependencies = [
     "mypy>=1.1.0,<2.0.0",
-    "psycopg[binary]"
+    "psycopg[binary]",
 ]
 
 [tool.hatch.envs.test.scripts]
@@ -203,7 +204,9 @@ extra-dependencies = [
     "pyodbc",
     "pytest-timeouts",
     "pytest-rerunfailures",
-    "pytest-asyncio"
+    "pytest-asyncio",
+    "anyio",
+    "uvloop"
 ]
 
 [tool.hatch.envs.hatch-test.env-vars]

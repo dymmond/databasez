@@ -5,8 +5,10 @@ import os
 from concurrent.futures import Future
 from threading import Thread
 
+import anyio
 import pyodbc
 import pytest
+import uvloop
 
 from databasez import Database, DatabaseURL
 from tests.shared_db import (
@@ -90,7 +92,9 @@ def _future_helper(awaitable, future):
 @pytest.mark.parametrize("force_rollback", [True, False])
 @pytest.mark.asyncio
 async def test_multi_thread_db(database_url, force_rollback, join_type, full_isolation):
-    database_url = DatabaseURL(str(database_url.url))
+    database_url = DatabaseURL(
+        str(database_url.url) if not isinstance(database_url, str) else database_url
+    )
     async with Database(
         database_url, force_rollback=force_rollback, full_isolation=full_isolation
     ) as database:
@@ -123,6 +127,38 @@ async def test_multi_thread_db(database_url, force_rollback, join_type, full_iso
                 await to_thread(asyncio.run, asyncio.wait_for(db_lookup(True), 3))
 
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
+
+
+@pytest.mark.parametrize("plain_database_url", DATABASE_URLS)
+@pytest.mark.parametrize(
+    "run_params",
+    [
+        {"backend": "asyncio"},
+        {"backend": "asyncio", "backend_options": {"loop_factory": uvloop.new_event_loop}},
+    ],
+    ids=["asyncio", "asyncio+uvloop"],
+)
+@pytest.mark.parametrize(
+    "join_type,full_isolation",
+    [
+        ("to_thread", False),
+        ("to_thread", True),
+        ("thread_join_with_context", True),
+        ("thread_join_without_context", True),
+    ],
+)
+@pytest.mark.parametrize("force_rollback", [True, False])
+def test_multi_thread_db_anyio(
+    run_params, plain_database_url, force_rollback, join_type, full_isolation
+):
+    anyio.run(
+        test_multi_thread_db,
+        plain_database_url,
+        force_rollback,
+        join_type,
+        full_isolation,
+        **run_params,
+    )
 
 
 @pytest.mark.parametrize(
