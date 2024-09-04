@@ -150,6 +150,7 @@ class Database:
     options: typing.Any
     is_connected: bool = False
     _call_hooks: bool = True
+    _remove_global_connection: bool = True
     _full_isolation: bool = False
     poll_interval: float
     _force_rollback: ForceRollback
@@ -313,6 +314,8 @@ class Database:
         if self._global_connection is None:
             connection = Connection(self, force_rollback=True, full_isolation=self._full_isolation)
             self._global_connection = connection
+        else:
+            self._remove_global_connection = False
         return True
 
     async def disconnect_hook(self) -> None:
@@ -350,7 +353,8 @@ class Database:
         try:
             assert self._global_connection is not None
             await self._global_connection.__aexit__()
-            self._global_connection = None
+            if self._remove_global_connection:
+                self._global_connection = None
             self._connection = None
         finally:
             logger.info(

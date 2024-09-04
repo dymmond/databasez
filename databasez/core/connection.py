@@ -33,29 +33,30 @@ async def _startup(database: Database, is_initialized: Event) -> None:
     is_initialized.set()
 
 
-def _init_thread(database: Database, is_initialized: Event, is_cleared: Event) -> None:
-    is_cleared.wait()
-    # now set the flag so new init_threads have to wait
-    is_cleared.clear()
-    loop = asyncio.new_event_loop()
-    # keep reference
-    task = loop.create_task(_startup(database, is_initialized))
-    try:
+def _init_thread(
+    database: Database, is_initialized: Event, _connection_thread_running_lock: Lock
+) -> None:
+    # ensure only thread manages the connection thread at the same time
+    # this is only relevant when starting up after a shutdown
+    with _connection_thread_running_lock:
+        loop = asyncio.new_event_loop()
+        # keep reference
+        task = loop.create_task(_startup(database, is_initialized))
         try:
-            loop.run_forever()
-        except RuntimeError:
-            pass
+            try:
+                loop.run_forever()
+            except RuntimeError:
+                pass
+            finally:
+                # now all inits wait
+                is_initialized.clear()
+            loop.run_until_complete(database.disconnect())
+            loop.run_until_complete(loop.shutdown_asyncgens())
         finally:
-            # now all inits wait
-            is_initialized.clear()
-        loop.run_until_complete(database.disconnect())
-        loop.run_until_complete(loop.shutdown_asyncgens())
-    finally:
-        del task
-        loop.close()
-        database._loop = None
-        database._global_connection._isolation_thread = None  # type: ignore
-        is_cleared.set()
+            del task
+            loop.close()
+            database._loop = None
+            database._global_connection._isolation_thread = None  # type: ignore
 
 
 class Connection:
@@ -66,14 +67,12 @@ class Connection:
         self._full_isolation = full_isolation
         self._connection_thread_lock: typing.Optional[Lock] = None
         self._connection_thread_is_initialized: typing.Optional[Event] = None
-        self._connection_thread_is_cleared: typing.Optional[Event] = None
+        self._connection_thread_running_lock: typing.Optional[Lock] = None
         self._isolation_thread: typing.Optional[Thread] = None
         if self._full_isolation:
             self._connection_thread_lock = Lock()
             self._connection_thread_is_initialized = Event()
-            self._connection_thread_is_cleared = Event()
-            # initially it is cleared
-            self._connection_thread_is_cleared.set()
+            self._connection_thread_running_lock = Lock()
             self._database = database.__class__(
                 database, force_rollback=force_rollback, full_isolation=False, poll_interval=-1
             )
@@ -124,7 +123,7 @@ class Connection:
             thread: typing.Optional[Thread] = None
             assert self._connection_thread_lock is not None
             assert self._connection_thread_is_initialized is not None
-            assert self._connection_thread_is_cleared is not None
+            assert self._connection_thread_running_lock is not None
             with self._connection_thread_lock:
                 thread = self._isolation_thread
                 if thread is None:
@@ -134,7 +133,7 @@ class Connection:
                         args=[
                             self._database,
                             self._connection_thread_is_initialized,
-                            self._connection_thread_is_cleared,
+                            self._connection_thread_running_lock,
                         ],
                         daemon=True,
                     )
