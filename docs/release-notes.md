@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- Improved thread-security.
+- Improved thread-safety.
 - full_isolation was not passed through in TestClient.
 
 ## 0.10.0
