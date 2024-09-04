@@ -80,4 +80,4 @@ Note: There is a stronger parameter which should be only used for debugging (mul
 
 `databasez.utils.DATABASEZ_RESULT_TIMEOUT`
 
-It overwrites every timeout where a thread safe call is used.
+It is a stronger timeout which applies everywhere where `arun_coroutine_threadsafe` with a different loop is used (most methods).
