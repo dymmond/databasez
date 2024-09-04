@@ -69,3 +69,15 @@ behind the scenes.
 
 Databasez allows the same level of flexibility as per its ancestor and adds its own extra flavours
 on the top.
+
+
+## Timeouts
+
+Most query methods and the connection() method of database support a timeout parameter.
+It can be used to limit the time used for an operation.
+
+Note: There is a stronger parameter which should be only used for debugging (multithreading):
+
+`databasez.utils.DATABASEZ_RESULT_TIMEOUT`
+
+It is a stronger timeout which applies everywhere where `arun_coroutine_threadsafe` with a different loop is used (most methods).

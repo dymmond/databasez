@@ -405,6 +405,15 @@ async with database.transaction(isolation_level="serializable"):
 For integration in other libraries databasez has also the AsyncEngine exposed via the `engine` property.
 If a database is connected you can retrieve the engine from there.
 
+## Debugging (multithreading)
+
+Sometimes there is a lockup. To get of the underlying issues, you can set
+
+`databasez.utils.DATABASEZ_RESULT_TIMEOUT` to a positive float/int value.
+
+This way lockups will raise an exception.
+
+
 ## Special jdbc/dbapi2 stuff
 
 Currently there is not much documentation and you have to check the overwrites and dialects yourself to get an idea how it works.
