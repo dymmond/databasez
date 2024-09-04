@@ -1,5 +1,14 @@
 # Release Notes
 
+## Unreleased
+
+### Added
+
+- `poll_interval` parameter when using multithreading.
+
+### Fixed
+
+- Improved thread-security
 
 ## 0.10.0
 

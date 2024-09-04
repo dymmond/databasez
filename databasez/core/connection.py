@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import typing
 import weakref
-from contextvars import copy_context
 from threading import Event, Lock, Thread, current_thread
 from types import TracebackType
 
@@ -28,15 +26,17 @@ async def _startup(database: Database, is_initialized: Event) -> None:
     await database.connect()
     _global_connection = typing.cast(Connection, database._global_connection)
     await _global_connection._aenter()
-    if sys.version_info < (3, 10):
-        # for old python versions <3.10 the locks must be created in the same event loop
-        _global_connection._query_lock = asyncio.Lock()
-        _global_connection._connection_lock = asyncio.Lock()
-        _global_connection._transaction_lock = asyncio.Lock()
+    # we ensure fresh locks
+    _global_connection._query_lock = asyncio.Lock()
+    _global_connection._connection_lock = asyncio.Lock()
+    _global_connection._transaction_lock = asyncio.Lock()
     is_initialized.set()
 
 
-def _init_thread(database: Database, is_initialized: Event) -> None:
+def _init_thread(database: Database, is_initialized: Event, is_cleared: Event) -> None:
+    is_cleared.wait()
+    # now set the flag so new init_threads have to wait
+    is_cleared.clear()
     loop = asyncio.new_event_loop()
     # keep reference
     task = loop.create_task(_startup(database, is_initialized))
@@ -45,12 +45,17 @@ def _init_thread(database: Database, is_initialized: Event) -> None:
             loop.run_forever()
         except RuntimeError:
             pass
+        finally:
+            # now all inits wait
+            is_initialized.clear()
         loop.run_until_complete(database.disconnect())
         loop.run_until_complete(loop.shutdown_asyncgens())
     finally:
         del task
         loop.close()
         database._loop = None
+        database._global_connection._isolation_thread = None  # type: ignore
+        is_cleared.set()
 
 
 class Connection:
@@ -60,14 +65,20 @@ class Connection:
         self._orig_database = self._database = database
         self._full_isolation = full_isolation
         self._connection_thread_lock: typing.Optional[Lock] = None
+        self._connection_thread_is_initialized: typing.Optional[Event] = None
+        self._connection_thread_is_cleared: typing.Optional[Event] = None
         self._isolation_thread: typing.Optional[Thread] = None
         if self._full_isolation:
+            self._connection_thread_lock = Lock()
+            self._connection_thread_is_initialized = Event()
+            self._connection_thread_is_cleared = Event()
+            # initially it is cleared
+            self._connection_thread_is_cleared.set()
             self._database = database.__class__(
-                database, force_rollback=force_rollback, full_isolation=False
+                database, force_rollback=force_rollback, full_isolation=False, poll_interval=-1
             )
             self._database._call_hooks = False
             self._database._global_connection = self
-            self._connection_thread_lock = Lock()
         # the asyncio locks are overwritten in python versions < 3.10 when using full_isolation
         self._query_lock = asyncio.Lock()
         self._connection_lock = asyncio.Lock()
@@ -108,32 +119,47 @@ class Connection:
                 raise e
 
     async def __aenter__(self) -> Connection:
-        initialized = False
+        initialized: bool = False
         if self._full_isolation:
-            assert self._connection_thread_lock is not None
             thread: typing.Optional[Thread] = None
+            assert self._connection_thread_lock is not None
+            assert self._connection_thread_is_initialized is not None
+            assert self._connection_thread_is_cleared is not None
             with self._connection_thread_lock:
-                if self._isolation_thread is None:
+                thread = self._isolation_thread
+                if thread is None:
                     initialized = True
-                    is_initialized = Event()
-                    ctx = copy_context()
                     self._isolation_thread = thread = Thread(
-                        target=ctx.run,
+                        target=_init_thread,
                         args=[
-                            _init_thread,
                             self._database,
-                            is_initialized,
+                            self._connection_thread_is_initialized,
+                            self._connection_thread_is_cleared,
                         ],
                         daemon=True,
                     )
+                    # must be started with lock held, for setting is_alive
                     thread.start()
-                    while not is_initialized.wait(1):
+            assert thread is not None
+            # bypass for full_isolated
+            if thread is not current_thread():
+                if initialized:
+                    while not self._connection_thread_is_initialized.is_set():
                         if not thread.is_alive():
-                            self._isolation_thread = None
-                            break
-            if thread is not None and not thread.is_alive():
-                thread.join(10)
-                raise Exception("Cannot start full isolation thread")
+                            with self._connection_thread_lock:
+                                self._isolation_thread = None
+                                self._connection_thread_is_initialized.clear()
+                            thread.join(1)
+                            raise Exception("Cannot start full isolation thread")
+                        await asyncio.sleep(self.poll_interval)
+
+                else:
+                    # ensure to be not in the isolation thread itself
+                    while not self._connection_thread_is_initialized.is_set():
+                        if not thread.is_alive():
+                            raise Exception("Isolation thread is dead")
+                        await asyncio.sleep(self.poll_interval)
+
         if not initialized:
             await self._aenter()
         return self
@@ -159,12 +185,12 @@ class Connection:
     async def _aexit(self) -> typing.Optional[Thread]:
         if self._full_isolation:
             assert self._connection_thread_lock is not None
+            # the lock must be held on exit
             with self._connection_thread_lock:
                 if await self._aexit_raw():
                     loop = self._database._loop
                     thread = self._isolation_thread
-                    # after stopping the _isolation_thread is removed in thread
-                    if loop is not None:
+                    if loop is not None and loop.is_running():
                         loop.stop()
                     else:
                         self._isolation_thread = None
@@ -180,16 +206,21 @@ class Connection:
         exc_value: typing.Optional[BaseException] = None,
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
-        thread = None
-        try:
-            thread = await self._aexit()
-        finally:
-            if thread is not None and thread is not current_thread():
-                thread.join()
+        thread = await self._aexit()
+        if thread is not None and thread is not current_thread():
+            while thread.is_alive():
+                await asyncio.sleep(self.poll_interval)
+            thread.join(1)
 
     @property
-    def _loop(self) -> typing.Any:
+    def _loop(self) -> typing.Optional[asyncio.AbstractEventLoop]:
         return self._database._loop
+
+    @property
+    def poll_interval(self) -> float:
+        if self._orig_database.poll_interval < 0:
+            raise RuntimeError("Not supposed to run in the poll path")
+        return self._orig_database.poll_interval
 
     @property
     def _backend(self) -> interfaces.DatabaseBackend:

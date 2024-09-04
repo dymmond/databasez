@@ -1,44 +1,44 @@
 import asyncio
-import contextvars
 import inspect
 import typing
+from concurrent.futures import Future
 from functools import partial, wraps
 from threading import Thread
 from types import TracebackType
 
 DATABASEZ_RESULT_TIMEOUT: typing.Optional[float] = None
-DATABASEZ_WRAP_IN_THREAD: bool = False
-
-try:
-    to_thread = asyncio.to_thread
-except AttributeError:
-    # for py <= 3.8
-    async def to_thread(
-        func: typing.Any, /, *args: typing.Any, **kwargs: typing.Any
-    ) -> typing.Any:
-        loop = asyncio.get_running_loop()
-        ctx = contextvars.copy_context()
-        func_call = partial(ctx.run, func, *args, **kwargs)
-        return await loop.run_in_executor(None, func_call)
+# Poll with 0.1ms, this way CPU isn't at 100%
+DATABASEZ_POLL_INTERVAL: float = 0.0001
 
 
-def _run_coroutine_threadsafe_result_shim(
-    coro: typing.Coroutine, loop: asyncio.BaseEventLoop
+async def _arun_coroutine_threadsafe_result_shim(
+    future: Future, loop: asyncio.AbstractEventLoop, poll_interval: float
 ) -> typing.Any:
-    assert loop.is_running(), "loop is closed"
-    return asyncio.run_coroutine_threadsafe(coro, loop).result(DATABASEZ_RESULT_TIMEOUT)
+    while not future.done():
+        if loop.is_closed():
+            raise RuntimeError("loop submitted to is closed")
+        await asyncio.sleep(poll_interval)
+    return future.result(0)
 
 
 async def arun_coroutine_threadsafe(
-    coro: typing.Coroutine, loop: asyncio.BaseEventLoop
+    coro: typing.Coroutine, loop: typing.Optional[asyncio.AbstractEventLoop], poll_interval: float
 ) -> typing.Any:
     running_loop = asyncio.get_running_loop()
+    assert loop is not None and loop.is_running(), "loop is closed"
     if running_loop is loop:
         return await coro
-    elif not DATABASEZ_WRAP_IN_THREAD:
-        return _run_coroutine_threadsafe_result_shim(coro, loop)
-    else:
-        return await to_thread(_run_coroutine_threadsafe_result_shim, coro, loop)
+    if poll_interval < 0:
+        raise RuntimeError("Not supposed to run in the poll path")
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    try:
+        return await asyncio.wait_for(
+            _arun_coroutine_threadsafe_result_shim(future, loop, poll_interval),
+            DATABASEZ_RESULT_TIMEOUT,
+        )
+    except TimeoutError as exc:
+        future.cancel()
+        raise exc
 
 
 async_wrapper_slots = (
@@ -256,10 +256,24 @@ class AsyncHelperConnection:
             return result
 
     async def acall(self) -> typing.Any:
-        return await arun_coroutine_threadsafe(self.call(), self.connection._loop)
+        return await arun_coroutine_threadsafe(
+            self.call(), self.connection._loop, self.connection.poll_interval
+        )
 
     def __await__(self) -> typing.Any:
         return self.acall().__await__()
+
+    async def __aiter__(self) -> typing.Any:
+        result = await self.acall()
+        try:
+            while True:
+                yield await arun_coroutine_threadsafe(
+                    _arun_with_timeout(result.__anext__(), self.timeout),
+                    self.connection._loop,
+                    self.connection.poll_interval,
+                )
+        except StopAsyncIteration:
+            pass
 
     async def enter_intern(self) -> typing.Any:
         await self.connection.__aenter__()
@@ -275,7 +289,9 @@ class AsyncHelperConnection:
             await self.connection.__aexit__()
 
     async def __aenter__(self) -> typing.Any:
-        return await arun_coroutine_threadsafe(self.enter_intern(), self.connection._loop)
+        return await arun_coroutine_threadsafe(
+            self.enter_intern(), self.connection._loop, self.connection.poll_interval
+        )
 
     async def __aexit__(
         self,
@@ -284,7 +300,9 @@ class AsyncHelperConnection:
         traceback: typing.Optional[TracebackType] = None,
     ) -> None:
         assert self.ctm is not None
-        await arun_coroutine_threadsafe(self.exit_intern(), self.connection._loop)
+        await arun_coroutine_threadsafe(
+            self.exit_intern(), self.connection._loop, self.connection.poll_interval
+        )
 
 
 def multiloop_protector(

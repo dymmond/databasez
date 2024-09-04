@@ -56,6 +56,10 @@ from databasez.testclient import DatabaseTestClient
 
     <sup>Default: `None`, copy default or `testclient_default_full_isolation` (defaults to `True`) </sup>
 
+* **poll_interval** - When using multithreading, the poll_interval is used to retrieve results from other loops. It defaults to a sane value.
+
+    <sup>Default: `None`, copy default or `testclient_default_poll_interval` </sup>
+
 * **lazy_setup** - This sets up the db first up on connect not in init.
 
     <sup>Default: `None`, True if copying a database or `testclient_default_lazy_setup` (defaults to `False`)</sup>

@@ -31,6 +31,10 @@ from databasez import Database
 
   <sup>Default: `None`</sup>
 
+* **poll_interval** - When using multithreading, the poll_interval is used to retrieve results from other loops. It defaults to a sane value.
+
+  <sup>Default: `None`</sup>
+
 * **config** - A python like dictionary as alternative to the `url` that contains the information
 to connect to the database.
 
