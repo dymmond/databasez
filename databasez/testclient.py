@@ -9,7 +9,7 @@ from sqlalchemy_utils.functions.database import _sqlite_file_exists
 from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
-from databasez.utils import ThreadPassingExceptions
+from databasez.utils import DATABASEZ_POLL_INTERVAL, ThreadPassingExceptions
 
 
 async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
@@ -36,6 +36,7 @@ class DatabaseTestClient(Database):
     # hooks for overwriting defaults of args with None
     testclient_default_full_isolation: bool = True
     testclient_default_force_rollback: bool = False
+    testclient_default_poll_interval: float = DATABASEZ_POLL_INTERVAL
     testclient_default_lazy_setup: bool = False
     # customization hooks
     testclient_default_use_existing: bool = False
@@ -47,8 +48,9 @@ class DatabaseTestClient(Database):
         url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
         *,
         force_rollback: typing.Union[bool, None] = None,
-        use_existing: typing.Union[bool, None] = None,
         full_isolation: typing.Union[bool, None] = None,
+        poll_interval: typing.Union[float, None] = None,
+        use_existing: typing.Union[bool, None] = None,
         drop_database: typing.Union[bool, None] = None,
         lazy_setup: typing.Union[bool, None] = None,
         test_prefix: typing.Union[str, None] = None,
@@ -86,6 +88,8 @@ class DatabaseTestClient(Database):
                 lazy_setup = self.testclient_default_lazy_setup
             if force_rollback is None:
                 force_rollback = self.testclient_default_force_rollback
+            if poll_interval is None:
+                poll_interval = self.testclient_default_poll_interval
             url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
             test_database_url = (
                 url.replace(database=f"{test_prefix}{url.database}") if test_prefix else url
@@ -98,7 +102,13 @@ class DatabaseTestClient(Database):
                 self.setup_protected(self.testclient_operation_timeout_init)
                 self._setup_executed_init = True
 
-            super().__init__(test_database_url, force_rollback=force_rollback, **options)
+            super().__init__(
+                test_database_url,
+                force_rollback=force_rollback,
+                full_isolation=full_isolation,
+                poll_interval=poll_interval,
+                **options,
+            )
 
     async def setup(self) -> None:
         """

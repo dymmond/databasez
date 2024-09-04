@@ -1,5 +1,15 @@
 # Release Notes
 
+## 0.10.1
+
+### Added
+
+- `poll_interval` parameter (only relevant when using multithreading).
+
+### Fixed
+
+- Improved thread-security.
+- full_isolation was not passed through in TestClient.
 
 ## 0.10.0
 

@@ -11,7 +11,7 @@ from functools import lru_cache
 from types import TracebackType
 
 from databasez import interfaces
-from databasez.utils import arun_coroutine_threadsafe, multiloop_protector
+from databasez.utils import DATABASEZ_POLL_INTERVAL, arun_coroutine_threadsafe, multiloop_protector
 
 from .connection import Connection
 from .databaseurl import DatabaseURL
@@ -144,13 +144,15 @@ class Database:
 
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
     _databases_map: typing.Dict[typing.Any, Database]
-    _loop: typing.Any = None
+    _loop: typing.Optional[asyncio.AbstractEventLoop] = None
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
     options: typing.Any
     is_connected: bool = False
     _call_hooks: bool = True
+    _remove_global_connection: bool = True
     _full_isolation: bool = False
+    poll_interval: float
     _force_rollback: ForceRollback
     # descriptor
     force_rollback = ForceRollbackDescriptor()
@@ -162,6 +164,8 @@ class Database:
         force_rollback: typing.Union[bool, None] = None,
         config: typing.Optional["DictAny"] = None,
         full_isolation: typing.Union[bool, None] = None,
+        # for
+        poll_interval: typing.Union[float, None] = None,
         **options: typing.Any,
     ):
         init()
@@ -172,6 +176,8 @@ class Database:
             self.url = url.url
             self.options = url.options
             self._call_hooks = url._call_hooks
+            if poll_interval is None:
+                poll_interval = url.poll_interval
             if force_rollback is None:
                 force_rollback = bool(url.force_rollback)
             if full_isolation is None:
@@ -190,6 +196,9 @@ class Database:
                 force_rollback = False
             if full_isolation is None:
                 full_isolation = False
+            if poll_interval is None:
+                poll_interval = DATABASEZ_POLL_INTERVAL
+        self.poll_interval = poll_interval
         self._full_isolation = full_isolation
         self._force_rollback = ForceRollback(force_rollback)
         self.backend.owner = self
@@ -269,6 +278,8 @@ class Database:
         """
         loop = asyncio.get_running_loop()
         if self._loop is not None and loop != self._loop:
+            if self.poll_interval < 0:
+                raise RuntimeError("Subdatabases and polling are disabled")
             # copy when not in map
             if loop not in self._databases_map:
                 assert (
@@ -303,6 +314,8 @@ class Database:
         if self._global_connection is None:
             connection = Connection(self, force_rollback=True, full_isolation=self._full_isolation)
             self._global_connection = connection
+        else:
+            self._remove_global_connection = False
         return True
 
     async def disconnect_hook(self) -> None:
@@ -332,7 +345,7 @@ class Database:
                 assert not self._databases_map, "sub databases still active, force terminate them"
                 for sub_database in self._databases_map.values():
                     await arun_coroutine_threadsafe(
-                        sub_database.disconnect(True), sub_database._loop
+                        sub_database.disconnect(True), sub_database._loop, self.poll_interval
                     )
                 self._databases_map = {}
         assert not self._databases_map, "sub databases still active"
@@ -340,7 +353,8 @@ class Database:
         try:
             assert self._global_connection is not None
             await self._global_connection.__aexit__()
-            self._global_connection = None
+            if self._remove_global_connection:
+                self._global_connection = None
             self._connection = None
         finally:
             logger.info(
