@@ -396,12 +396,15 @@ async def test_transaction_rollback_low_level(database_url):
             assert len(results) == 0
 
 
+@pytest.mark.parametrize(
+    "full_isolation", [True, False], ids=["full_isolation", "no_full_isolation"]
+)
 @pytest.mark.asyncio
-async def test_transaction_decorator(database_url):
+async def test_transaction_decorator(database_url, full_isolation):
     """
     Ensure that @database.transaction() is supported.
     """
-    database = Database(database_url, force_rollback=True, full_isolation=True)
+    database = Database(database_url, force_rollback=True, full_isolation=full_isolation)
 
     @database.transaction()
     async def insert_data(raise_exception):
@@ -423,6 +426,11 @@ async def test_transaction_decorator(database_url):
         query = notes.select()
         results = await database.fetch_all(query=query)
         assert len(results) == 1
+
+    async with database:
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 0
 
 
 # highly default isolation level specific
