@@ -1,5 +1,20 @@
 # Release Notes
 
+## 0.10.2
+
+### Fixed
+
+- Fix transactions in multi-threading contexts.
+
+### Changed
+
+- The transaction stack contains the backend too.
+
+### Removed
+
+- Remove `ACTIVE_TRANSACTIONS` ContextVar plus tests for it. It became unreliable with multithreading.
+
+
 ## 0.10.1
 
 ### Added

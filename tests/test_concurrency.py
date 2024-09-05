@@ -88,8 +88,16 @@ def _future_helper(awaitable, future):
         ("thread_join_with_context", True),
         ("thread_join_without_context", True),
     ],
+    ids=[
+        "to_thread-no_full_isolation",
+        "to_thread-full_isolation",
+        "thread_join_with_context-full_isolation",
+        "thread_join_without_context-full_isolation",
+    ],
 )
-@pytest.mark.parametrize("force_rollback", [True, False])
+@pytest.mark.parametrize(
+    "force_rollback", [True, False], ids=["force_rollback", "no_force_rollback"]
+)
 @pytest.mark.asyncio
 async def test_multi_thread_db(database_url, force_rollback, join_type, full_isolation):
     database_url = DatabaseURL(
@@ -146,8 +154,16 @@ async def test_multi_thread_db(database_url, force_rollback, join_type, full_iso
         ("thread_join_with_context", True),
         ("thread_join_without_context", True),
     ],
+    ids=[
+        "to_thread-no_full_isolation",
+        "to_thread-full_isolation",
+        "thread_join_with_context-full_isolation",
+        "thread_join_without_context-full_isolation",
+    ],
 )
-@pytest.mark.parametrize("force_rollback", [True, False])
+@pytest.mark.parametrize(
+    "force_rollback", [True, False], ids=["force_rollback", "no_force_rollback"]
+)
 def test_multi_thread_db_anyio(
     run_params, plain_database_url, force_rollback, join_type, full_isolation
 ):
@@ -169,8 +185,16 @@ def test_multi_thread_db_anyio(
         ("thread_join_with_context", True),
         ("thread_join_without_context", True),
     ],
+    ids=[
+        "to_thread-no_full_isolation",
+        "to_thread-full_isolation",
+        "thread_join_with_context-full_isolation",
+        "thread_join_without_context-full_isolation",
+    ],
 )
-@pytest.mark.parametrize("force_rollback", [True, False])
+@pytest.mark.parametrize(
+    "force_rollback", [True, False], ids=["force_rollback", "no_force_rollback"]
+)
 @pytest.mark.asyncio
 async def test_multi_thread_db_contextmanager(
     database_url, force_rollback, join_type, full_isolation
@@ -178,16 +202,22 @@ async def test_multi_thread_db_contextmanager(
     async with Database(
         database_url, force_rollback=force_rollback, full_isolation=full_isolation
     ) as database:
-        query = notes.insert().values(text="examplecontext", completed=True)
-        await database.execute(query, timeout=10)
+        if not str(database_url.url).startswith("sqlite"):
+            async with database.transaction():
+                query = notes.insert().values(text="examplecontext", completed=True)
+                await database.execute(query, timeout=10)
+        else:
+            query = notes.insert().values(text="examplecontext", completed=True)
+            await database.execute(query, timeout=10)
         database._non_copied_attribute = True
 
         async def db_connect(depth=3):
             # many parallel and nested threads
             async with database as new_database:
                 assert not hasattr(new_database, "_non_copied_attribute")
-                query = notes.select()
-                result = await database.fetch_one(query)
+                async with database.transaction():
+                    query = notes.select()
+                    result = await database.fetch_one(query)
                 assert result.text == "examplecontext"
                 assert result.completed is True
                 # test delegate to sub database

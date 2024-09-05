@@ -4,7 +4,6 @@ import typing
 from concurrent.futures import Future
 from functools import partial, wraps
 from threading import Thread
-from types import TracebackType
 
 DATABASEZ_RESULT_TIMEOUT: typing.Optional[float] = None
 # Poll with 0.1ms, this way CPU isn't at 100%
@@ -184,125 +183,10 @@ def _run_with_timeout(inp: typing.Any, timeout: typing.Optional[float]) -> typin
 
 async def _arun_with_timeout(inp: typing.Any, timeout: typing.Optional[float]) -> typing.Any:
     if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
-        inp = await asyncio.wait_for(inp, timeout=timeout)
+        return await asyncio.wait_for(inp, timeout=timeout)
     elif inspect.isawaitable(inp):
         return await inp
     return inp
-
-
-class AsyncHelperDatabase:
-    def __init__(
-        self,
-        database: typing.Any,
-        fn: typing.Callable,
-        args: typing.Any,
-        kwargs: typing.Any,
-        timeout: typing.Optional[float],
-    ) -> None:
-        self.database = database
-        self.fn = fn
-        self.args = args
-        self.kwargs = kwargs
-        self.timeout = timeout
-        self.ctm = None
-
-    async def call(self) -> typing.Any:
-        async with self.database as database:
-            return await _arun_with_timeout(
-                self.fn(database, *self.args, **self.kwargs), self.timeout
-            )
-
-    def __await__(self) -> typing.Any:
-        return self.call().__await__()
-
-    async def __aenter__(self) -> typing.Any:
-        database = await self.database.__aenter__()
-        self.ctm = await _arun_with_timeout(
-            self.fn(database, *self.args, **self.kwargs), timeout=self.timeout
-        )
-        return await self.ctm.__aenter__()
-
-    async def __aexit__(
-        self,
-        exc_type: typing.Optional[typing.Type[BaseException]] = None,
-        exc_value: typing.Optional[BaseException] = None,
-        traceback: typing.Optional[TracebackType] = None,
-    ) -> None:
-        assert self.ctm is not None
-        try:
-            await _arun_with_timeout(self.ctm.__aexit__(exc_type, exc_value, traceback), None)
-        finally:
-            await self.database.__aexit__()
-
-
-class AsyncHelperConnection:
-    def __init__(
-        self,
-        connection: typing.Any,
-        fn: typing.Callable,
-        args: typing.Any,
-        kwargs: typing.Any,
-        timeout: typing.Optional[float],
-    ) -> None:
-        self.connection = connection
-        self.fn = partial(fn, self.connection, *args, **kwargs)
-        self.timeout = timeout
-        self.ctm = None
-
-    async def call(self) -> typing.Any:
-        async with self.connection:
-            # is automatically awaited
-            result = await _arun_with_timeout(self.fn(), self.timeout)
-            return result
-
-    async def acall(self) -> typing.Any:
-        return await arun_coroutine_threadsafe(
-            self.call(), self.connection._loop, self.connection.poll_interval
-        )
-
-    def __await__(self) -> typing.Any:
-        return self.acall().__await__()
-
-    async def __aiter__(self) -> typing.Any:
-        result = await self.acall()
-        try:
-            while True:
-                yield await arun_coroutine_threadsafe(
-                    _arun_with_timeout(result.__anext__(), self.timeout),
-                    self.connection._loop,
-                    self.connection.poll_interval,
-                )
-        except StopAsyncIteration:
-            pass
-
-    async def enter_intern(self) -> typing.Any:
-        await self.connection.__aenter__()
-        self.ctm = await self.call()
-        return await self.ctm.__aenter__()
-
-    async def exit_intern(self) -> typing.Any:
-        assert self.ctm is not None
-        try:
-            await self.ctm.__aexit__()
-        finally:
-            self.ctm = None
-            await self.connection.__aexit__()
-
-    async def __aenter__(self) -> typing.Any:
-        return await arun_coroutine_threadsafe(
-            self.enter_intern(), self.connection._loop, self.connection.poll_interval
-        )
-
-    async def __aexit__(
-        self,
-        exc_type: typing.Optional[typing.Type[BaseException]] = None,
-        exc_value: typing.Optional[BaseException] = None,
-        traceback: typing.Optional[TracebackType] = None,
-    ) -> None:
-        assert self.ctm is not None
-        await arun_coroutine_threadsafe(
-            self.exit_intern(), self.connection._loop, self.connection.poll_interval
-        )
 
 
 def multiloop_protector(
@@ -339,12 +223,7 @@ def multiloop_protector(
                 else:
                     if fail_with_different_loop:
                         raise RuntimeError("Different loop used")
-                    helper = (
-                        AsyncHelperDatabase
-                        if hasattr(self, "_databases_map")
-                        else AsyncHelperConnection
-                    )
-                    return helper(self, fn, args, kwargs, timeout=timeout)
+                    return self.async_helper(self, fn, args, kwargs, timeout=timeout)
             return _run_with_timeout(fn(self, *args, **kwargs), timeout=timeout)
 
         return typing.cast(MultiloopProtectorCallable, wrapper)

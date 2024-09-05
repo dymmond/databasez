@@ -164,71 +164,6 @@ async def test_connection_cleanup_garbagecollector(database_url):
 
 
 @pytest.mark.asyncio
-async def test_transaction_context_cleanup_contextmanager(database_url):
-    """
-    Ensure that contextvar transactions are not persisted unecessarily.
-    """
-    from databasez.core import ACTIVE_TRANSACTIONS
-
-    assert ACTIVE_TRANSACTIONS.get() is None
-
-    async with Database(database_url) as database:
-        async with database.transaction() as transaction:
-            open_transactions = ACTIVE_TRANSACTIONS.get()
-            assert isinstance(open_transactions, MutableMapping)
-            assert open_transactions.get(transaction) is transaction._transaction
-
-        # Context manager closes, open_transactions is cleaned up
-        open_transactions = ACTIVE_TRANSACTIONS.get()
-        assert isinstance(open_transactions, MutableMapping)
-        assert open_transactions.get(transaction, None) is None
-
-
-@pytest.mark.asyncio
-async def test_transaction_context_cleanup_garbagecollector(database_url):
-    """
-    Ensure that contextvar transactions are not persisted unecessarily, even
-    if exit handlers are not called.
-    This test should be an XFAIL, but cannot be due to the way that is hangs
-    during teardown.
-    """
-    from databasez.core import ACTIVE_TRANSACTIONS
-
-    assert ACTIVE_TRANSACTIONS.get() is None
-
-    async with Database(database_url) as database:
-        # Should be tracking the transaction
-        open_transactions = ACTIVE_TRANSACTIONS.get()
-        assert open_transactions is None
-        transaction = database.transaction()
-        await transaction.start()
-        # is replaced after start() call
-        open_transactions = ACTIVE_TRANSACTIONS.get()
-        assert len(open_transactions) == 1
-
-        assert open_transactions.get(transaction) is transaction._transaction
-
-        # neither .commit, .rollback, nor .__aexit__ are called
-        del transaction
-        gc.collect()
-
-        # A strong reference to the transaction is kept alive by the connection's
-        # ._transaction_stack, so it is still be tracked at this point.
-        assert len(open_transactions) == 1
-
-        # If that were magically cleared, the transaction would be cleaned up,
-        # but as it stands this always causes a hang during teardown at
-        # `Database(...).disconnect()` if the transaction is not closed.
-        transaction = database.connection()._transaction_stack[-1]
-        await transaction.rollback()
-        assert transaction.connection._connection_counter == 0
-        del transaction
-
-        # Now with the transaction rolled-back, it should be cleaned up.
-        assert len(open_transactions) == 0
-
-
-@pytest.mark.asyncio
 async def test_iterate_outside_transaction_with_temp_table(database_url):
     """
     Same as test_iterate_outside_transaction_with_values but uses a
@@ -466,7 +401,7 @@ async def test_transaction_decorator(database_url):
     """
     Ensure that @database.transaction() is supported.
     """
-    database = Database(database_url, force_rollback=True)
+    database = Database(database_url, force_rollback=True, full_isolation=True)
 
     @database.transaction()
     async def insert_data(raise_exception):
@@ -570,11 +505,9 @@ async def test_transaction_context_sibling_task_isolation(database_url):
             # Parent task is now in a transaction, we should not
             # see its transaction backend since this task was
             # _started_ in a context where no transaction was active.
-            assert transaction._transaction is None
             end.set()
 
         transaction = database.transaction()
-        assert transaction._transaction is None
         task = asyncio.create_task(check_transaction(transaction))
 
         async with transaction:
