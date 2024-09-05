@@ -247,7 +247,7 @@ class Database:
             if force_rollback is None:
                 force_rollback = False
             if full_isolation is None:
-                full_isolation = True
+                full_isolation = False
             if poll_interval is None:
                 poll_interval = DATABASEZ_POLL_INTERVAL
         self.poll_interval = poll_interval
