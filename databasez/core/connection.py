@@ -3,13 +3,14 @@ from __future__ import annotations
 import asyncio
 import typing
 import weakref
+from functools import partial
 from threading import Event, Lock, Thread, current_thread
 from types import TracebackType
 
 from sqlalchemy import text
 
 from databasez import interfaces
-from databasez.utils import multiloop_protector
+from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multiloop_protector
 
 from .transaction import Transaction
 
@@ -59,7 +60,50 @@ def _init_thread(
             database._global_connection._isolation_thread = None  # type: ignore
 
 
+class AsyncHelperConnection:
+    def __init__(
+        self,
+        connection: Connection,
+        fn: typing.Callable,
+        args: typing.Any,
+        kwargs: typing.Any,
+        timeout: typing.Optional[float],
+    ) -> None:
+        self.connection = connection
+        self.fn = partial(fn, self.connection, *args, **kwargs)
+        self.timeout = timeout
+        self.ctm = None
+
+    async def call(self) -> typing.Any:
+        # is automatically awaited
+        result = await _arun_with_timeout(self.fn(), self.timeout)
+        return result
+
+    async def acall(self) -> typing.Any:
+        return await arun_coroutine_threadsafe(
+            self.call(), self.connection._loop, self.connection.poll_interval
+        )
+
+    def __await__(self) -> typing.Any:
+        return self.acall().__await__()
+
+    async def __aiter__(self) -> typing.Any:
+        result = await self.acall()
+        try:
+            while True:
+                yield await arun_coroutine_threadsafe(
+                    _arun_with_timeout(result.__anext__(), self.timeout),
+                    self.connection._loop,
+                    self.connection.poll_interval,
+                )
+        except StopAsyncIteration:
+            pass
+
+
 class Connection:
+    # async helper
+    async_helper: typing.Type[AsyncHelperConnection] = AsyncHelperConnection
+
     def __init__(
         self, database: Database, force_rollback: bool = False, full_isolation: bool = False
     ) -> None:
@@ -86,10 +130,17 @@ class Connection:
         self._connection.owner = self
         self._connection_counter = 0
 
-        self._transaction_stack: typing.List[Transaction] = []
+        # for keeping weak references to transactions active
+        self._transaction_stack: typing.List[
+            typing.Tuple[Transaction, interfaces.TransactionBackend]
+        ] = []
 
         self._force_rollback = force_rollback
         self.connection_transaction: typing.Optional[Transaction] = None
+
+    @multiloop_protector(True)
+    def _get_connection_backend(self) -> interfaces.ConnectionBackend:
+        return self._connection
 
     @multiloop_protector(False, passthrough_timeout=True)  # fail when specifying timeout
     async def _aenter(self) -> None:
@@ -111,8 +162,7 @@ class Connection:
                         self.connection_transaction = self.transaction(
                             force_rollback=self._force_rollback
                         )
-                        # make re-entrant, we have already the connection lock
-                        await self.connection_transaction.start(True)
+                        await self.connection_transaction.start()
             except BaseException as e:
                 self._connection_counter -= 1
                 raise e

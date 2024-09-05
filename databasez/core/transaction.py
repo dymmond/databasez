@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import functools
+import asyncio
 import typing
-import weakref
-from contextlib import AsyncExitStack
-from contextvars import ContextVar
+from functools import partial, wraps
 from types import TracebackType
 
-from databasez import interfaces
+from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multiloop_protector
 
 if typing.TYPE_CHECKING:
     from .connection import Connection
@@ -16,12 +14,37 @@ if typing.TYPE_CHECKING:
 _CallableType = typing.TypeVar("_CallableType", bound=typing.Callable)
 
 
-ACTIVE_TRANSACTIONS: ContextVar[
-    typing.Optional[weakref.WeakKeyDictionary[Transaction, interfaces.TransactionBackend]]
-] = ContextVar("ACTIVE_TRANSACTIONS", default=None)
+class AsyncHelperTransaction:
+    def __init__(
+        self,
+        transaction: typing.Any,
+        fn: typing.Callable,
+        args: typing.Any,
+        kwargs: typing.Any,
+        timeout: typing.Optional[float],
+    ) -> None:
+        self.transaction = transaction
+        self.fn = partial(fn, self.transaction, *args, **kwargs)
+        self.timeout = timeout
+        self.ctm = None
+
+    async def call(self) -> typing.Any:
+        # is automatically awaited
+        return await _arun_with_timeout(self.fn(), self.timeout)
+
+    async def acall(self) -> typing.Any:
+        return await arun_coroutine_threadsafe(
+            self.call(), self.transaction._loop, self.transaction.poll_interval
+        )
+
+    def __await__(self) -> typing.Any:
+        return self.acall().__await__()
 
 
 class Transaction:
+    # async helper
+    async_helper: typing.Type[AsyncHelperTransaction] = AsyncHelperTransaction
+
     def __init__(
         self,
         connection_callable: typing.Callable[[], typing.Optional[Connection]],
@@ -42,42 +65,20 @@ class Transaction:
         return conn
 
     @property
-    def _transaction(self) -> typing.Optional[interfaces.TransactionBackend]:
-        transactions = ACTIVE_TRANSACTIONS.get()
-        if transactions is None:
-            return None
+    def _loop(self) -> typing.Optional[asyncio.AbstractEventLoop]:
+        return self.connection._loop
 
-        return transactions.get(self, None)
-
-    @_transaction.setter
-    def _transaction(
-        self, transaction: typing.Optional[interfaces.TransactionBackend]
-    ) -> typing.Optional[interfaces.TransactionBackend]:
-        transactions = ACTIVE_TRANSACTIONS.get()
-        if transactions is None:
-            # shortcut, we don't need to initialize anything for None (remove transaction)
-            if transaction is None:
-                return None
-            transactions = weakref.WeakKeyDictionary()
-        else:
-            transactions = transactions.copy()
-
-        if transaction is None:
-            transactions.pop(self, None)
-        else:
-            transactions[self] = transaction
-        # It is always a copy required to
-        # prevent sideeffects between contexts
-        ACTIVE_TRANSACTIONS.set(transactions)
-
-        return transactions.get(self, None)
+    @property
+    def poll_interval(self) -> float:
+        return self.connection.poll_interval
 
     async def __aenter__(self) -> Transaction:
         """
         Called when entering `async with database.transaction()`
         """
+        # when used with existing transaction, please call start if/when required
         if self._existing_transaction is None:
-            await self.start()
+            await self.start(cleanup_on_error=False)
         return self
 
     async def __aexit__(
@@ -105,60 +106,91 @@ class Transaction:
         Called if using `@database.transaction()` as a decorator.
         """
 
-        @functools.wraps(func)
+        @wraps(func)
         async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
             async with self:
-                return await func(*args, **kwargs)
+                await func(*args, **kwargs)
 
         return wrapper  # type: ignore
 
-    async def start(self, without_transaction_lock: bool = False) -> Transaction:
-        connection = self.connection
+    # called directly from connection
+    @multiloop_protector(False)
+    async def _start(
+        self,
+        connection: Connection,
+        timeout: typing.Optional[
+            float
+        ] = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> None:
+        assert connection._loop
 
-        async with AsyncExitStack() as cm:
-            if not without_transaction_lock:
-                await cm.enter_async_context(connection._transaction_lock)
+        async with connection._transaction_lock:
             is_root = not connection._transaction_stack
-            _transaction = connection._connection.transaction(self._existing_transaction)
+            # we retrieve the base connection here, loop protection is required
+            _transaction = connection._get_connection_backend().transaction(
+                self._existing_transaction
+            )
             _transaction.owner = self
-            # will be terminated with connection, don't bump
-            # fixes also a locking issue
-            if connection.connection_transaction is not self:
-                await connection.__aenter__()
             if self._existing_transaction is None:
                 await _transaction.start(is_root=is_root, **self._extra_options)
+            # because we have an await before, we need the _transaction_lock
             self._transaction = _transaction
-            connection._transaction_stack.append(self)
+            connection._transaction_stack.append((self, _transaction))
+            _transaction = self._transaction
+
+    # called directly from connection
+    async def start(
+        self,
+        timeout: typing.Optional[float] = None,
+        cleanup_on_error: bool = True,
+    ) -> Transaction:
+        connection = self.connection
+        # count up connection and init multithreading-safe the isolation thread
+        # benefit 2: setup works with transaction_lock
+        if connection.connection_transaction is not self:
+            await connection.__aenter__()
+        # we have a loop now in case of full_isolation
+        try:
+            await self._start(connection, timeout=timeout)
+        except BaseException as exc:
+            # normal start call
+            if cleanup_on_error and connection.connection_transaction is not self:
+                await connection.__aexit__()
+            raise exc
         return self
 
-    async def commit(self) -> None:
+    @multiloop_protector(False)
+    async def commit(
+        self,
+        timeout: typing.Optional[
+            float
+        ] = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> None:
         connection = self.connection
         async with connection._transaction_lock:
-            _transaction = self._transaction
             # some transactions are tied to connections and are not on the transaction stack
-            if _transaction is not None:
-                # delete transaction from ACTIVE_TRANSACTIONS
-                self._transaction = None
-                assert connection._transaction_stack[-1] is self
-                connection._transaction_stack.pop()
+            if connection._transaction_stack and connection._transaction_stack[-1][0] is self:
+                _, _transaction = connection._transaction_stack.pop()
                 await _transaction.commit()
-        # if a connection_transaction, the connetion cleans it up in __aexit__
+        # if a connection_transaction, the connection cleans it up in __aexit__
         # prevent loop
         if connection.connection_transaction is not self:
             await connection.__aexit__()
 
-    async def rollback(self) -> None:
+    @multiloop_protector(False)
+    async def rollback(
+        self,
+        timeout: typing.Optional[
+            float
+        ] = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> None:
         connection = self.connection
         async with connection._transaction_lock:
-            _transaction = self._transaction
             # some transactions are tied to connections and are not on the transaction stack
-            if _transaction is not None:
-                # delete transaction from ACTIVE_TRANSACTIONS
-                self._transaction = None
-                assert connection._transaction_stack[-1] is self
-                connection._transaction_stack.pop()
+            if connection._transaction_stack and connection._transaction_stack[-1][0] is self:
+                _, _transaction = connection._transaction_stack.pop()
                 await _transaction.rollback()
-        # if a connection_transaction, the connetion cleans it up in __aexit__
+        # if a connection_transaction, the connection cleans it up in __aexit__
         # prevent loop
         if connection.connection_transaction is not self:
             await connection.__aexit__()

@@ -11,7 +11,12 @@ from functools import lru_cache
 from types import TracebackType
 
 from databasez import interfaces
-from databasez.utils import DATABASEZ_POLL_INTERVAL, arun_coroutine_threadsafe, multiloop_protector
+from databasez.utils import (
+    DATABASEZ_POLL_INTERVAL,
+    _arun_with_timeout,
+    arun_coroutine_threadsafe,
+    multiloop_protector,
+)
 
 from .connection import Connection
 from .databaseurl import DatabaseURL
@@ -118,6 +123,51 @@ class ForceRollbackDescriptor:
         obj._force_rollback.set(None)
 
 
+class AsyncHelperDatabase:
+    def __init__(
+        self,
+        database: Database,
+        fn: typing.Callable,
+        args: typing.Any,
+        kwargs: typing.Any,
+        timeout: typing.Optional[float],
+    ) -> None:
+        self.database = database
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.timeout = timeout
+        self.ctm = None
+
+    async def call(self) -> typing.Any:
+        async with self.database as database:
+            return await _arun_with_timeout(
+                self.fn(database, *self.args, **self.kwargs), self.timeout
+            )
+
+    def __await__(self) -> typing.Any:
+        return self.call().__await__()
+
+    async def __aenter__(self) -> typing.Any:
+        database = await self.database.__aenter__()
+        self.ctm = await _arun_with_timeout(
+            self.fn(database, *self.args, **self.kwargs), timeout=self.timeout
+        )
+        return await self.ctm.__aenter__()
+
+    async def __aexit__(
+        self,
+        exc_type: typing.Optional[typing.Type[BaseException]] = None,
+        exc_value: typing.Optional[BaseException] = None,
+        traceback: typing.Optional[TracebackType] = None,
+    ) -> None:
+        assert self.ctm is not None
+        try:
+            await _arun_with_timeout(self.ctm.__aexit__(exc_type, exc_value, traceback), None)
+        finally:
+            await self.database.__aexit__()
+
+
 class Database:
     """
     An abstraction on the top of the EncodeORM databases.Database object.
@@ -156,6 +206,8 @@ class Database:
     _force_rollback: ForceRollback
     # descriptor
     force_rollback = ForceRollbackDescriptor()
+    # async helper
+    async_helper: typing.Type[AsyncHelperDatabase] = AsyncHelperDatabase
 
     def __init__(
         self,
