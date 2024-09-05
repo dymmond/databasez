@@ -400,10 +400,6 @@ async with database.transaction(isolation_level="serializable"):
     ...
 ```
 
-!!! Warning
-    When using force_rollback, transactions require the parameter `full_isolation` when using multithreading.
-    Otherwise the stack is in disarray.
-
 ## Reusing sqlalchemy engine of databasez
 
 For integration in other libraries databasez has also the AsyncEngine exposed via the `engine` property.
