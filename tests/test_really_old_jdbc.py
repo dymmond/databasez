@@ -1,5 +1,6 @@
 import pytest
 import sqlalchemy
+from sqlalchemy.pool import NullPool
 
 from databasez import Database
 
@@ -23,7 +24,8 @@ async def test_jdbc_connect():
     Test basic connection
     """
     async with Database(
-        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC"
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
+        poolclass=NullPool,
     ) as database:
         async with database.connection():
             pass
@@ -36,7 +38,8 @@ async def test_jdbc_queries():
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
     async with Database(
-        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC"
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
+        poolclass=NullPool,
     ) as database:
         async with database.connection() as connection:
             await connection.create_all(metadata)
