@@ -58,6 +58,9 @@ can also use the queries. Check out the [official tutorial](https://docs.sqlalch
 Connections are managed as task-local state, with driver implementations using connection pooling
 behind the scenes.
 
+Task-local implies, you need a new task for a new connection. This is important when querying during iterations.
+You will need to wrap the new query in a Task (e.g. by `create_task`).
+
 ## Raw Queries
 
 ```python
