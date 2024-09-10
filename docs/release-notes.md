@@ -1,5 +1,13 @@
 # Release Notes
 
+## 0.10.3
+
+### Fixed
+
+- The global connection is now entered lazily despite sub-databases.
+- Fix deadlock with full_isolation off.
+- Fix database.transaction() failing because of AsyncDatabaseHelper.
+
 ## 0.10.2
 
 ### Fixed
