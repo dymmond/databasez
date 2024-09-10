@@ -343,11 +343,7 @@ class Database:
                 )
                 # prevent side effects of connect_hook
                 database._call_hooks = False
-                # only enter when full_isolation is active
-                if self._global_connection._full_isolation:
-                    database._global_connection = await self._global_connection.__aenter__()
-                else:
-                    database._global_connection = self._global_connection
+                database._global_connection = self._global_connection
                 self._databases_map[loop] = database
             # forward call
             return await self._databases_map[loop].connect()
@@ -408,8 +404,8 @@ class Database:
 
         try:
             assert self._global_connection is not None
-            await self._global_connection.__aexit__()
             if self._remove_global_connection:
+                await self._global_connection.__aexit__()
                 self._global_connection = None
             self._connection = None
         finally:
