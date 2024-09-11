@@ -211,7 +211,7 @@ class Database:
 
     def __init__(
         self,
-        url: typing.Optional[typing.Union[str, DatabaseURL, URL, Database]] = None,
+        url: typing.Union[str, DatabaseURL, URL, Database, None] = None,
         *,
         force_rollback: typing.Union[bool, None] = None,
         config: typing.Optional["DictAny"] = None,

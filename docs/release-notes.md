@@ -7,6 +7,7 @@
 - The global connection is now entered lazily despite sub-databases.
 - Fix deadlock with full_isolation off.
 - Fix database.transaction() failing because of AsyncDatabaseHelper.
+- Fix DatabaseTestClient not able to use config initialization.
 
 ## 0.10.2
 

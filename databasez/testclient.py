@@ -3,7 +3,7 @@ import os
 import typing
 from typing import Any
 
-import sqlalchemy as sa
+import sqlalchemy
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy_utils.functions.database import _sqlite_file_exists
 from sqlalchemy_utils.functions.orm import quote
@@ -45,7 +45,7 @@ class DatabaseTestClient(Database):
 
     def __init__(
         self,
-        url: typing.Union[str, "DatabaseURL", "sa.URL", Database],
+        url: typing.Union[str, DatabaseURL, sqlalchemy.URL, Database, None] = None,
         *,
         force_rollback: typing.Union[bool, None] = None,
         full_isolation: typing.Union[bool, None] = None,
@@ -66,13 +66,6 @@ class DatabaseTestClient(Database):
             test_prefix = self.testclient_default_test_prefix
         self._setup_executed_init = False
         if isinstance(url, Database):
-            test_database_url = (
-                url.url.replace(database=f"{test_prefix}{url.url.database}")
-                if test_prefix
-                else url.url
-            )
-            # replace only if not cloning a DatabaseTestClient
-            self.test_db_url = str(getattr(url, "test_db_url", test_database_url))
             self.use_existing = getattr(url, "use_existing", use_existing)
             self.drop = getattr(url, "drop", drop_database)
             # only if explicit set to False
@@ -80,9 +73,12 @@ class DatabaseTestClient(Database):
                 self.setup_protected(self.testclient_operation_timeout_init)
                 self._setup_executed_init = True
             super().__init__(url, force_rollback=force_rollback, **options)
-            # fix url
-            if str(self.url) != self.test_db_url:
-                self.url = test_database_url
+            if hasattr(url, "test_db_url"):
+                self.test_db_url = url.test_db_url
+            else:
+                if test_prefix:
+                    self.url = self.url.replace(database=f"{test_prefix}{self.url.database}")
+                self.test_db_url = str(self.url)
         else:
             if lazy_setup is None:
                 lazy_setup = self.testclient_default_lazy_setup
@@ -90,25 +86,22 @@ class DatabaseTestClient(Database):
                 force_rollback = self.testclient_default_force_rollback
             if poll_interval is None:
                 poll_interval = self.testclient_default_poll_interval
-            url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
-            test_database_url = (
-                url.replace(database=f"{test_prefix}{url.database}") if test_prefix else url
-            )
-            self.test_db_url = str(test_database_url)
             self.use_existing = use_existing
             self.drop = drop_database
-            # if None or False
-            if not lazy_setup:
-                self.setup_protected(self.testclient_operation_timeout_init)
-                self._setup_executed_init = True
-
             super().__init__(
-                test_database_url,
+                url,
                 force_rollback=force_rollback,
                 full_isolation=full_isolation,
                 poll_interval=poll_interval,
                 **options,
             )
+            if test_prefix:
+                self.url = self.url.replace(database=f"{test_prefix}{self.url.database}")
+            self.test_db_url = str(self.url)
+            # if None or False
+            if not lazy_setup:
+                self.setup_protected(self.testclient_operation_timeout_init)
+                self._setup_executed_init = True
 
     async def setup(self) -> None:
         """
@@ -150,7 +143,7 @@ class DatabaseTestClient(Database):
         return await self.database_exists(self.test_db_url)
 
     @classmethod
-    async def database_exists(cls, url: typing.Union[str, "sa.URL", DatabaseURL]) -> bool:
+    async def database_exists(cls, url: typing.Union[str, "sqlalchemy.URL", DatabaseURL]) -> bool:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
@@ -160,7 +153,9 @@ class DatabaseTestClient(Database):
                 url = url.replace(database=db)
                 async with Database(url, full_isolation=False, force_rollback=False) as db_client:
                     try:
-                        return bool(await _get_scalar_result(db_client.engine, sa.text(text)))
+                        return bool(
+                            await _get_scalar_result(db_client.engine, sqlalchemy.text(text))
+                        )
                     except (ProgrammingError, OperationalError):
                         pass
             return False
@@ -172,7 +167,7 @@ class DatabaseTestClient(Database):
                 "WHERE SCHEMA_NAME = '%s'" % database
             )
             async with Database(url, full_isolation=False, force_rollback=False) as db_client:
-                return bool(await _get_scalar_result(db_client.engine, sa.text(text)))
+                return bool(await _get_scalar_result(db_client.engine, sqlalchemy.text(text)))
 
         elif dialect_name == "sqlite":
             if database:
@@ -185,14 +180,14 @@ class DatabaseTestClient(Database):
             text = "SELECT 1"
             async with Database(url, full_isolation=False, force_rollback=False) as db_client:
                 try:
-                    return bool(await _get_scalar_result(db_client.engine, sa.text(text)))
+                    return bool(await _get_scalar_result(db_client.engine, sqlalchemy.text(text)))
                 except (ProgrammingError, OperationalError):
                     return False
 
     @classmethod
     async def create_database(
         cls,
-        url: typing.Union[str, "sa.URL", DatabaseURL],
+        url: typing.Union[str, "sqlalchemy.URL", DatabaseURL],
         encoding: str = "utf8",
         template: typing.Any = None,
     ) -> None:
@@ -229,29 +224,29 @@ class DatabaseTestClient(Database):
                     text = "CREATE DATABASE {} ENCODING '{}' TEMPLATE {}".format(
                         quote(conn, database), encoding, quote(conn, template)
                     )
-                    await conn.execute(sa.text(text))
+                    await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "mysql":
                 async with db_client.engine.begin() as conn:  # type: ignore
                     text = "CREATE DATABASE {} CHARACTER SET = '{}'".format(
                         quote(conn, database), encoding
                     )
-                    await conn.execute(sa.text(text))
+                    await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "sqlite" and database != ":memory:":
                 if database:
                     # create a sqlite file
                     async with db_client.engine.begin() as conn:  # type: ignore
-                        await conn.execute(sa.text("CREATE TABLE DB(id int)"))
-                        await conn.execute(sa.text("DROP TABLE DB"))
+                        await conn.execute(sqlalchemy.text("CREATE TABLE DB(id int)"))
+                        await conn.execute(sqlalchemy.text("DROP TABLE DB"))
 
             else:
                 async with db_client.engine.begin() as conn:  # type: ignore
                     text = f"CREATE DATABASE {quote(conn, database)}"
-                    await conn.execute(sa.text(text))
+                    await conn.execute(sqlalchemy.text(text))
 
     @classmethod
-    async def drop_database(cls, url: typing.Union[str, "sa.URL", DatabaseURL]) -> None:
+    async def drop_database(cls, url: typing.Union[str, "sqlalchemy.URL", DatabaseURL]) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect = url.sqla_url.get_dialect(True)
@@ -310,7 +305,7 @@ class DatabaseTestClient(Database):
             else:
                 async with db_client.connection() as conn:
                     text = f"DROP DATABASE {quote(conn.async_connection, database)}"
-                    await conn.execute(sa.text(text))
+                    await conn.execute(sqlalchemy.text(text))
 
     def drop_db_protected(self) -> None:
         thread = ThreadPassingExceptions(

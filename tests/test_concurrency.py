@@ -21,7 +21,9 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
-if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
+if os.environ.get("TEST_NO_RISK_SEGFAULTS") or not any(
+    (x.endswith(" for SQL Server") for x in pyodbc.drivers())
+):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 

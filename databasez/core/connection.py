@@ -231,6 +231,7 @@ class Connection:
                     self._database._connection = None
         return closing
 
+    @multiloop_protector(False, passthrough_timeout=True)  # fail when specifying timeout
     async def _aexit(self) -> typing.Optional[Thread]:
         if self._full_isolation:
             assert self._connection_thread_lock is not None
@@ -248,7 +249,6 @@ class Connection:
             await self._aexit_raw()
         return None
 
-    @multiloop_protector(False, passthrough_timeout=True)  # fail when specifying timeout
     async def __aexit__(
         self,
         exc_type: typing.Optional[typing.Type[BaseException]] = None,
@@ -257,7 +257,7 @@ class Connection:
     ) -> None:
         thread = await self._aexit()
         if thread is not None and thread is not current_thread():
-            while thread.is_alive():  # noqa: ASYNC110
+            while thread.is_alive():
                 await asyncio.sleep(self.poll_interval)
             thread.join(1)
 

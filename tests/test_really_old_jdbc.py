@@ -1,6 +1,6 @@
 import pytest
 import sqlalchemy
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
 
 from databasez import Database
 
@@ -25,7 +25,7 @@ async def test_jdbc_connect():
     """
     async with Database(
         "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
-        poolclass=NullPool,
+        poolclass=StaticPool,
     ) as database:
         async with database.connection():
             pass
@@ -39,7 +39,7 @@ async def test_jdbc_queries():
     """
     async with Database(
         "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
-        poolclass=NullPool,
+        poolclass=StaticPool,
     ) as database:
         async with database.connection() as connection:
             await connection.create_all(metadata)

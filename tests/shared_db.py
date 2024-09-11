@@ -79,7 +79,14 @@ async def database_client(url: typing.Union[dict, str], meta=None) -> DatabaseTe
             url, test_prefix="", use_existing=not is_sqlite, drop_database=is_sqlite
         )
     else:
-        database = Database(config=url)
+        scheme = url["connection"]["credentials"]["scheme"]
+        is_sqlite = scheme.startswith("sqlite")
+        database = DatabaseTestClient(
+            config=url,
+            test_prefix="",
+            use_existing=not is_sqlite,
+            drop_database=is_sqlite,
+        )
     await database.connect()
     await database.create_all(meta)
     return database
@@ -88,5 +95,6 @@ async def database_client(url: typing.Union[dict, str], meta=None) -> DatabaseTe
 async def stop_database_client(database: Database, meta=None):
     if meta is None:
         meta = metadata
-    await database.drop_all(meta)
+    if not getattr(database, "drop", False):
+        await database.drop_all(meta)
     await database.disconnect()

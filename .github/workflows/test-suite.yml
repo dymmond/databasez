@@ -93,4 +93,4 @@ jobs:
         run: "hatch run test:check_types"
       - name: "Run tests"
         if: steps.filters.outputs.src == 'true' || steps.filters.outputs.workflows == 'true' || github.event.schedule != ''
-        run: hatch test
+        run: env TEST_NO_RISK_SEGFAULTS=true hatch test
