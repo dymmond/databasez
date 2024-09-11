@@ -257,7 +257,7 @@ class Connection:
     ) -> None:
         thread = await self._aexit()
         if thread is not None and thread is not current_thread():
-            while thread.is_alive():
+            while thread.is_alive():  # noqa: ASYNC110
                 await asyncio.sleep(self.poll_interval)
             thread.join(1)
 

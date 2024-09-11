@@ -645,7 +645,7 @@ async def test_connection_context(database_url):
         loop = asyncio.get_event_loop()
         task_1 = loop.create_task(get_connection_1())
         task_2 = loop.create_task(get_connection_2())
-        while connection_1 is None or connection_2 is None:
+        while connection_1 is None or connection_2 is None:  # noqa: ASYNC110
             await asyncio.sleep(0.000001)
         assert connection_1 is not connection_2
         test_complete.set()

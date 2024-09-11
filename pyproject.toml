@@ -108,7 +108,6 @@ select = [
 ]
 
 ignore = [
-    "ASYNC110", # use anio.Event
     "B008", # do not perform function calls in argument defaults
     "C901", # too complex
     "E712", # Comparison to True should be cond is True
