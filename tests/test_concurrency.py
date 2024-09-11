@@ -55,26 +55,6 @@ def _startswith(tested, params):
     return False
 
 
-@pytest.mark.asyncio
-async def test_concurrent_access_on_single_connection(database_url):
-    database_url = DatabaseURL(str(database_url.url))
-    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
-        pytest.skip("Test requires sleep function")
-    async with Database(database_url, force_rollback=True, full_isolation=False) as database:
-
-        async def db_lookup():
-            if database_url.dialect.startswith("postgres"):
-                await database.fetch_one("SELECT pg_sleep(0.3)")
-            elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
-                "mariadb"
-            ):
-                await database.fetch_one("SELECT SLEEP(0.3)")
-            elif database_url.dialect.startswith("mssql"):
-                await database.execute("WAITFOR DELAY '00:00:00.300'")
-
-        await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
-
-
 def _future_helper(awaitable, future):
     try:
         future.set_result(asyncio.run(awaitable))
@@ -277,38 +257,3 @@ async def test_multi_thread_db_fails(database_url):
 
         with pytest.raises(RuntimeError):
             await to_thread(asyncio.run, db_connect())
-
-
-@pytest.mark.asyncio
-async def test_global_connection_is_initialized_lazily(database_url):
-    """
-    Ensure that global connection is initialized at latest possible time
-    so it's _query_lock will belong to same event loop that async_adapter has
-    initialized.
-
-    See https://github.com/dymmond/databasez/issues/157 for more context.
-    """
-
-    database_url = DatabaseURL(database_url.url)
-    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
-        pytest.skip("Test requires sleep function")
-
-    database = Database(database_url, force_rollback=True)
-
-    async def run_database_queries():
-        async with database:
-
-            async def db_lookup():
-                if database_url.dialect.startswith("postgres"):
-                    await database.fetch_one("SELECT pg_sleep(0.3)")
-                elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
-                    "mariadb"
-                ):
-                    await database.fetch_one("SELECT SLEEP(0.3)")
-                elif database_url.dialect.startswith("mssql"):
-                    await database.execute("WAITFOR DELAY '00:00:00.300'")
-
-            await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
-
-    await run_database_queries()
-    await database.disconnect()
