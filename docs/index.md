@@ -116,10 +116,7 @@ $ pip install databasez[aioodbc]
 ```
 
 !!! Note
-    Note that if you are using any synchronous SQLAlchemy functions such as `engine.create_all()`
-    or [alembic][alembic] migrations then you still have to install a synchronous DB driver:
-    [psycopg][psycopg] for PostgreSQL, [pymysql][pymysql] for MySQL and
-    [pyodbc][pyodbc] for SQL Server.
+    MSSQL and odbc may segfaults with threading (sometimes but in tests it can be more often).
 
 ---
 

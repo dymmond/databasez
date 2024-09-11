@@ -75,6 +75,11 @@ To run the linting, use:
 $ hatch fmt
 ```
 
+!!! Note
+    If you get stuck into segfaults, you might want to use the environment parameter: `TEST_NO_RISK_SEGFAULTS=true`.
+    MSSQL and odbc may can segfault, though seldom.
+    This parameter is active for github actions.
+
 ### Documentation
 
 Improving the documentation is quite easy and it is placed inside the `databasez/docs` folder.
