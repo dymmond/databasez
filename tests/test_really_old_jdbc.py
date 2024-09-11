@@ -4,7 +4,8 @@ from sqlalchemy.pool import StaticPool
 
 from databasez import Database
 
-# Why so an old driver which does throws errors on insert? I want to test how good this survives old dbs.
+# Use StaticPool to be sure to not use multi-threaded access.
+# Just for more safety with an old driver but shouldn't be neccessary.
 
 # we have not many db types available
 metadata = sqlalchemy.MetaData()
