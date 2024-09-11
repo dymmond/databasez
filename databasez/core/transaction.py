@@ -117,11 +117,11 @@ class Transaction:
     @multiloop_protector(False)
     async def _start(
         self,
-        connection: Connection,
         timeout: typing.Optional[
             float
         ] = None,  # stub for type checker, multiloop_protector handles timeout
     ) -> None:
+        connection = self.connection
         assert connection._loop
 
         async with connection._transaction_lock:
@@ -145,16 +145,22 @@ class Transaction:
         cleanup_on_error: bool = True,
     ) -> Transaction:
         connection = self.connection
+        # WARNING: we are maybe in the wrong context and get an AsyncDatabaseHelper, so
+        # - don't pass down the connection
+        # - assume this is not a connection_transaction
         # count up connection and init multithreading-safe the isolation thread
         # benefit 2: setup works with transaction_lock
-        if connection.connection_transaction is not self:
+        if getattr(connection, "connection_transaction", None) is not self:
             await connection.__aenter__()
         # we have a loop now in case of full_isolation
         try:
-            await self._start(connection, timeout=timeout)
+            await self._start(timeout=timeout)
         except BaseException as exc:
             # normal start call
-            if cleanup_on_error and connection.connection_transaction is not self:
+            if (
+                cleanup_on_error
+                and getattr(connection, "connection_transaction", None) is not self
+            ):
                 await connection.__aexit__()
             raise exc
         return self

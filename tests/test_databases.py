@@ -55,6 +55,13 @@ MIXED_DATABASE_CONFIG_URLS = [*DATABASE_URLS, *DATABASE_CONFIG_URLS]
 MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATABASE_URLS)]
 
 
+def _startswith(tested, params):
+    for param in params:
+        if tested.startswith(param):
+            return True
+    return False
+
+
 @pytest.fixture(params=DATABASE_URLS)
 def database_url(request):
     """Yield test database despite its name"""
@@ -638,7 +645,7 @@ async def test_connection_context(database_url):
         loop = asyncio.get_event_loop()
         task_1 = loop.create_task(get_connection_1())
         task_2 = loop.create_task(get_connection_2())
-        while connection_1 is None or connection_2 is None:
+        while connection_1 is None or connection_2 is None:  # noqa: ASYNC110
             await asyncio.sleep(0.000001)
         assert connection_1 is not connection_2
         test_complete.set()
@@ -889,3 +896,58 @@ async def test_mapping_property_interface(database_url):
         list_result = await database.fetch_all(query=query)
         assert list_result[0]._mapping["text"] == "example1"
         assert list_result[0]._mapping["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_global_connection_is_initialized_lazily(database_url):
+    """
+    Ensure that global connection is initialized at latest possible time
+    so it's _query_lock will belong to same event loop that async_adapter has
+    initialized.
+
+    See https://github.com/dymmond/databasez/issues/157 for more context.
+    """
+
+    database_url = DatabaseURL(database_url.url)
+    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+        pytest.skip("Test requires sleep function")
+
+    database = Database(database_url, force_rollback=True)
+
+    async def run_database_queries():
+        async with database:
+
+            async def db_lookup():
+                if database_url.dialect.startswith("postgres"):
+                    await database.fetch_one("SELECT pg_sleep(0.3)")
+                elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
+                    "mariadb"
+                ):
+                    await database.fetch_one("SELECT SLEEP(0.3)")
+                elif database_url.dialect.startswith("mssql"):
+                    await database.execute("WAITFOR DELAY '00:00:00.300'")
+
+            await asyncio.gather(db_lookup(), db_lookup(), db_lookup())
+
+    await run_database_queries()
+    await database.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_access_on_single_connection(database_url):
+    database_url = DatabaseURL(str(database_url.url))
+    if not _startswith(database_url.dialect, ["mysql", "mariadb", "postgres", "mssql"]):
+        pytest.skip("Test requires sleep function")
+    async with Database(database_url, force_rollback=True, full_isolation=False) as database:
+
+        async def db_lookup():
+            if database_url.dialect.startswith("postgres"):
+                await database.fetch_one("SELECT pg_sleep(0.3)")
+            elif database_url.dialect.startswith("mysql") or database_url.dialect.startswith(
+                "mariadb"
+            ):
+                await database.fetch_one("SELECT SLEEP(0.3)")
+            elif database_url.dialect.startswith("mssql"):
+                await database.execute("WAITFOR DELAY '00:00:00.300'")
+
+        await asyncio.gather(db_lookup(), db_lookup(), db_lookup())

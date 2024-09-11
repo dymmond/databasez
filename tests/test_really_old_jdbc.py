@@ -1,9 +1,11 @@
 import pytest
 import sqlalchemy
+from sqlalchemy.pool import StaticPool
 
 from databasez import Database
 
-# Why so an old driver which does throws errors on insert? I want to test how good this survives old dbs.
+# Use StaticPool to be sure to not use multi-threaded access.
+# Just for more safety with an old driver but shouldn't be neccessary.
 
 # we have not many db types available
 metadata = sqlalchemy.MetaData()
@@ -23,7 +25,8 @@ async def test_jdbc_connect():
     Test basic connection
     """
     async with Database(
-        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC"
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
+        poolclass=StaticPool,
     ) as database:
         async with database.connection():
             pass
@@ -36,7 +39,8 @@ async def test_jdbc_queries():
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
     async with Database(
-        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC"
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
+        poolclass=StaticPool,
     ) as database:
         async with database.connection() as connection:
             await connection.create_all(metadata)

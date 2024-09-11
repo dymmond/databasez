@@ -211,7 +211,7 @@ class Database:
 
     def __init__(
         self,
-        url: typing.Optional[typing.Union[str, DatabaseURL, URL, Database]] = None,
+        url: typing.Union[str, DatabaseURL, URL, Database, None] = None,
         *,
         force_rollback: typing.Union[bool, None] = None,
         config: typing.Optional["DictAny"] = None,
@@ -343,7 +343,7 @@ class Database:
                 )
                 # prevent side effects of connect_hook
                 database._call_hooks = False
-                database._global_connection = await self._global_connection.__aenter__()
+                database._global_connection = self._global_connection
                 self._databases_map[loop] = database
             # forward call
             return await self._databases_map[loop].connect()
@@ -404,8 +404,8 @@ class Database:
 
         try:
             assert self._global_connection is not None
-            await self._global_connection.__aexit__()
             if self._remove_global_connection:
+                await self._global_connection.__aexit__()
                 self._global_connection = None
             self._connection = None
         finally:
