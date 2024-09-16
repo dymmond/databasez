@@ -37,6 +37,7 @@ plugins:
 
 nav:
     - Databasez: "index.md"
+    - Integrations: "integrations.md"
     - Queries: "queries.md"
     - Connections & Transactions: "connections-and-transactions.md"
     - Test Client: "test-client.md"

@@ -36,7 +36,7 @@ def database_url(request):
     loop.run_until_complete(stop_database_client(database, metadata))
 
 
-def get_app(database_url):
+def get_starlette_app(database_url):
     database = Database(database_url, force_rollback=True)
 
     @contextlib.asynccontextmanager
@@ -62,6 +62,65 @@ def get_app(database_url):
             Route("/notes", endpoint=list_notes, methods=["GET"]),
             Route("/notes", endpoint=add_note, methods=["POST"]),
         ],
+    )
+
+    return app
+
+
+def get_asgi_app(database_url):
+    database = Database(database_url, force_rollback=True)
+
+    async def list_notes(request):
+        query = notes.select()
+        results = await database.fetch_all(query)
+        content = [{"text": result.text, "completed": result.completed} for result in results]
+        return JSONResponse(content)
+
+    async def add_note(request):
+        data = await request.json()
+        query = notes.insert().values(text=data["text"], completed=data["completed"])
+        await database.execute(query)
+        return JSONResponse({"text": data["text"], "completed": data["completed"]})
+
+    app = database.asgi(
+        Starlette(
+            routes=[
+                Route("/notes", endpoint=list_notes, methods=["GET"]),
+                Route("/notes", endpoint=add_note, methods=["POST"]),
+            ],
+        )
+    )
+
+    return app
+
+
+def get_asgi_no_lifespan(database_url):
+    database = Database(database_url, force_rollback=True)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        raise
+
+    async def list_notes(request):
+        query = notes.select()
+        results = await database.fetch_all(query)
+        content = [{"text": result.text, "completed": result.completed} for result in results]
+        return JSONResponse(content)
+
+    async def add_note(request):
+        data = await request.json()
+        query = notes.insert().values(text=data["text"], completed=data["completed"])
+        await database.execute(query)
+        return JSONResponse({"text": data["text"], "completed": data["completed"]})
+
+    app = database.asgi(handle_lifespan=True)(
+        Starlette(
+            lifespan=lifespan,
+            routes=[
+                Route("/notes", endpoint=list_notes, methods=["GET"]),
+                Route("/notes", endpoint=add_note, methods=["POST"]),
+            ],
+        )
     )
 
     return app
@@ -97,7 +156,8 @@ def get_esmerald_app(database_url):
     return app
 
 
-def test_integration(database_url):
+@pytest.mark.parametrize("get_app", [get_starlette_app, get_asgi_app, get_asgi_no_lifespan])
+def test_integration(database_url, get_app):
     app = get_app(database_url)
 
     with TestClient(app) as client:
