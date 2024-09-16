@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict
 
 if TYPE_CHECKING:
-    from edgy.core.Database import Database
+    from databasez.core.Database import Database
 
 ASGIApp = Callable[
     [
