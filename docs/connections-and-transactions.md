@@ -63,6 +63,7 @@ to connect to the database.
 
 * **force_rollback(force_rollback=True)**: - The magic attribute is also function returning a context-manager for temporary overwrites of force_rollback.
 
+* **asgi** - ASGI lifespan interception shim.
 
 ## Connecting and disconnecting
 

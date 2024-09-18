@@ -7,7 +7,7 @@ import logging
 import typing
 import weakref
 from contextvars import ContextVar
-from functools import lru_cache
+from functools import lru_cache, partial
 from types import TracebackType
 
 from databasez import interfaces
@@ -18,6 +18,7 @@ from databasez.utils import (
     multiloop_protector,
 )
 
+from .asgi import ASGIApp, ASGIHelper
 from .connection import Connection
 from .databaseurl import DatabaseURL
 from .transaction import Transaction
@@ -570,6 +571,30 @@ class Database:
     @multiloop_protector(True)
     def engine(self) -> typing.Optional[AsyncEngine]:
         return self.backend.engine
+
+    @typing.overload
+    def asgi(
+        self,
+        app: None,
+        handle_lifespan: bool = False,
+    ) -> typing.Callable[[ASGIApp], ASGIHelper]: ...
+
+    @typing.overload
+    def asgi(
+        self,
+        app: ASGIApp,
+        handle_lifespan: bool = False,
+    ) -> ASGIHelper: ...
+
+    def asgi(
+        self,
+        app: typing.Optional[ASGIApp] = None,
+        handle_lifespan: bool = False,
+    ) -> typing.Union[ASGIHelper, typing.Callable[[ASGIApp], ASGIHelper]]:
+        """Return wrapper for asgi integration."""
+        if app is not None:
+            return ASGIHelper(app=app, database=self, handle_lifespan=handle_lifespan)
+        return partial(ASGIHelper, database=self, handle_lifespan=handle_lifespan)
 
     @classmethod
     def get_backends(

@@ -146,6 +146,10 @@ Now from the console, we can run a simple example.
 Check out the documentation on [making database queries](./queries.md)
 for examples of how to start using databases together with SQLAlchemy core expressions.
 
+For the integration in frameworks see:
+
+[Integrations](./integrations.md)
+
 
 [sqlalchemy-core]: https://docs.sqlalchemy.org/en/latest/core/
 [sqlalchemy-core-tutorial]: https://docs.sqlalchemy.org/en/latest/core/tutorial.html
