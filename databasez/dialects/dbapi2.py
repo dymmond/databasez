@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import inspect
-import typing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from importlib import import_module
 from types import ModuleType
+from typing import TYPE_CHECKING, Any, Literal
 
 import orjson
 from sqlalchemy.connectors.asyncio import (
@@ -16,13 +18,13 @@ from sqlalchemy_utils.functions.orm import quote
 
 from databasez.utils import AsyncWrapper
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from sqlalchemy import URL
     from sqlalchemy.base import Connection
     from sqlalchemy.engine.interfaces import ConnectArgsType
 
 
-def get_pool_for(pool: typing.Literal["thread", "process"]) -> typing.Any:
+def get_pool_for(pool: Literal["thread", "process"]) -> Any:
     assert pool in {"thread", "process"}, "invalid option"
     if pool == "thread":
         return ThreadPoolExecutor(max_workers=1, thread_name_prefix="dapi2")
@@ -43,30 +45,31 @@ class DBAPI2_dialect(DefaultDialect):
     def __init__(
         self,
         *,
-        dialect_overwrites: typing.Optional[typing.Dict[str, typing.Any]] = None,
-        json_serializer: typing.Any = None,
-        json_deserializer: typing.Any = None,
-        **kwargs: typing.Any,
+        dialect_overwrites: dict[str, Any] | None = None,
+        json_serializer: Any = None,
+        json_deserializer: Any = None,
+        **kwargs: Any,
     ):
         super().__init__(**kwargs)
         if dialect_overwrites:
             for k, v in dialect_overwrites.items():
                 setattr(self, k, v)
 
-    def create_connect_args(self, url: "URL") -> "ConnectArgsType":
-        dbapi_dsn_driver: typing.Optional[str] = url.query.get("dbapi_dsn_driver")  # type: ignore
-        driver_args: typing.Any = url.query.get("dbapi_driver_args")
-        dbapi_pool: typing.Optional[str] = url.query.get("dbapi_pool")  # type: ignore
+    def create_connect_args(self, url: URL) -> ConnectArgsType:
+        dbapi_dsn_driver: str | None = url.query.get("dbapi_dsn_driver")  # type: ignore
+        driver_args: Any = url.query.get("dbapi_driver_args")
+        dbapi_pool: str | None = url.query.get("dbapi_pool")  # type: ignore
         dbapi_force_async_wrapper: str = url.query.get("dbapi_force_async_wrapper")  # type: ignore
         if driver_args:
             driver_args = orjson.loads(driver_args)
         dsn: str = url.difference_update_query(
             ("dbapi_dsn_driver", "dbapi_driver_args")
         ).render_as_string(hide_password=False)
-        if dbapi_dsn_driver:
-            dsn = dsn.replace("dbapi2:", dbapi_dsn_driver, 1)
-        else:
-            dsn = dsn.replace("dbapi2://", "", 1)
+        dsn = (
+            dsn.replace("dbapi2:", dbapi_dsn_driver, 1)
+            if dbapi_dsn_driver
+            else dsn.replace("dbapi2://", "", 1)
+        )
         kwargs_passed = {
             "driver_args": driver_args,
             "dbapi_pool": dbapi_pool,
@@ -81,11 +84,11 @@ class DBAPI2_dialect(DefaultDialect):
 
     def connect(
         self,
-        *arg: typing.Any,
-        dbapi_pool: typing.Literal["thread", "process"] = "thread",
-        dbapi_force_async_wrapper: typing.Optional[bool] = None,
-        driver_args: typing.Any = None,
-        **kw: typing.Any,
+        *arg: Any,
+        dbapi_pool: Literal["thread", "process"] = "thread",
+        dbapi_force_async_wrapper: bool | None = None,
+        driver_args: Any = None,
+        **kw: Any,
     ) -> AsyncAdapt_dbapi_connection:
         dbapi_namespace = self.loaded_dbapi
         if dbapi_force_async_wrapper is None:
@@ -105,15 +108,15 @@ class DBAPI2_dialect(DefaultDialect):
         )
 
     @classmethod
-    def get_pool_class(cls, url: "URL") -> typing.Any:
+    def get_pool_class(cls, url: URL) -> Any:
         return AsyncAdaptedQueuePool
 
     def has_table(
         self,
-        connection: "Connection",
+        connection: Connection,
         table_name: str,
-        schema: typing.Optional[str] = None,
-        **kw: typing.Any,
+        schema: str | None = None,
+        **kw: Any,
     ) -> bool:
         stmt = text(f"select * from '{quote(connection, table_name)}' LIMIT 1")
         try:
@@ -122,7 +125,7 @@ class DBAPI2_dialect(DefaultDialect):
         except Exception:
             return False
 
-    def get_isolation_level(self, dbapi_connection: typing.Any) -> typing.Any:
+    def get_isolation_level(self, dbapi_connection: Any) -> Any:
         return None
 
     @classmethod

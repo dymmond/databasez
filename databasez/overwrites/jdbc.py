@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import os
-import typing
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 # ensure jpype.dbapi2 is initialized. Prevent race condition.
 import jpype.dbapi2  # noqa
@@ -8,17 +10,17 @@ from jpype import addClassPath, isJVMStarted, startJVM
 
 from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from databasez.core.databaseurl import DatabaseURL
 
 
-seen_classpathes: typing.Set[str] = set()
+seen_classpathes: set[str] = set()
 
 
 class Transaction(SQLAlchemyTransaction):
     def get_default_transaction_isolation_level(
-        self, is_root: bool, **extra_options: typing.Any
-    ) -> typing.Optional[str]:
+        self, is_root: bool, **extra_options: Any
+    ) -> str | None:
         return None
 
 
@@ -27,16 +29,16 @@ class Database(SQLAlchemyDatabase):
 
     def extract_options(
         self,
-        database_url: "DatabaseURL",
-        **options: typing.Any,
-    ) -> typing.Tuple["DatabaseURL", typing.Dict[str, typing.Any]]:
+        database_url: DatabaseURL,
+        **options: Any,
+    ) -> tuple[DatabaseURL, dict[str, Any]]:
         database_url_new, options = super().extract_options(database_url, **options)
         new_query_options = dict(database_url.options)
         if database_url_new.driver:
             new_query_options["jdbc_dsn_driver"] = database_url_new.driver
         if "classpath" in new_query_options:
             old_classpath = options.pop("classpath", None)
-            new_classpath: typing.List[str] = []
+            new_classpath: list[str] = []
             if old_classpath:
                 if isinstance(old_classpath, str):
                     new_classpath.append(old_classpath)
@@ -57,10 +59,8 @@ class Database(SQLAlchemyDatabase):
                 new_query_options["jdbc_driver_args"] = self.json_serializer(jdbc_driver_args)
         return database_url_new.replace(driver=None, options=new_query_options), options
 
-    async def connect(self, database_url: "DatabaseURL", **options: typing.Any) -> None:
-        classpath: typing.Optional[typing.Union[str, typing.List[str]]] = options.pop(
-            "classpath", None
-        )
+    async def connect(self, database_url: DatabaseURL, **options: Any) -> None:
+        classpath: str | list[str] | None = options.pop("classpath", None)
         if classpath:
             if isinstance(classpath, str):
                 classpath = [classpath]

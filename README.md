@@ -56,7 +56,7 @@ Databasez is suitable for integrating against any async Web framework, such as [
 [Starlette][starlette], [Sanic][sanic], [Responder][responder], [Quart][quart], [aiohttp][aiohttp],
 [Tornado][tornado], or [FastAPI][fastapi].
 
-Databasez was built for Python 3.8+ and on the top of the newest **SQLAlchemy 2** and gives you
+Databasez was built for Python 3.9+ and on the top of the newest **SQLAlchemy 2** and gives you
 simple asyncio support for a range of databases.
 
 ### Special notes

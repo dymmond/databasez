@@ -1,6 +1,8 @@
-import typing
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor
 from importlib import import_module
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import orjson
 from sqlalchemy.connectors.asyncio import (
@@ -14,7 +16,7 @@ from sqlalchemy_utils.functions.orm import quote
 
 from databasez.utils import AsyncWrapper
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from sqlalchemy import URL
     from sqlalchemy.base import Connection
     from sqlalchemy.engine.interfaces import ConnectArgsType
@@ -36,18 +38,16 @@ class JDBC_dialect(DefaultDialect):
 
     def __init__(
         self,
-        json_serializer: typing.Any = None,
-        json_deserializer: typing.Any = None,
-        **kwargs: typing.Any,
+        json_serializer: Any = None,
+        json_deserializer: Any = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
 
-    def create_connect_args(self, url: "URL") -> "ConnectArgsType":
-        jdbc_dsn_driver: str = typing.cast(str, url.query["jdbc_dsn_driver"])
-        jdbc_driver: typing.Optional[str] = typing.cast(
-            typing.Optional[str], url.query.get("jdbc_driver")
-        )
-        driver_args: typing.Any = url.query.get("jdbc_driver_args")
+    def create_connect_args(self, url: URL) -> ConnectArgsType:
+        jdbc_dsn_driver: str = cast(str, url.query["jdbc_dsn_driver"])
+        jdbc_driver: str | None = cast(Optional[str], url.query.get("jdbc_driver"))
+        driver_args: Any = url.query.get("jdbc_driver_args")
         if driver_args:
             driver_args = orjson.loads(driver_args)
         dsn: str = url.difference_update_query(
@@ -57,7 +57,7 @@ class JDBC_dialect(DefaultDialect):
 
         return (dsn,), {"driver_args": driver_args, "driver": jdbc_driver}
 
-    def connect(self, *arg: typing.Any, **kw: typing.Any) -> AsyncAdapt_adbapi2_connection:
+    def connect(self, *arg: Any, **kw: Any) -> AsyncAdapt_adbapi2_connection:
         creator_fn = AsyncWrapper(
             self.loaded_dbapi,
             pool=ThreadPoolExecutor(1, thread_name_prefix="jpype"),
@@ -74,10 +74,10 @@ class JDBC_dialect(DefaultDialect):
 
     def has_table(
         self,
-        connection: "Connection",
+        connection: Connection,
         table_name: str,
-        schema: typing.Optional[str] = None,
-        **kw: typing.Any,
+        schema: str | None = None,
+        **kw: Any,
     ) -> bool:
         stmt = text(f"select * from '{quote(connection, table_name)}' LIMIT 1")
         try:
@@ -86,17 +86,17 @@ class JDBC_dialect(DefaultDialect):
         except Exception:
             return False
 
-    def get_isolation_level(self, dbapi_connection: typing.Any) -> typing.Any:
+    def get_isolation_level(self, dbapi_connection: Any) -> Any:
         return None
 
     @classmethod
-    def get_pool_class(cls, url: "URL") -> typing.Any:
+    def get_pool_class(cls, url: URL) -> Any:
         return AsyncAdaptedQueuePool
 
     @classmethod
     def import_dbapi(
         cls,
-    ) -> typing.Any:
+    ) -> Any:
         return import_module("jpype.dbapi2")
 
 

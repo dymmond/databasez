@@ -4,11 +4,12 @@ import asyncio
 import contextlib
 import importlib
 import logging
-import typing
 import weakref
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextvars import ContextVar
 from functools import lru_cache, partial
 from types import TracebackType
+from typing import TYPE_CHECKING, Any, cast, overload
 
 from databasez import interfaces
 from databasez.utils import (
@@ -23,7 +24,7 @@ from .connection import Connection
 from .databaseurl import DatabaseURL
 from .transaction import Transaction
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from sqlalchemy import URL, MetaData
     from sqlalchemy.ext.asyncio import AsyncEngine
     from sqlalchemy.sql import ClauseElement
@@ -47,9 +48,9 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger("databasez")
 
-default_database: typing.Type[interfaces.DatabaseBackend]
-default_connection: typing.Type[interfaces.ConnectionBackend]
-default_transaction: typing.Type[interfaces.TransactionBackend]
+default_database: type[interfaces.DatabaseBackend]
+default_connection: type[interfaces.ConnectionBackend]
+default_transaction: type[interfaces.TransactionBackend]
 
 
 @lru_cache(1)
@@ -69,9 +70,9 @@ def init() -> None:
     )
 
 
-ACTIVE_FORCE_ROLLBACKS: ContextVar[
-    typing.Optional[weakref.WeakKeyDictionary[ForceRollback, bool]]
-] = ContextVar("ACTIVE_FORCE_ROLLBACKS", default=None)
+ACTIVE_FORCE_ROLLBACKS: ContextVar[weakref.WeakKeyDictionary[ForceRollback, bool] | None] = (
+    ContextVar("ACTIVE_FORCE_ROLLBACKS", default=None)
+)
 
 
 class ForceRollback:
@@ -80,7 +81,7 @@ class ForceRollback:
     def __init__(self, default: bool):
         self.default = default
 
-    def set(self, value: typing.Union[bool, None] = None) -> None:
+    def set(self, value: bool | None = None) -> None:
         force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()
         if force_rollbacks is None:
             # shortcut, we don't need to initialize anything for None (reset)
@@ -103,7 +104,7 @@ class ForceRollback:
         return force_rollbacks.get(self, self.default)
 
     @contextlib.contextmanager
-    def __call__(self, force_rollback: bool = True) -> typing.Iterator[None]:
+    def __call__(self, force_rollback: bool = True) -> Iterator[None]:
         initial = bool(self)
         self.set(force_rollback)
         try:
@@ -113,10 +114,10 @@ class ForceRollback:
 
 
 class ForceRollbackDescriptor:
-    def __get__(self, obj: Database, objtype: typing.Type[Database]) -> ForceRollback:
+    def __get__(self, obj: Database, objtype: type[Database]) -> ForceRollback:
         return obj._force_rollback
 
-    def __set__(self, obj: Database, value: typing.Union[bool, None]) -> None:
+    def __set__(self, obj: Database, value: bool | None) -> None:
         assert value is None or isinstance(value, bool), f"Invalid type: {value!r}."
         obj._force_rollback.set(value)
 
@@ -128,10 +129,10 @@ class AsyncHelperDatabase:
     def __init__(
         self,
         database: Database,
-        fn: typing.Callable,
-        args: typing.Any,
-        kwargs: typing.Any,
-        timeout: typing.Optional[float],
+        fn: Callable,
+        args: Any,
+        kwargs: Any,
+        timeout: float | None,
     ) -> None:
         self.database = database
         self.fn = fn
@@ -140,16 +141,16 @@ class AsyncHelperDatabase:
         self.timeout = timeout
         self.ctm = None
 
-    async def call(self) -> typing.Any:
+    async def call(self) -> Any:
         async with self.database as database:
             return await _arun_with_timeout(
                 self.fn(database, *self.args, **self.kwargs), self.timeout
             )
 
-    def __await__(self) -> typing.Any:
+    def __await__(self) -> Any:
         return self.call().__await__()
 
-    async def __aenter__(self) -> typing.Any:
+    async def __aenter__(self) -> Any:
         database = await self.database.__aenter__()
         self.ctm = await _arun_with_timeout(
             self.fn(database, *self.args, **self.kwargs), timeout=self.timeout
@@ -158,9 +159,9 @@ class AsyncHelperDatabase:
 
     async def __aexit__(
         self,
-        exc_type: typing.Optional[typing.Type[BaseException]] = None,
-        exc_value: typing.Optional[BaseException] = None,
-        traceback: typing.Optional[TracebackType] = None,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
     ) -> None:
         assert self.ctm is not None
         try:
@@ -194,11 +195,11 @@ class Database:
     """
 
     _connection_map: weakref.WeakKeyDictionary[asyncio.Task, Connection]
-    _databases_map: typing.Dict[typing.Any, Database]
-    _loop: typing.Optional[asyncio.AbstractEventLoop] = None
+    _databases_map: dict[Any, Database]
+    _loop: asyncio.AbstractEventLoop | None = None
     backend: interfaces.DatabaseBackend
     url: DatabaseURL
-    options: typing.Any
+    options: Any
     is_connected: bool = False
     _call_hooks: bool = True
     _remove_global_connection: bool = True
@@ -208,18 +209,18 @@ class Database:
     # descriptor
     force_rollback = ForceRollbackDescriptor()
     # async helper
-    async_helper: typing.Type[AsyncHelperDatabase] = AsyncHelperDatabase
+    async_helper: type[AsyncHelperDatabase] = AsyncHelperDatabase
 
     def __init__(
         self,
-        url: typing.Union[str, DatabaseURL, URL, Database, None] = None,
+        url: str | DatabaseURL | URL | Database | None = None,
         *,
-        force_rollback: typing.Union[bool, None] = None,
-        config: typing.Optional["DictAny"] = None,
-        full_isolation: typing.Union[bool, None] = None,
+        force_rollback: bool | None = None,
+        config: DictAny | None = None,
+        full_isolation: bool | None = None,
         # for
-        poll_interval: typing.Union[float, None] = None,
-        **options: typing.Any,
+        poll_interval: float | None = None,
+        **options: Any,
     ):
         init()
         assert config is None or url is None, "Use either 'url' or 'config', not both."
@@ -260,7 +261,7 @@ class Database:
 
         # When `force_rollback=True` is used, we use a single global
         # connection, within a transaction that always rolls back.
-        self._global_connection: typing.Optional[Connection] = None
+        self._global_connection: Connection | None = None
 
         self.ref_counter: int = 0
         self.ref_lock: asyncio.Lock = asyncio.Lock()
@@ -276,11 +277,11 @@ class Database:
         return task
 
     @property
-    def _connection(self) -> typing.Optional[Connection]:
+    def _connection(self) -> Connection | None:
         return self._connection_map.get(self._current_task)
 
     @_connection.setter
-    def _connection(self, connection: typing.Optional[Connection]) -> typing.Optional[Connection]:
+    def _connection(self, connection: Connection | None) -> Connection | None:
         task = self._current_task
 
         if connection is None:
@@ -376,7 +377,7 @@ class Database:
 
     @multiloop_protector(True, inject_parent=True)
     async def disconnect(
-        self, force: bool = False, *, parent_database: typing.Optional[Database] = None
+        self, force: bool = False, *, parent_database: Database | None = None
     ) -> bool:
         """
         Close all connections in the connection pool.
@@ -393,14 +394,13 @@ class Database:
         if parent_database is not None:
             loop = asyncio.get_running_loop()
             del parent_database._databases_map[loop]
-        if force:
-            if self._databases_map:
-                assert not self._databases_map, "sub databases still active, force terminate them"
-                for sub_database in self._databases_map.values():
-                    await arun_coroutine_threadsafe(
-                        sub_database.disconnect(True), sub_database._loop, self.poll_interval
-                    )
-                self._databases_map = {}
+        if force and self._databases_map:
+            assert not self._databases_map, "sub databases still active, force terminate them"
+            for sub_database in self._databases_map.values():
+                await arun_coroutine_threadsafe(
+                    sub_database.disconnect(True), sub_database._loop, self.poll_interval
+                )
+            self._databases_map = {}
         assert not self._databases_map, "sub databases still active"
 
         try:
@@ -422,7 +422,7 @@ class Database:
                 await self.disconnect_hook()
         return True
 
-    async def __aenter__(self) -> "Database":
+    async def __aenter__(self) -> Database:
         await self.connect()
         # get right database
         loop = asyncio.get_running_loop()
@@ -431,39 +431,39 @@ class Database:
 
     async def __aexit__(
         self,
-        exc_type: typing.Optional[typing.Type[BaseException]] = None,
-        exc_value: typing.Optional[BaseException] = None,
-        traceback: typing.Optional[TracebackType] = None,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
     ) -> None:
         await self.disconnect()
 
     async def fetch_all(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.List[interfaces.Record]:
+        query: ClauseElement | str,
+        values: dict | None = None,
+        timeout: float | None = None,
+    ) -> list[interfaces.Record]:
         async with self.connection() as connection:
             return await connection.fetch_all(query, values, timeout=timeout)
 
     async def fetch_one(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
+        query: ClauseElement | str,
+        values: dict | None = None,
         pos: int = 0,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.Optional[interfaces.Record]:
+        timeout: float | None = None,
+    ) -> interfaces.Record | None:
         async with self.connection() as connection:
             return await connection.fetch_one(query, values, pos=pos, timeout=timeout)
 
     async def fetch_val(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        column: typing.Any = 0,
+        query: ClauseElement | str,
+        values: dict | None = None,
+        column: Any = 0,
         pos: int = 0,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.Any:
+        timeout: float | None = None,
+    ) -> Any:
         async with self.connection() as connection:
             return await connection.fetch_val(
                 query,
@@ -475,44 +475,44 @@ class Database:
 
     async def execute(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Any = None,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.Union[interfaces.Record, int]:
+        query: ClauseElement | str,
+        values: Any = None,
+        timeout: float | None = None,
+    ) -> interfaces.Record | int:
         async with self.connection() as connection:
             return await connection.execute(query, values, timeout=timeout)
 
     async def execute_many(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Any = None,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
+        query: ClauseElement | str,
+        values: Any = None,
+        timeout: float | None = None,
+    ) -> Sequence[interfaces.Record] | int:
         async with self.connection() as connection:
             return await connection.execute_many(query, values, timeout=timeout)
 
     async def iterate(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        chunk_size: typing.Optional[int] = None,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.AsyncGenerator[interfaces.Record, None]:
+        query: ClauseElement | str,
+        values: dict | None = None,
+        chunk_size: int | None = None,
+        timeout: float | None = None,
+    ) -> AsyncGenerator[interfaces.Record, None]:
         async with self.connection() as connection:
             async for record in connection.iterate(query, values, chunk_size, timeout=timeout):
                 yield record
 
     async def batched_iterate(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        batch_size: typing.Optional[int] = None,
+        query: ClauseElement | str,
+        values: dict | None = None,
+        batch_size: int | None = None,
         batch_wrapper: BatchCallable = tuple,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.AsyncGenerator[BatchCallableResult, None]:
+        timeout: float | None = None,
+    ) -> AsyncGenerator[BatchCallableResult, None]:
         async with self.connection() as connection:
-            async for batch in typing.cast(
-                typing.AsyncGenerator["BatchCallableResult", None],
+            async for batch in cast(
+                AsyncGenerator["BatchCallableResult", None],
                 connection.batched_iterate(
                     query,
                     values,
@@ -523,63 +523,59 @@ class Database:
             ):
                 yield batch
 
-    def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
+    def transaction(self, *, force_rollback: bool = False, **kwargs: Any) -> Transaction:
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
     async def run_sync(
         self,
-        fn: typing.Callable[..., typing.Any],
-        *args: typing.Any,
-        timeout: typing.Optional[float] = None,
-        **kwargs: typing.Any,
-    ) -> typing.Any:
+        fn: Callable[..., Any],
+        *args: Any,
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> Any:
         async with self.connection() as connection:
             return await connection.run_sync(fn, *args, **kwargs, timeout=timeout)
 
     async def create_all(
-        self, meta: MetaData, timeout: typing.Optional[float] = None, **kwargs: typing.Any
+        self, meta: MetaData, timeout: float | None = None, **kwargs: Any
     ) -> None:
         async with self.connection() as connection:
             await connection.create_all(meta, **kwargs, timeout=timeout)
 
-    async def drop_all(
-        self, meta: MetaData, timeout: typing.Optional[float] = None, **kwargs: typing.Any
-    ) -> None:
+    async def drop_all(self, meta: MetaData, timeout: float | None = None, **kwargs: Any) -> None:
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs, timeout=timeout)
 
     @multiloop_protector(False)
     def _non_global_connection(
         self,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
     ) -> Connection:
         if self._connection is None:
             _connection = self._connection = Connection(self)
             return _connection
         return self._connection
 
-    def connection(self, timeout: typing.Optional[float] = None) -> Connection:
+    def connection(self, timeout: float | None = None) -> Connection:
         if not self.is_connected:
             raise RuntimeError("Database is not connected")
         if self.force_rollback:
-            return typing.cast(Connection, self._global_connection)
+            return cast(Connection, self._global_connection)
         return self._non_global_connection(timeout=timeout)
 
     @property
     @multiloop_protector(True)
-    def engine(self) -> typing.Optional[AsyncEngine]:
+    def engine(self) -> AsyncEngine | None:
         return self.backend.engine
 
-    @typing.overload
+    @overload
     def asgi(
         self,
         app: None,
         handle_lifespan: bool = False,
-    ) -> typing.Callable[[ASGIApp], ASGIHelper]: ...
+    ) -> Callable[[ASGIApp], ASGIHelper]: ...
 
-    @typing.overload
+    @overload
     def asgi(
         self,
         app: ASGIApp,
@@ -588,9 +584,9 @@ class Database:
 
     def asgi(
         self,
-        app: typing.Optional[ASGIApp] = None,
+        app: ASGIApp | None = None,
         handle_lifespan: bool = False,
-    ) -> typing.Union[ASGIHelper, typing.Callable[[ASGIApp], ASGIHelper]]:
+    ) -> ASGIHelper | Callable[[ASGIApp], ASGIHelper]:
         """Return wrapper for asgi integration."""
         if app is not None:
             return ASGIHelper(app=app, database=self, handle_lifespan=handle_lifespan)
@@ -602,19 +598,19 @@ class Database:
         # let scheme empty for direct imports
         scheme: str = "",
         *,
-        overwrite_paths: typing.Sequence[str] = ["databasez.overwrites"],
+        overwrite_paths: Sequence[str] = ["databasez.overwrites"],
         database_name: str = "Database",
         connection_name: str = "Connection",
         transaction_name: str = "Transaction",
-        database_class: typing.Optional[typing.Type[interfaces.DatabaseBackend]] = None,
-        connection_class: typing.Optional[typing.Type[interfaces.ConnectionBackend]] = None,
-        transaction_class: typing.Optional[typing.Type[interfaces.TransactionBackend]] = None,
-    ) -> typing.Tuple[
-        typing.Type[interfaces.DatabaseBackend],
-        typing.Type[interfaces.ConnectionBackend],
-        typing.Type[interfaces.TransactionBackend],
+        database_class: type[interfaces.DatabaseBackend] | None = None,
+        connection_class: type[interfaces.ConnectionBackend] | None = None,
+        transaction_class: type[interfaces.TransactionBackend] | None = None,
+    ) -> tuple[
+        type[interfaces.DatabaseBackend],
+        type[interfaces.ConnectionBackend],
+        type[interfaces.TransactionBackend],
     ]:
-        module: typing.Any = None
+        module: Any = None
         for overwrite_path in overwrite_paths:
             imp_path = f"{overwrite_path}.{scheme.replace('+', '_')}" if scheme else overwrite_path
             try:
@@ -650,11 +646,11 @@ class Database:
     @classmethod
     def apply_database_url_and_options(
         cls,
-        url: typing.Union[DatabaseURL, str],
+        url: DatabaseURL | str,
         *,
-        overwrite_paths: typing.Sequence[str] = ["databasez.overwrites"],
-        **options: typing.Any,
-    ) -> typing.Tuple[interfaces.DatabaseBackend, DatabaseURL, typing.Dict[str, typing.Any]]:
+        overwrite_paths: Sequence[str] = ["databasez.overwrites"],
+        **options: Any,
+    ) -> tuple[interfaces.DatabaseBackend, DatabaseURL, dict[str, Any]]:
         url = DatabaseURL(url)
         database_class, connection_class, transaction_class = cls.get_backends(
             url.scheme,

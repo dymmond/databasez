@@ -10,7 +10,7 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
-if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
+if not any(x.endswith(" for SQL Server") for x in pyodbc.drivers()):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 
@@ -93,10 +93,9 @@ async def test_client_drop_existing(database_url):
     database2 = DatabaseTestClient(
         database_url, test_prefix="foobar", use_existing=True, drop_database=True, lazy_setup=True
     )
-    async with database2:
-        async with database2.connection() as conn:
-            # doesn't crash
-            await conn.fetch_all("select * from FOOBAR")
+    async with database2, database2.connection() as conn:
+        # doesn't crash
+        await conn.fetch_all("select * from FOOBAR")
     if database2.drop:
         assert not await database2.database_exists(database.test_db_url)
 

@@ -1,7 +1,7 @@
 import asyncio
+import contextlib
 import os
-import typing
-from typing import Any
+from typing import Any, Union
 
 import sqlalchemy
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -12,7 +12,7 @@ from databasez import Database, DatabaseURL
 from databasez.utils import DATABASEZ_POLL_INTERVAL, ThreadPassingExceptions
 
 
-async def _get_scalar_result(engine: typing.Any, sql: typing.Any) -> Any:
+async def _get_scalar_result(engine: Any, sql: Any) -> Any:
     try:
         async with engine.connect() as conn:
             return await conn.scalar(sql)
@@ -45,16 +45,16 @@ class DatabaseTestClient(Database):
 
     def __init__(
         self,
-        url: typing.Union[str, DatabaseURL, sqlalchemy.URL, Database, None] = None,
+        url: Union[str, DatabaseURL, sqlalchemy.URL, Database, None] = None,
         *,
-        force_rollback: typing.Union[bool, None] = None,
-        full_isolation: typing.Union[bool, None] = None,
-        poll_interval: typing.Union[float, None] = None,
-        use_existing: typing.Union[bool, None] = None,
-        drop_database: typing.Union[bool, None] = None,
-        lazy_setup: typing.Union[bool, None] = None,
-        test_prefix: typing.Union[str, None] = None,
-        **options: typing.Any,
+        force_rollback: Union[bool, None] = None,
+        full_isolation: Union[bool, None] = None,
+        poll_interval: Union[float, None] = None,
+        use_existing: Union[bool, None] = None,
+        drop_database: Union[bool, None] = None,
+        lazy_setup: Union[bool, None] = None,
+        test_prefix: Union[str, None] = None,
+        **options: Any,
     ):
         if use_existing is None:
             use_existing = self.testclient_default_use_existing
@@ -126,10 +126,8 @@ class DatabaseTestClient(Database):
     def setup_protected(self, operation_timeout: float) -> None:
         thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
         thread.start()
-        try:
+        with contextlib.suppress(TimeoutError):
             thread.join(operation_timeout)
-        except TimeoutError:
-            pass
 
     async def connect_hook(self) -> None:
         if not self._setup_executed_init:
@@ -143,12 +141,12 @@ class DatabaseTestClient(Database):
         return await self.database_exists(self.test_db_url)
 
     @classmethod
-    async def database_exists(cls, url: typing.Union[str, "sqlalchemy.URL", DatabaseURL]) -> bool:
+    async def database_exists(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL]) -> bool:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
         if dialect_name == "postgresql":
-            text = "SELECT 1 FROM pg_database WHERE datname='%s'" % database
+            text = f"SELECT 1 FROM pg_database WHERE datname='{database}'"
             for db in (database, "postgres", "template1", "template0", None):
                 url = url.replace(database=db)
                 async with Database(url, full_isolation=False, force_rollback=False) as db_client:
@@ -164,7 +162,7 @@ class DatabaseTestClient(Database):
             url = url.replace(database=None)
             text = (
                 "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
-                "WHERE SCHEMA_NAME = '%s'" % database
+                f"WHERE SCHEMA_NAME = '{database}'"
             )
             async with Database(url, full_isolation=False, force_rollback=False) as db_client:
                 return bool(await _get_scalar_result(db_client.engine, sqlalchemy.text(text)))
@@ -187,9 +185,9 @@ class DatabaseTestClient(Database):
     @classmethod
     async def create_database(
         cls,
-        url: typing.Union[str, "sqlalchemy.URL", DatabaseURL],
+        url: Union[str, "sqlalchemy.URL", DatabaseURL],
         encoding: str = "utf8",
-        template: typing.Any = None,
+        template: Any = None,
     ) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
@@ -221,16 +219,15 @@ class DatabaseTestClient(Database):
                     template = "template1"
 
                 async with db_client.engine.begin() as conn:  # type: ignore
-                    text = "CREATE DATABASE {} ENCODING '{}' TEMPLATE {}".format(
-                        quote(conn, database), encoding, quote(conn, template)
+                    text = (
+                        f"CREATE DATABASE {quote(conn, database)} ENCODING "
+                        f"'{encoding}' TEMPLATE {quote(conn, template)}"
                     )
                     await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "mysql":
                 async with db_client.engine.begin() as conn:  # type: ignore
-                    text = "CREATE DATABASE {} CHARACTER SET = '{}'".format(
-                        quote(conn, database), encoding
-                    )
+                    text = f"CREATE DATABASE {quote(conn, database)} CHARACTER SET = '{encoding}'"
                     await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "sqlite" and database != ":memory:":
@@ -246,7 +243,7 @@ class DatabaseTestClient(Database):
                     await conn.execute(sqlalchemy.text(text))
 
     @classmethod
-    async def drop_database(cls, url: typing.Union[str, "sqlalchemy.URL", DatabaseURL]) -> None:
+    async def drop_database(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL]) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect = url.sqla_url.get_dialect(True)
@@ -273,10 +270,8 @@ class DatabaseTestClient(Database):
             db_client = Database(url, force_rollback=False, full_isolation=False)
         async with db_client:
             if dialect_name == "sqlite" and database and database != ":memory:":
-                try:
+                with contextlib.suppress(FileNotFoundError):
                     os.remove(database)
-                except FileNotFoundError:
-                    pass
             elif dialect_name.startswith("postgres"):
                 async with db_client.connection() as conn:
                     # Disconnect all users from the database we are dropping.
@@ -288,20 +283,18 @@ class DatabaseTestClient(Database):
                     version = tuple(map(int, server_version_raw.split(".")))
                     pid_column = "pid" if (version >= (9, 2)) else "procpid"
                     quoted_db = quote(conn.async_connection, database)
-                    text = """
+                    text = f"""
                     SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
                     FROM pg_stat_activity
-                    WHERE pg_stat_activity.datname = '{database}'
+                    WHERE pg_stat_activity.datname = '{quoted_db}'
                     AND {pid_column} <> pg_backend_pid();
-                    """.format(pid_column=pid_column, database=quoted_db)
+                    """
                     await conn.execute(text)
 
                     # Drop the database.
                     text = f"DROP DATABASE {quoted_db}"
-                    try:
+                    with contextlib.suppress(ProgrammingError):
                         await conn.execute(text)
-                    except ProgrammingError:
-                        pass
             else:
                 async with db_client.connection() as conn:
                     text = f"DROP DATABASE {quote(conn.async_connection, database)}"
@@ -312,10 +305,8 @@ class DatabaseTestClient(Database):
             target=asyncio.run, args=[self.drop_database(self.test_db_url)]
         )
         thread.start()
-        try:
+        with contextlib.suppress(TimeoutError):
             thread.join(self.testclient_operation_timeout)
-        except TimeoutError:
-            pass
 
     async def disconnect_hook(self) -> None:
         # next connect the setup routine is reexecuted

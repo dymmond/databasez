@@ -1,56 +1,57 @@
 from __future__ import annotations
 
 import asyncio
-import typing
+from collections.abc import Callable, Generator
 from functools import partial, wraps
 from types import TracebackType
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multiloop_protector
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from .connection import Connection
 
 
-_CallableType = typing.TypeVar("_CallableType", bound=typing.Callable)
+_CallableType = TypeVar("_CallableType", bound=Callable)
 
 
 class AsyncHelperTransaction:
     def __init__(
         self,
-        transaction: typing.Any,
-        fn: typing.Callable,
-        args: typing.Any,
-        kwargs: typing.Any,
-        timeout: typing.Optional[float],
+        transaction: Any,
+        fn: Callable,
+        args: Any,
+        kwargs: Any,
+        timeout: float | None,
     ) -> None:
         self.transaction = transaction
         self.fn = partial(fn, self.transaction, *args, **kwargs)
         self.timeout = timeout
         self.ctm = None
 
-    async def call(self) -> typing.Any:
+    async def call(self) -> Any:
         # is automatically awaited
         return await _arun_with_timeout(self.fn(), self.timeout)
 
-    async def acall(self) -> typing.Any:
+    async def acall(self) -> Any:
         return await arun_coroutine_threadsafe(
             self.call(), self.transaction._loop, self.transaction.poll_interval
         )
 
-    def __await__(self) -> typing.Any:
+    def __await__(self) -> Any:
         return self.acall().__await__()
 
 
 class Transaction:
     # async helper
-    async_helper: typing.Type[AsyncHelperTransaction] = AsyncHelperTransaction
+    async_helper: type[AsyncHelperTransaction] = AsyncHelperTransaction
 
     def __init__(
         self,
-        connection_callable: typing.Callable[[], typing.Optional[Connection]],
+        connection_callable: Callable[[], Connection | None],
         force_rollback: bool,
-        existing_transaction: typing.Optional[typing.Any] = None,
-        **kwargs: typing.Any,
+        existing_transaction: Any | None = None,
+        **kwargs: Any,
     ) -> None:
         self._connection_callable = connection_callable
         self._force_rollback = force_rollback
@@ -65,7 +66,7 @@ class Transaction:
         return conn
 
     @property
-    def _loop(self) -> typing.Optional[asyncio.AbstractEventLoop]:
+    def _loop(self) -> asyncio.AbstractEventLoop | None:
         return self.connection._loop
 
     @property
@@ -83,9 +84,9 @@ class Transaction:
 
     async def __aexit__(
         self,
-        exc_type: typing.Optional[typing.Type[BaseException]] = None,
-        exc_value: typing.Optional[BaseException] = None,
-        traceback: typing.Optional[TracebackType] = None,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
     ) -> None:
         """
         Called when exiting `async with database.transaction()`
@@ -95,7 +96,7 @@ class Transaction:
         else:
             await self.commit()
 
-    def __await__(self) -> typing.Generator[None, None, Transaction]:
+    def __await__(self) -> Generator[None, None, Transaction]:
         """
         Called if using the low-level `transaction = await database.transaction()`
         """
@@ -107,7 +108,7 @@ class Transaction:
         """
 
         @wraps(func)
-        async def wrapper(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
             async with self:
                 await func(*args, **kwargs)
 
@@ -117,9 +118,7 @@ class Transaction:
     @multiloop_protector(False)
     async def _start(
         self,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
     ) -> None:
         connection = self.connection
         assert connection._loop
@@ -141,7 +140,7 @@ class Transaction:
     # called directly from connection
     async def start(
         self,
-        timeout: typing.Optional[float] = None,
+        timeout: float | None = None,
         cleanup_on_error: bool = True,
     ) -> Transaction:
         connection = self.connection
@@ -168,9 +167,7 @@ class Transaction:
     @multiloop_protector(False)
     async def commit(
         self,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
     ) -> None:
         connection = self.connection
         async with connection._transaction_lock:
@@ -186,9 +183,7 @@ class Transaction:
     @multiloop_protector(False)
     async def rollback(
         self,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
     ) -> None:
         connection = self.connection
         async with connection._transaction_lock:

@@ -1,7 +1,7 @@
 import asyncio
 import gc
 import os
-from typing import MutableMapping
+from collections.abc import MutableMapping
 
 import pyodbc
 import pytest
@@ -14,7 +14,7 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
-if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
+if not any(x.endswith(" for SQL Server") for x in pyodbc.drivers()):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 
@@ -35,10 +35,7 @@ async def test_commit_on_root_transaction(database_url):
 
     Deal with this here, and delete the records rather than rolling back.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
+    data = {"url": database_url} if isinstance(database_url, str) else {"config": database_url}
 
     async with Database(**data) as database:
         try:
@@ -205,10 +202,7 @@ async def test_rollback_isolation(database_url):
     """
     Ensure that `database.transaction(force_rollback=True)` provides strict isolation.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
+    data = {"url": database_url} if isinstance(database_url, str) else {"config": database_url}
 
     async with Database(**data) as database:
         # Perform some INSERT operations on the database.
@@ -227,10 +221,7 @@ async def test_rollback_isolation_with_contextmanager(database_url):
     """
     Ensure that `database.force_rollback()` provides strict isolation.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
+    data = {"url": database_url} if isinstance(database_url, str) else {"config": database_url}
 
     database = Database(**data)
 
@@ -253,15 +244,14 @@ async def test_transaction_commit(database_url):
     Ensure that transaction commit is supported.
     """
 
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            async with database.transaction():
-                query = notes.insert().values(text="example1", completed=True)
-                await database.execute(query)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        async with database.transaction():
+            query = notes.insert().values(text="example1", completed=True)
+            await database.execute(query)
 
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 1
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 1
 
 
 @pytest.mark.asyncio
@@ -307,19 +297,21 @@ async def test_transaction_commit_serializable(database_url):
         conn.execute(query)
         conn.close()
 
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True, isolation_level="serializable"):
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 0
+    async with (
+        Database(database_url) as database,
+        database.transaction(force_rollback=True, isolation_level="serializable"),
+    ):
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 0
 
-            insert_independently()
+        insert_independently()
 
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 0
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 0
 
-            delete_independently()
+        delete_independently()
 
 
 @pytest.mark.asyncio
@@ -327,24 +319,20 @@ async def test_transaction_rollback(database_url):
     """
     Ensure that transaction rollback is supported.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
+    data = {"url": database_url} if isinstance(database_url, str) else {"config": database_url}
 
-    async with Database(**data) as database:
-        async with database.transaction(force_rollback=True):
-            try:
-                async with database.transaction():
-                    query = notes.insert().values(text="example1", completed=True)
-                    await database.execute(query)
-                    raise RuntimeError()
-            except RuntimeError:
-                pass
+    async with Database(**data) as database, database.transaction(force_rollback=True):
+        try:
+            async with database.transaction():
+                query = notes.insert().values(text="example1", completed=True)
+                await database.execute(query)
+                raise RuntimeError()
+        except RuntimeError:
+            pass
 
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 0
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 0
 
 
 @pytest.mark.asyncio
@@ -352,25 +340,21 @@ async def test_transaction_commit_low_level(database_url):
     """
     Ensure that an explicit `await transaction.commit()` is supported.
     """
-    if isinstance(database_url, str):
-        data = {"url": database_url}
-    else:
-        data = {"config": database_url}
+    data = {"url": database_url} if isinstance(database_url, str) else {"config": database_url}
 
-    async with Database(**data) as database:
-        async with database.transaction(force_rollback=True):
-            transaction = await database.transaction()
-            try:
-                query = notes.insert().values(text="example1", completed=True)
-                await database.execute(query)
-            except Exception:
-                await transaction.rollback()
-            else:
-                await transaction.commit()
+    async with Database(**data) as database, database.transaction(force_rollback=True):
+        transaction = await database.transaction()
+        try:
+            query = notes.insert().values(text="example1", completed=True)
+            await database.execute(query)
+        except Exception:
+            await transaction.rollback()
+        else:
+            await transaction.commit()
 
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 1
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 1
 
 
 @pytest.mark.asyncio
@@ -379,21 +363,20 @@ async def test_transaction_rollback_low_level(database_url):
     Ensure that an explicit `await transaction.rollback()` is supported.
     """
 
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            transaction = await database.transaction()
-            try:
-                query = notes.insert().values(text="example1", completed=True)
-                await database.execute(query)
-                raise RuntimeError()
-            except Exception:
-                await transaction.rollback()
-            else:  # pragma: no cover
-                await transaction.commit()
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        transaction = await database.transaction()
+        try:
+            query = notes.insert().values(text="example1", completed=True)
+            await database.execute(query)
+            raise RuntimeError()
+        except Exception:
+            await transaction.rollback()
+        else:  # pragma: no cover
+            await transaction.commit()
 
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 0
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 0
 
 
 @pytest.mark.parametrize(
@@ -475,27 +458,26 @@ async def test_transaction_context_child_task_inheritance_example(database_url):
     if db.url.dialect == "mssql":
         return
 
-    async with Database(database_url) as database:
-        async with database.transaction():
-            # Create a note
-            await database.execute(notes.insert().values(id=1, text="setup", completed=True))
+    async with Database(database_url) as database, database.transaction():
+        # Create a note
+        await database.execute(notes.insert().values(id=1, text="setup", completed=True))
 
-            # Change the note from the same task
-            await database.execute(notes.update().where(notes.c.id == 1).values(text="prior"))
+        # Change the note from the same task
+        await database.execute(notes.update().where(notes.c.id == 1).values(text="prior"))
 
-            # Confirm the change
-            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
-            assert result.text == "prior"
+        # Confirm the change
+        result = await database.fetch_one(notes.select().where(notes.c.id == 1))
+        assert result.text == "prior"
 
-            async def run_update_from_child_task(connection):
-                # Change the note from a child task
-                await connection.execute(notes.update().where(notes.c.id == 1).values(text="test"))
+        async def run_update_from_child_task(connection):
+            # Change the note from a child task
+            await connection.execute(notes.update().where(notes.c.id == 1).values(text="test"))
 
-            await asyncio.create_task(run_update_from_child_task(database.connection()))
+        await asyncio.create_task(run_update_from_child_task(database.connection()))
 
-            # Confirm the child's change
-            result = await database.fetch_one(notes.select().where(notes.c.id == 1))
-            assert result.text == "test"
+        # Confirm the child's change
+        result = await database.fetch_one(notes.select().where(notes.c.id == 1))
+        assert result.text == "test"
 
 
 @pytest.mark.asyncio
