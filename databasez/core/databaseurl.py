@@ -1,5 +1,7 @@
-import typing
+from __future__ import annotations
+
 from functools import cached_property
+from typing import Any
 from urllib.parse import SplitResult, parse_qs, quote, unquote, urlencode, urlsplit
 
 from sqlalchemy import URL
@@ -7,7 +9,7 @@ from sqlalchemy.engine import make_url
 
 
 class DatabaseURL:
-    def __init__(self, url: typing.Union[str, "DatabaseURL", URL, None] = None):
+    def __init__(self, url: str | DatabaseURL | URL | None = None):
         if isinstance(url, DatabaseURL):
             self._url: str = url._url
         elif isinstance(url, URL):
@@ -47,14 +49,14 @@ class DatabaseURL:
         return self.scheme.split("+")[0]
 
     @property
-    def driver(self) -> typing.Optional[str]:
+    def driver(self) -> str | None:
         splitted = self.scheme.split("+", 1)
         if len(splitted) == 1:
             return None
         return splitted[1]
 
     @property
-    def userinfo(self) -> typing.Optional[bytes]:
+    def userinfo(self) -> bytes | None:
         if self.components.username:
             info = quote(self.components.username, safe="+")
             if self.password:
@@ -63,19 +65,19 @@ class DatabaseURL:
         return None
 
     @property
-    def username(self) -> typing.Optional[str]:
+    def username(self) -> str | None:
         if self.components.username is None:
             return None
         return unquote(self.components.username)
 
     @property
-    def password(self) -> typing.Optional[str]:
+    def password(self) -> str | None:
         if self.components.password is None:
             return None
         return unquote(self.components.password)
 
     @property
-    def hostname(self) -> typing.Optional[str]:
+    def hostname(self) -> str | None:
         host = self.components.hostname or self.options.get("host")
         if isinstance(host, list):
             if len(host) > 0:
@@ -85,11 +87,11 @@ class DatabaseURL:
             return host
 
     @property
-    def port(self) -> typing.Optional[int]:
+    def port(self) -> int | None:
         return self.components.port
 
     @property
-    def netloc(self) -> typing.Optional[str]:
+    def netloc(self) -> str | None:
         return self.components.netloc
 
     @property
@@ -100,8 +102,8 @@ class DatabaseURL:
         return unquote(path)
 
     @cached_property
-    def options(self) -> typing.Dict[str, typing.Union[str, typing.List[str]]]:
-        result: typing.Dict[str, typing.Union[str, typing.List[str]]] = {}
+    def options(self) -> dict[str, str | list[str]]:
+        result: dict[str, str | list[str]] = {}
         for key, val in parse_qs(self.components.query).items():
             if len(val) == 1:
                 result[key] = val[0]
@@ -109,7 +111,7 @@ class DatabaseURL:
                 result[key] = val
         return result
 
-    def replace(self, **kwargs: typing.Any) -> "DatabaseURL":
+    def replace(self, **kwargs: Any) -> DatabaseURL:
         if (
             "username" in kwargs
             or "user" in kwargs
@@ -163,7 +165,7 @@ class DatabaseURL:
     def sqla_url(self) -> URL:
         return make_url(self._url)
 
-    def upgrade(self, **extra_options: typing.Any) -> "DatabaseURL":
+    def upgrade(self, **extra_options: Any) -> DatabaseURL:
         from .database import Database
 
         return Database.apply_database_url_and_options(self, **extra_options)[1]
@@ -174,7 +176,7 @@ class DatabaseURL:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({repr(self.obscure_password)})"
 
-    def __eq__(self, other: typing.Any) -> bool:
+    def __eq__(self, other: Any) -> bool:
         # fix encoding
         if isinstance(other, str):
             other = DatabaseURL(other)

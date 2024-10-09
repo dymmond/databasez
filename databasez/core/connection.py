@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import typing
 import weakref
+from collections.abc import AsyncGenerator, Callable, Sequence
 from functools import partial
 from threading import Event, Lock, Thread, current_thread
 from types import TracebackType
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import text
 
@@ -14,7 +15,7 @@ from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multi
 
 from .transaction import Transaction
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from sqlalchemy import MetaData
     from sqlalchemy.sql import ClauseElement
 
@@ -25,7 +26,7 @@ if typing.TYPE_CHECKING:
 
 async def _startup(database: Database, is_initialized: Event) -> None:
     await database.connect()
-    _global_connection = typing.cast(Connection, database._global_connection)
+    _global_connection = cast(Connection, database._global_connection)
     await _global_connection._aenter()
     # we ensure fresh locks
     _global_connection._query_lock = asyncio.Lock()
@@ -64,30 +65,30 @@ class AsyncHelperConnection:
     def __init__(
         self,
         connection: Connection,
-        fn: typing.Callable,
-        args: typing.Any,
-        kwargs: typing.Any,
-        timeout: typing.Optional[float],
+        fn: Callable,
+        args: Any,
+        kwargs: Any,
+        timeout: float | None,
     ) -> None:
         self.connection = connection
         self.fn = partial(fn, self.connection, *args, **kwargs)
         self.timeout = timeout
         self.ctm = None
 
-    async def call(self) -> typing.Any:
+    async def call(self) -> Any:
         # is automatically awaited
         result = await _arun_with_timeout(self.fn(), self.timeout)
         return result
 
-    async def acall(self) -> typing.Any:
+    async def acall(self) -> Any:
         return await arun_coroutine_threadsafe(
             self.call(), self.connection._loop, self.connection.poll_interval
         )
 
-    def __await__(self) -> typing.Any:
+    def __await__(self) -> Any:
         return self.acall().__await__()
 
-    async def __aiter__(self) -> typing.Any:
+    async def __aiter__(self) -> Any:
         result = await self.acall()
         try:
             while True:
@@ -102,17 +103,17 @@ class AsyncHelperConnection:
 
 class Connection:
     # async helper
-    async_helper: typing.Type[AsyncHelperConnection] = AsyncHelperConnection
+    async_helper: type[AsyncHelperConnection] = AsyncHelperConnection
 
     def __init__(
         self, database: Database, force_rollback: bool = False, full_isolation: bool = False
     ) -> None:
         self._orig_database = self._database = database
         self._full_isolation = full_isolation
-        self._connection_thread_lock: typing.Optional[Lock] = None
-        self._connection_thread_is_initialized: typing.Optional[Event] = None
-        self._connection_thread_running_lock: typing.Optional[Lock] = None
-        self._isolation_thread: typing.Optional[Thread] = None
+        self._connection_thread_lock: Lock | None = None
+        self._connection_thread_is_initialized: Event | None = None
+        self._connection_thread_running_lock: Lock | None = None
+        self._isolation_thread: Thread | None = None
         if self._full_isolation:
             self._connection_thread_lock = Lock()
             self._connection_thread_is_initialized = Event()
@@ -131,12 +132,10 @@ class Connection:
         self._connection_counter = 0
 
         # for keeping weak references to transactions active
-        self._transaction_stack: typing.List[
-            typing.Tuple[Transaction, interfaces.TransactionBackend]
-        ] = []
+        self._transaction_stack: list[tuple[Transaction, interfaces.TransactionBackend]] = []
 
         self._force_rollback = force_rollback
-        self.connection_transaction: typing.Optional[Transaction] = None
+        self.connection_transaction: Transaction | None = None
 
     @multiloop_protector(True)
     def _get_connection_backend(self) -> interfaces.ConnectionBackend:
@@ -170,7 +169,7 @@ class Connection:
     async def __aenter__(self) -> Connection:
         initialized: bool = False
         if self._full_isolation:
-            thread: typing.Optional[Thread] = None
+            thread: Thread | None = None
             assert self._connection_thread_lock is not None
             assert self._connection_thread_is_initialized is not None
             assert self._connection_thread_running_lock is not None
@@ -232,7 +231,7 @@ class Connection:
         return closing
 
     @multiloop_protector(False, passthrough_timeout=True)  # fail when specifying timeout
-    async def _aexit(self) -> typing.Optional[Thread]:
+    async def _aexit(self) -> Thread | None:
         if self._full_isolation:
             assert self._connection_thread_lock is not None
             # the lock must be held on exit
@@ -251,9 +250,9 @@ class Connection:
 
     async def __aexit__(
         self,
-        exc_type: typing.Optional[typing.Type[BaseException]] = None,
-        exc_value: typing.Optional[BaseException] = None,
-        traceback: typing.Optional[TracebackType] = None,
+        exc_type: type[BaseException] | None = None,
+        exc_value: BaseException | None = None,
+        traceback: TracebackType | None = None,
     ) -> None:
         thread = await self._aexit()
         if thread is not None and thread is not current_thread():
@@ -262,7 +261,7 @@ class Connection:
             thread.join(1)
 
     @property
-    def _loop(self) -> typing.Optional[asyncio.AbstractEventLoop]:
+    def _loop(self) -> asyncio.AbstractEventLoop | None:
         return self._database._loop
 
     @property
@@ -278,12 +277,10 @@ class Connection:
     @multiloop_protector(False)
     async def fetch_all(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-    ) -> typing.List[interfaces.Record]:
+        query: ClauseElement | str,
+        values: dict | None = None,
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> list[interfaces.Record]:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_all(built_query)
@@ -291,13 +288,11 @@ class Connection:
     @multiloop_protector(False)
     async def fetch_one(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
+        query: ClauseElement | str,
+        values: dict | None = None,
         pos: int = 0,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-    ) -> typing.Optional[interfaces.Record]:
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> interfaces.Record | None:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_one(built_query, pos=pos)
@@ -305,14 +300,12 @@ class Connection:
     @multiloop_protector(False)
     async def fetch_val(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        column: typing.Any = 0,
+        query: ClauseElement | str,
+        values: dict | None = None,
+        column: Any = 0,
         pos: int = 0,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-    ) -> typing.Any:
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> Any:
         built_query = self._build_query(query, values)
         async with self._query_lock:
             return await self._connection.fetch_val(built_query, column, pos=pos)
@@ -320,12 +313,10 @@ class Connection:
     @multiloop_protector(False)
     async def execute(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Any = None,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-    ) -> typing.Union[interfaces.Record, int]:
+        query: ClauseElement | str,
+        values: Any = None,
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> interfaces.Record | int:
         if isinstance(query, str):
             built_query = self._build_query(query, values)
             async with self._query_lock:
@@ -337,12 +328,10 @@ class Connection:
     @multiloop_protector(False)
     async def execute_many(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Any = None,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-    ) -> typing.Union[typing.Sequence[interfaces.Record], int]:
+        query: ClauseElement | str,
+        values: Any = None,
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> Sequence[interfaces.Record] | int:
         if isinstance(query, str):
             built_query = self._build_query(query, None)
             async with self._query_lock:
@@ -354,20 +343,20 @@ class Connection:
     @multiloop_protector(False, passthrough_timeout=True)
     async def iterate(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        chunk_size: typing.Optional[int] = None,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.AsyncGenerator[interfaces.Record, None]:
+        query: ClauseElement | str,
+        values: dict | None = None,
+        chunk_size: int | None = None,
+        timeout: float | None = None,
+    ) -> AsyncGenerator[interfaces.Record, None]:
         built_query = self._build_query(query, values)
         if timeout is None or timeout <= 0:
             # anext is available in python 3.10
 
-            async def next_fn(inp: typing.Any) -> interfaces.Record:
+            async def next_fn(inp: Any) -> interfaces.Record:
                 return await aiterator.__anext__()
         else:
 
-            async def next_fn(inp: typing.Any) -> interfaces.Record:
+            async def next_fn(inp: Any) -> interfaces.Record:
                 return await asyncio.wait_for(aiterator.__anext__(), timeout=timeout)
 
         async with self._query_lock:
@@ -381,21 +370,21 @@ class Connection:
     @multiloop_protector(False, passthrough_timeout=True)
     async def batched_iterate(
         self,
-        query: typing.Union[ClauseElement, str],
-        values: typing.Optional[dict] = None,
-        batch_size: typing.Optional[int] = None,
+        query: ClauseElement | str,
+        values: dict | None = None,
+        batch_size: int | None = None,
         batch_wrapper: BatchCallable = tuple,
-        timeout: typing.Optional[float] = None,
-    ) -> typing.AsyncGenerator[BatchCallableResult, None]:
+        timeout: float | None = None,
+    ) -> AsyncGenerator[BatchCallableResult, None]:
         built_query = self._build_query(query, values)
         if timeout is None or timeout <= 0:
             # anext is available in python 3.10
 
-            async def next_fn(inp: typing.Any) -> typing.Sequence[interfaces.Record]:
+            async def next_fn(inp: Any) -> Sequence[interfaces.Record]:
                 return await aiterator.__anext__()
         else:
 
-            async def next_fn(inp: typing.Any) -> typing.Sequence[interfaces.Record]:
+            async def next_fn(inp: Any) -> Sequence[interfaces.Record]:
                 return await asyncio.wait_for(aiterator.__anext__(), timeout=timeout)
 
         async with self._query_lock:
@@ -409,13 +398,11 @@ class Connection:
     @multiloop_protector(False)
     async def run_sync(
         self,
-        fn: typing.Callable[..., typing.Any],
-        *args: typing.Any,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-        **kwargs: typing.Any,
-    ) -> typing.Any:
+        fn: Callable[..., Any],
+        *args: Any,
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+        **kwargs: Any,
+    ) -> Any:
         async with self._query_lock:
             return await self._connection.run_sync(fn, *args, **kwargs)
 
@@ -423,10 +410,8 @@ class Connection:
     async def create_all(
         self,
         meta: MetaData,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-        **kwargs: typing.Any,
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+        **kwargs: Any,
     ) -> None:
         await self.run_sync(meta.create_all, **kwargs)
 
@@ -434,36 +419,30 @@ class Connection:
     async def drop_all(
         self,
         meta: MetaData,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-        **kwargs: typing.Any,
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+        **kwargs: Any,
     ) -> None:
         await self.run_sync(meta.drop_all, **kwargs)
 
-    def transaction(self, *, force_rollback: bool = False, **kwargs: typing.Any) -> "Transaction":
+    def transaction(self, *, force_rollback: bool = False, **kwargs: Any) -> Transaction:
         return Transaction(weakref.ref(self), force_rollback, **kwargs)
 
     @property
     @multiloop_protector(True)
-    def async_connection(self) -> typing.Any:
+    def async_connection(self) -> Any:
         """The first layer (sqlalchemy)."""
         return self._connection.async_connection
 
     @multiloop_protector(False)
     async def get_raw_connection(
         self,
-        timeout: typing.Optional[
-            float
-        ] = None,  # stub for type checker, multiloop_protector handles timeout
-    ) -> typing.Any:
+        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+    ) -> Any:
         """The real raw connection (driver)."""
         return await self.async_connection.get_raw_connection()
 
     @staticmethod
-    def _build_query(
-        query: typing.Union[ClauseElement, str], values: typing.Optional[typing.Any] = None
-    ) -> ClauseElement:
+    def _build_query(query: ClauseElement | str, values: Any | None = None) -> ClauseElement:
         if isinstance(query, str):
             query = text(query)
 

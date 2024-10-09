@@ -1,15 +1,17 @@
-import typing
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction
 
-if typing.TYPE_CHECKING:
+if TYPE_CHECKING:
     from databasez.core.databaseurl import DatabaseURL
 
 
 class Transaction(SQLAlchemyTransaction):
     def get_default_transaction_isolation_level(
-        self, is_root: bool, **extra_options: typing.Any
-    ) -> typing.Optional[str]:
+        self, is_root: bool, **extra_options: Any
+    ) -> str | None:
         return None
 
 
@@ -18,9 +20,9 @@ class Database(SQLAlchemyDatabase):
 
     def extract_options(
         self,
-        database_url: "DatabaseURL",
-        **options: typing.Any,
-    ) -> typing.Tuple["DatabaseURL", typing.Dict[str, typing.Any]]:
+        database_url: DatabaseURL,
+        **options: Any,
+    ) -> tuple[DatabaseURL, dict[str, Any]]:
         database_url_new, options = super().extract_options(database_url, **options)
         new_query_options = dict(database_url.options)
         if database_url_new.driver:

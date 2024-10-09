@@ -20,9 +20,11 @@ async def test_dbapi2_connect():
     """
     Test that a basic connection works.
     """
-    async with Database("dbapi2://testsuite.sqlite3", dbapi_path="sqlite3") as database:
-        async with database.connection():
-            pass
+    async with (
+        Database("dbapi2://testsuite.sqlite3", dbapi_path="sqlite3") as database,
+        database.connection(),
+    ):
+        pass
 
 
 @pytest.mark.asyncio

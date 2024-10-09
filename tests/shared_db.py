@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import datetime
-import typing
 from unittest.mock import MagicMock
 
 import sqlalchemy
@@ -70,7 +71,7 @@ prices = sqlalchemy.Table(
 )
 
 
-async def database_client(url: typing.Union[dict, str], meta=None) -> DatabaseTestClient:
+async def database_client(url: dict | str, meta=None) -> DatabaseTestClient:
     if meta is None:
         meta = metadata
     if isinstance(url, str):

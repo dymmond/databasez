@@ -27,7 +27,7 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
-if not any((x.endswith(" for SQL Server") for x in pyodbc.drivers())):
+if not any(x.endswith(" for SQL Server") for x in pyodbc.drivers()):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 DATABASE_CONFIG_URLS = []
@@ -56,10 +56,7 @@ MIXED_DATABASE_CONFIG_URLS_IDS = [*DATABASE_URLS, *(f"{x}[config]" for x in DATA
 
 
 def _startswith(tested, params):
-    for param in params:
-        if tested.startswith(param):
-            return True
-    return False
+    return any(tested.startswith(param) for param in params)
 
 
 @pytest.fixture(params=DATABASE_URLS)
@@ -176,59 +173,58 @@ async def test_queries_raw(database_url):
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``, and
     `fetch_one()` interfaces are all supported (raw queries).
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            # execute()
-            query = "INSERT INTO notes(text, completed) VALUES (:text, :completed)"
-            values = {"text": "example1", "completed": True}
-            await database.execute(query, values)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        # execute()
+        query = "INSERT INTO notes(text, completed) VALUES (:text, :completed)"
+        values = {"text": "example1", "completed": True}
+        await database.execute(query, values)
 
-            # execute_many()
-            query = "INSERT INTO notes(text, completed) VALUES (:text, :completed)"
-            values = [
-                {"text": "example2", "completed": False},
-                {"text": "example3", "completed": True},
-            ]
-            await database.execute_many(query, values)
+        # execute_many()
+        query = "INSERT INTO notes(text, completed) VALUES (:text, :completed)"
+        values = [
+            {"text": "example2", "completed": False},
+            {"text": "example3", "completed": True},
+        ]
+        await database.execute_many(query, values)
 
-            # fetch_all()
-            query = "SELECT * FROM notes WHERE completed = :completed"
-            results = await database.fetch_all(query=query, values={"completed": True})
-            assert len(results) == 2
-            assert results[0].text == "example1"
-            assert results[0].completed == True
-            assert results[1].text == "example3"
-            assert results[1].completed == True
+        # fetch_all()
+        query = "SELECT * FROM notes WHERE completed = :completed"
+        results = await database.fetch_all(query=query, values={"completed": True})
+        assert len(results) == 2
+        assert results[0].text == "example1"
+        assert results[0].completed == True
+        assert results[1].text == "example3"
+        assert results[1].completed == True
 
-            # fetch_one()
-            query = "SELECT * FROM notes WHERE completed = :completed"
-            result = await database.fetch_one(query=query, values={"completed": False})
-            assert result.text == "example2"
-            assert result.completed == False
+        # fetch_one()
+        query = "SELECT * FROM notes WHERE completed = :completed"
+        result = await database.fetch_one(query=query, values={"completed": False})
+        assert result.text == "example2"
+        assert result.completed == False
 
-            # fetch_val()
-            query = "SELECT completed FROM notes WHERE text = :text"
-            result = await database.fetch_val(query=query, values={"text": "example1"})
-            assert result == True
+        # fetch_val()
+        query = "SELECT completed FROM notes WHERE text = :text"
+        result = await database.fetch_val(query=query, values={"text": "example1"})
+        assert result == True
 
-            query = "SELECT * FROM notes WHERE text = :text"
-            result = await database.fetch_val(
-                query=query, values={"text": "example1"}, column="completed"
-            )
-            assert result == True
+        query = "SELECT * FROM notes WHERE text = :text"
+        result = await database.fetch_val(
+            query=query, values={"text": "example1"}, column="completed"
+        )
+        assert result == True
 
-            # iterate()
-            query = "SELECT * FROM notes"
-            iterate_results = []
-            async for result in database.iterate(query=query):
-                iterate_results.append(result)
-            assert len(iterate_results) == 3
-            assert iterate_results[0].text == "example1"
-            assert iterate_results[0].completed == True
-            assert iterate_results[1].text == "example2"
-            assert iterate_results[1].completed == False
-            assert iterate_results[2].text == "example3"
-            assert iterate_results[2].completed == True
+        # iterate()
+        query = "SELECT * FROM notes"
+        iterate_results = []
+        async for result in database.iterate(query=query):
+            iterate_results.append(result)
+        assert len(iterate_results) == 3
+        assert iterate_results[0].text == "example1"
+        assert iterate_results[0].completed == True
+        assert iterate_results[1].text == "example2"
+        assert iterate_results[1].completed == False
+        assert iterate_results[2].text == "example3"
+        assert iterate_results[2].completed == True
 
 
 @pytest.mark.asyncio
@@ -238,15 +234,14 @@ async def test_ddl_queries(database_url):
     `CreateTable()` are supported (using SQLAlchemy core).
     """
 
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            # DropTable()
-            query = sqlalchemy.schema.DropTable(notes)
-            await database.execute(query)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        # DropTable()
+        query = sqlalchemy.schema.DropTable(notes)
+        await database.execute(query)
 
-            # CreateTable()
-            query = sqlalchemy.schema.CreateTable(notes)
-            await database.execute(query)
+        # CreateTable()
+        query = sqlalchemy.schema.CreateTable(notes)
+        await database.execute(query)
 
 
 @pytest.mark.asyncio
@@ -306,14 +301,16 @@ async def test_queries_after_error(database_url, exception):
     """
 
     async with Database(database_url) as database:
-        with patch.object(
-            database.connection()._connection,
-            "acquire",
-            new=AsyncMock(side_effect=exception),
+        with (
+            patch.object(
+                database.connection()._connection,
+                "acquire",
+                new=AsyncMock(side_effect=exception),
+            ),
+            pytest.raises(exception),
         ):
-            with pytest.raises(exception):
-                query = notes.select()
-                await database.fetch_all(query)
+            query = notes.select()
+            await database.fetch_all(query)
 
         query = notes.select()
         await database.fetch_all(query)
@@ -325,24 +322,23 @@ async def test_results_support_mapping_interface(database_url):
     Casting results to a dict should work, since the interface defines them
     as supporting the mapping interface.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            # execute()
-            query = notes.insert()
-            values = {"text": "example1", "completed": True}
-            await database.execute(query, values)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        # execute()
+        query = notes.insert()
+        values = {"text": "example1", "completed": True}
+        await database.execute(query, values)
 
-            # fetch_all()
-            query = notes.select()
-            results = await database.fetch_all(query=query)
-            results_as_dicts = [dict(item._mapping) for item in results]
+        # fetch_all()
+        query = notes.select()
+        results = await database.fetch_all(query=query)
+        results_as_dicts = [dict(item._mapping) for item in results]
 
-            assert len(results[0]) == 3
-            assert len(results_as_dicts[0]) == 3
+        assert len(results[0]) == 3
+        assert len(results_as_dicts[0]) == 3
 
-            assert isinstance(results_as_dicts[0]["id"], int)
-            assert results_as_dicts[0]["text"] == "example1"
-            assert results_as_dicts[0]["completed"] is True
+        assert isinstance(results_as_dicts[0]["id"], int)
+        assert results_as_dicts[0]["text"] == "example1"
+        assert results_as_dicts[0]["completed"] is True
 
 
 @pytest.mark.asyncio
@@ -351,13 +347,12 @@ async def test_result_values_allow_duplicate_names(database_url):
     The values of a result should respect when two columns are selected
     with the same name.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            query = "SELECT 1 AS id, 2 AS id"
-            row = await database.fetch_one(query=query)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        query = "SELECT 1 AS id, 2 AS id"
+        row = await database.fetch_one(query=query)
 
-            assert list(row._mapping.keys()) == ["id", "id"]
-            assert list(row._mapping.values()) == [1, 2]
+        assert list(row._mapping.keys()) == ["id", "id"]
+        assert list(row._mapping.values()) == [1, 2]
 
 
 @pytest.mark.asyncio
@@ -365,12 +360,11 @@ async def test_fetch_one_returning_no_results(database_url):
     """
     fetch_one should return `None` when no results match.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            # fetch_all()
-            query = notes.select()
-            result = await database.fetch_one(query=query)
-            assert result is None
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        # fetch_all()
+        query = notes.select()
+        result = await database.fetch_one(query=query)
+        assert result is None
 
 
 @pytest.mark.asyncio
@@ -378,27 +372,26 @@ async def test_execute_return_val(database_url):
     """
     Test using return value from `execute()` to get an inserted primary key.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            query = notes.insert()
-            values = {"text": "example1", "completed": True}
-            pk1 = await database.execute(query, values)
-            if isinstance(pk1, Sequence):
-                pk1 = pk1[0]
-            values = {"text": "example2", "completed": True}
-            pk2 = await database.execute(query, values)
-            if isinstance(pk2, Sequence):
-                pk2 = pk2[0]
-            assert isinstance(pk1, int) and pk1 > 0
-            query = notes.select().where(notes.c.id == pk1)
-            result = await database.fetch_one(query)
-            assert result.text == "example1"
-            assert result.completed is True
-            assert isinstance(pk2, int) and pk2 > 0
-            query = notes.select().where(notes.c.id == pk2)
-            result = await database.fetch_one(query)
-            assert result.text == "example2"
-            assert result.completed is True
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        query = notes.insert()
+        values = {"text": "example1", "completed": True}
+        pk1 = await database.execute(query, values)
+        if isinstance(pk1, Sequence):
+            pk1 = pk1[0]
+        values = {"text": "example2", "completed": True}
+        pk2 = await database.execute(query, values)
+        if isinstance(pk2, Sequence):
+            pk2 = pk2[0]
+        assert isinstance(pk1, int) and pk1 > 0
+        query = notes.select().where(notes.c.id == pk1)
+        result = await database.fetch_one(query)
+        assert result.text == "example1"
+        assert result.completed is True
+        assert isinstance(pk2, int) and pk2 > 0
+        query = notes.select().where(notes.c.id == pk2)
+        result = await database.fetch_one(query)
+        assert result.text == "example2"
+        assert result.completed is True
 
 
 @pytest.mark.asyncio
@@ -406,21 +399,20 @@ async def test_datetime_field(database_url):
     """
     Test DataTime columns, to ensure records are coerced to/from proper Python types.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            now = datetime.datetime.now().replace(microsecond=0)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        now = datetime.datetime.now().replace(microsecond=0)
 
-            # execute()
-            query = articles.insert()
-            values = {"title": "Hello, world", "published": now}
-            await database.execute(query, values)
+        # execute()
+        query = articles.insert()
+        values = {"title": "Hello, world", "published": now}
+        await database.execute(query, values)
 
-            # fetch_all()
-            query = articles.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 1
-            assert results[0].title == "Hello, world"
-            assert results[0].published == now
+        # fetch_all()
+        query = articles.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 1
+        assert results[0].title == "Hello, world"
+        assert results[0].published == now
 
 
 @pytest.mark.asyncio
@@ -428,24 +420,23 @@ async def test_decimal_field(database_url):
     """
     Test Decimal (NUMERIC) columns, to ensure records are coerced to/from proper Python types.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            price = decimal.Decimal("0.700000000000001")
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        price = decimal.Decimal("0.700000000000001")
 
-            # execute()
-            query = prices.insert()
-            values = {"price": price}
-            await database.execute(query, values)
+        # execute()
+        query = prices.insert()
+        values = {"price": price}
+        await database.execute(query, values)
 
-            # fetch_all()
-            query = prices.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 1
-            if str(database.url).startswith("sqlite"):
-                # aiosqlite does not support native decimals --> a round-off error is expected
-                assert results[0].price == pytest.approx(price)
-            else:
-                assert results[0].price == price
+        # fetch_all()
+        query = prices.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 1
+        if str(database.url).startswith("sqlite"):
+            # aiosqlite does not support native decimals --> a round-off error is expected
+            assert results[0].price == pytest.approx(price)
+        else:
+            assert results[0].price == price
 
 
 @pytest.mark.asyncio
@@ -453,20 +444,19 @@ async def test_json_field(database_url):
     """
     Test JSON columns, to ensure correct cross-database support.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            # execute()
-            data = {"text": "hello", "boolean": True, "int": 1}
-            values = {"data": data}
-            query = session.insert()
-            await database.execute(query, values)
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        # execute()
+        data = {"text": "hello", "boolean": True, "int": 1}
+        values = {"data": data}
+        query = session.insert()
+        await database.execute(query, values)
 
-            # fetch_all()
-            query = session.select()
-            results = await database.fetch_all(query=query)
+        # fetch_all()
+        query = session.select()
+        results = await database.fetch_all(query=query)
 
-            assert len(results) == 1
-            assert results[0].data == {"text": "hello", "boolean": True, "int": 1}
+        assert len(results) == 1
+        assert results[0].data == {"text": "hello", "boolean": True, "int": 1}
 
 
 @pytest.mark.asyncio
@@ -474,22 +464,21 @@ async def test_custom_field(database_url):
     """
     Test custom column types.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            today = datetime.date.today()
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        today = datetime.date.today()
 
-            # execute()
-            query = custom_date.insert()
-            values = {"title": "Hello, world", "published": today}
+        # execute()
+        query = custom_date.insert()
+        values = {"title": "Hello, world", "published": today}
 
-            await database.execute(query, values)
+        await database.execute(query, values)
 
-            # fetch_all()
-            query = custom_date.select()
-            results = await database.fetch_all(query=query)
-            assert len(results) == 1
-            assert results[0].title == "Hello, world"
-            assert results[0].published == today
+        # fetch_all()
+        query = custom_date.select()
+        results = await database.fetch_all(query=query)
+        assert len(results) == 1
+        assert results[0].title == "Hello, world"
+        assert results[0].published == today
 
 
 @pytest.mark.asyncio
@@ -517,10 +506,11 @@ async def test_connect_and_disconnect(database_mixed_url):
     """
     Test explicit connect() and disconnect().
     """
-    if isinstance(database_mixed_url, str):
-        data = {"url": database_mixed_url}
-    else:
-        data = {"config": database_mixed_url}
+    data = (
+        {"url": database_mixed_url}
+        if isinstance(database_mixed_url, str)
+        else {"config": database_mixed_url}
+    )
 
     database = Database(**data)
 
@@ -618,10 +608,9 @@ async def test_connection_context(database_url):
     """
     Test connection contexts are task-local.
     """
-    async with Database(database_url) as database:
-        async with database.connection() as connection_1:
-            async with database.connection() as connection_2:
-                assert connection_1 is connection_2
+    async with Database(database_url) as database, database.connection() as connection_1:  # noqa: SIM117
+        async with database.connection() as connection_2:
+            assert connection_1 is connection_2
 
     async with Database(database_url) as database:
         connection_1 = None
@@ -658,11 +647,10 @@ async def test_connection_context_with_raw_connection(database_url):
     """
     Test connection contexts with respect to the raw connection.
     """
-    async with Database(database_url) as database:
-        async with database.connection() as connection_1:
-            async with database.connection() as connection_2:
-                assert connection_1 is connection_2
-                assert connection_1.async_connection is connection_2.async_connection
+    async with Database(database_url) as database, database.connection() as connection_1:  # noqa: SIM117
+        async with database.connection() as connection_2:
+            assert connection_1 is connection_2
+            assert connection_1.async_connection is connection_2.async_connection
 
 
 @pytest.mark.asyncio
@@ -671,142 +659,142 @@ async def test_queries_with_expose_backend_connection(database_url):
     Replication of `execute()`, `execute_many()`, `fetch_all()``, and
     `fetch_one()` using the raw driver interface.
     """
-    async with Database(database_url) as database:
-        async with database.connection() as connection:
-            async with connection.transaction(force_rollback=True):
-                # Get the driver connection
-                raw_connection = (await connection.get_raw_connection()).driver_connection
-                # Insert query
-                if database.url.scheme in [
-                    "mysql",
-                    "mysql+asyncmy",
-                    "mysql+aiomysql",
-                    "postgresql+psycopg",
-                ]:
-                    insert_query = r"INSERT INTO notes (text, completed) VALUES (%s, %s)"
-                elif database.url.scheme == "postgresql+asyncpg":
-                    insert_query = r"INSERT INTO notes (text, completed) VALUES ($1, $2)"
-                else:
-                    insert_query = r"INSERT INTO notes (text, completed) VALUES (?, ?)"
+    async with (
+        Database(database_url) as database,
+        database.connection() as connection,
+        connection.transaction(force_rollback=True),
+    ):
+        # Get the driver connection
+        raw_connection = (await connection.get_raw_connection()).driver_connection
+        # Insert query
+        if database.url.scheme in [
+            "mysql",
+            "mysql+asyncmy",
+            "mysql+aiomysql",
+            "postgresql+psycopg",
+        ]:
+            insert_query = r"INSERT INTO notes (text, completed) VALUES (%s, %s)"
+        elif database.url.scheme == "postgresql+asyncpg":
+            insert_query = r"INSERT INTO notes (text, completed) VALUES ($1, $2)"
+        else:
+            insert_query = r"INSERT INTO notes (text, completed) VALUES (?, ?)"
 
-                # execute()
-                values = ("example1", True)
+        # execute()
+        values = ("example1", True)
 
-                if database.url.scheme in [
-                    "mysql",
-                    "mysql+aiomysql",
-                    "mssql",
-                    "mssql+pyodbc",
-                    "mssql+aioodbc",
-                ]:
-                    cursor = await raw_connection.cursor()
-                    await cursor.execute(insert_query, values)
-                elif database.url.scheme == "mysql+asyncmy":
-                    async with raw_connection.cursor() as cursor:
-                        await cursor.execute(insert_query, values)
-                elif database.url.scheme in [
-                    "postgresql",
-                    "postgresql+asyncpg",
-                ]:
-                    await raw_connection.execute(insert_query, *values)
-                elif database.url.scheme in [
-                    "postgresql+psycopg",
-                ]:
-                    await raw_connection.execute(insert_query, values)
-                elif database.url.scheme in ["sqlite", "sqlite+aiosqlite"]:
-                    await raw_connection.execute(insert_query, values)
+        if database.url.scheme in [
+            "mysql",
+            "mysql+aiomysql",
+            "mssql",
+            "mssql+pyodbc",
+            "mssql+aioodbc",
+        ]:
+            cursor = await raw_connection.cursor()
+            await cursor.execute(insert_query, values)
+        elif database.url.scheme == "mysql+asyncmy":
+            async with raw_connection.cursor() as cursor:
+                await cursor.execute(insert_query, values)
+        elif database.url.scheme in [
+            "postgresql",
+            "postgresql+asyncpg",
+        ]:
+            await raw_connection.execute(insert_query, *values)
+        elif database.url.scheme in [
+            "postgresql+psycopg",
+        ] or database.url.scheme in ["sqlite", "sqlite+aiosqlite"]:
+            await raw_connection.execute(insert_query, values)
 
-                # execute_many()
-                values = [("example2", False), ("example3", True)]
+        # execute_many()
+        values = [("example2", False), ("example3", True)]
 
-                if database.url.scheme in ["mysql", "mysql+aiomysql"]:
-                    cursor = await raw_connection.cursor()
-                    await cursor.executemany(insert_query, values)
-                elif database.url.scheme == "mysql+asyncmy":
-                    async with raw_connection.cursor() as cursor:
-                        await cursor.executemany(insert_query, values)
-                elif database.url.scheme in [
-                    "mssql",
-                    "mssql+aioodbc",
-                    "mssql+pyodbc",
-                ]:
-                    cursor = await raw_connection.cursor()
-                    for value in values:
-                        await cursor.execute(insert_query, value)
-                elif database.url.scheme in ["postgresql+psycopg"]:
-                    cursor = raw_connection.cursor()
-                    for value in values:
-                        await cursor.execute(insert_query, value)
-                else:
-                    await raw_connection.executemany(insert_query, values)
+        if database.url.scheme in ["mysql", "mysql+aiomysql"]:
+            cursor = await raw_connection.cursor()
+            await cursor.executemany(insert_query, values)
+        elif database.url.scheme == "mysql+asyncmy":
+            async with raw_connection.cursor() as cursor:
+                await cursor.executemany(insert_query, values)
+        elif database.url.scheme in [
+            "mssql",
+            "mssql+aioodbc",
+            "mssql+pyodbc",
+        ]:
+            cursor = await raw_connection.cursor()
+            for value in values:
+                await cursor.execute(insert_query, value)
+        elif database.url.scheme in ["postgresql+psycopg"]:
+            cursor = raw_connection.cursor()
+            for value in values:
+                await cursor.execute(insert_query, value)
+        else:
+            await raw_connection.executemany(insert_query, values)
 
-                # Select query
-                select_query = "SELECT notes.id, notes.text, notes.completed FROM notes"
+        # Select query
+        select_query = "SELECT notes.id, notes.text, notes.completed FROM notes"
 
-                # fetch_all()
-                if database.url.scheme in [
-                    "mysql",
-                    "mysql+aiomysql",
-                    "mssql",
-                    "mssql+pyodbc",
-                    "mssql+aioodbc",
-                ]:
-                    cursor = await raw_connection.cursor()
-                    await cursor.execute(select_query)
-                    results = await cursor.fetchall()
-                elif database.url.scheme == "mysql+asyncmy":
-                    async with raw_connection.cursor() as cursor:
-                        await cursor.execute(select_query)
-                        results = await cursor.fetchall()
-                elif database.url.scheme in ["postgresql", "postgresql+asyncpg"]:
-                    results = await raw_connection.fetch(select_query)
-                elif database.url.scheme in ["sqlite", "sqlite+aiosqlite"]:
-                    results = await raw_connection.execute_fetchall(select_query)
-                elif database.url.scheme == "postgresql+psycopg":
-                    cursor = raw_connection.cursor()
-                    await cursor.execute(select_query)
-                    results = await cursor.fetchall()
+        # fetch_all()
+        if database.url.scheme in [
+            "mysql",
+            "mysql+aiomysql",
+            "mssql",
+            "mssql+pyodbc",
+            "mssql+aioodbc",
+        ]:
+            cursor = await raw_connection.cursor()
+            await cursor.execute(select_query)
+            results = await cursor.fetchall()
+        elif database.url.scheme == "mysql+asyncmy":
+            async with raw_connection.cursor() as cursor:
+                await cursor.execute(select_query)
+                results = await cursor.fetchall()
+        elif database.url.scheme in ["postgresql", "postgresql+asyncpg"]:
+            results = await raw_connection.fetch(select_query)
+        elif database.url.scheme in ["sqlite", "sqlite+aiosqlite"]:
+            results = await raw_connection.execute_fetchall(select_query)
+        elif database.url.scheme == "postgresql+psycopg":
+            cursor = raw_connection.cursor()
+            await cursor.execute(select_query)
+            results = await cursor.fetchall()
 
-                assert len(results) == 3
-                # Raw output for the raw request
-                assert results[0][1] == "example1"
-                assert results[0][2] == True
-                assert results[1][1] == "example2"
-                assert results[1][2] == False
-                assert results[2][1] == "example3"
-                assert results[2][2] == True
+        assert len(results) == 3
+        # Raw output for the raw request
+        assert results[0][1] == "example1"
+        assert results[0][2] == True
+        assert results[1][1] == "example2"
+        assert results[1][2] == False
+        assert results[2][1] == "example3"
+        assert results[2][2] == True
 
-                # fetch_one()
-                if database.url.scheme in [
-                    "postgresql",
-                    "postgresql+asyncpg",
-                ]:
-                    result = await raw_connection.fetchrow(select_query)
-                elif database.url.scheme in [
-                    "postgresql+psycopg",
-                ]:
-                    cursor = raw_connection.cursor()
-                    await cursor.execute(select_query)
-                    result = await cursor.fetchone()
-                elif database.url.scheme == "mysql+asyncmy":
-                    async with raw_connection.cursor() as cursor:
-                        await cursor.execute(select_query)
-                        result = await cursor.fetchone()
-                elif database.url.scheme in ["mssql", "mssql+pyodbc", "mssql+aioodbc"]:
-                    cursor = await raw_connection.cursor()
-                    try:
-                        await cursor.execute(select_query)
-                        result = await cursor.fetchone()
-                    finally:
-                        await cursor.close()
-                else:
-                    cursor = await raw_connection.cursor()
-                    await cursor.execute(select_query)
-                    result = await cursor.fetchone()
+        # fetch_one()
+        if database.url.scheme in [
+            "postgresql",
+            "postgresql+asyncpg",
+        ]:
+            result = await raw_connection.fetchrow(select_query)
+        elif database.url.scheme in [
+            "postgresql+psycopg",
+        ]:
+            cursor = raw_connection.cursor()
+            await cursor.execute(select_query)
+            result = await cursor.fetchone()
+        elif database.url.scheme == "mysql+asyncmy":
+            async with raw_connection.cursor() as cursor:
+                await cursor.execute(select_query)
+                result = await cursor.fetchone()
+        elif database.url.scheme in ["mssql", "mssql+pyodbc", "mssql+aioodbc"]:
+            cursor = await raw_connection.cursor()
+            try:
+                await cursor.execute(select_query)
+                result = await cursor.fetchone()
+            finally:
+                await cursor.close()
+        else:
+            cursor = await raw_connection.cursor()
+            await cursor.execute(select_query)
+            result = await cursor.fetchone()
 
-                # Raw output for the raw request
-                assert result[1] == "example1"
-                assert result[2] == True
+        # Raw output for the raw request
+        assert result[1] == "example1"
+        assert result[2] == True
 
 
 @pytest.mark.asyncio
@@ -814,10 +802,11 @@ async def test_database_url_interface(database_mixed_url):
     """
     Test that Database instances expose a `.url` attribute.
     """
-    if isinstance(database_mixed_url, str):
-        data = {"url": database_mixed_url}
-    else:
-        data = {"config": database_mixed_url}
+    data = (
+        {"url": database_mixed_url}
+        if isinstance(database_mixed_url, str)
+        else {"config": database_mixed_url}
+    )
 
     async with Database(**data) as database:
         assert isinstance(database.url, DatabaseURL)
@@ -843,19 +832,18 @@ async def test_column_names(database_url, select_query):
     """
     Test that column names are exposed correctly through `._mapping.keys()` on each row.
     """
-    async with Database(database_url) as database:
-        async with database.transaction(force_rollback=True):
-            # insert values
-            query = notes.insert()
-            values = {"text": "example1", "completed": True}
-            await database.execute(query, values)
-            # fetch results
-            results = await database.fetch_all(query=select_query)
-            assert len(results) == 1
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        # insert values
+        query = notes.insert()
+        values = {"text": "example1", "completed": True}
+        await database.execute(query, values)
+        # fetch results
+        results = await database.fetch_all(query=select_query)
+        assert len(results) == 1
 
-            assert sorted(results[0]._mapping.keys()) == ["completed", "id", "text"]
-            assert results[0].text == "example1"
-            assert results[0].completed == True
+        assert sorted(results[0]._mapping.keys()) == ["completed", "id", "text"]
+        assert results[0].text == "example1"
+        assert results[0].completed == True
 
 
 @pytest.mark.asyncio

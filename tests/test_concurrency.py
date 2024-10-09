@@ -1,6 +1,5 @@
 import asyncio
 import contextvars
-import functools
 import os
 from concurrent.futures import Future
 from threading import Thread
@@ -22,20 +21,9 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
 if os.environ.get("TEST_NO_RISK_SEGFAULTS") or not any(
-    (x.endswith(" for SQL Server") for x in pyodbc.drivers())
+    x.endswith(" for SQL Server") for x in pyodbc.drivers()
 ):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
-
-
-try:
-    to_thread = asyncio.to_thread
-except AttributeError:
-    # for py <= 3.8
-    async def to_thread(func, /, *args, **kwargs):
-        loop = asyncio.get_running_loop()
-        ctx = contextvars.copy_context()
-        func_call = functools.partial(ctx.run, func, *args, **kwargs)
-        return await loop.run_in_executor(None, func_call)
 
 
 @pytest.fixture(params=DATABASE_URLS)
@@ -49,10 +37,7 @@ def database_url(request):
 
 
 def _startswith(tested, params):
-    for param in params:
-        if tested.startswith(param):
-            return True
-    return False
+    return any(tested.startswith(param) for param in params)
 
 
 def _future_helper(awaitable, future):
@@ -114,7 +99,7 @@ async def test_multi_thread_db(database_url, force_rollback, join_type, full_iso
                 thread.start()
                 future.result(4)
             else:
-                await to_thread(asyncio.run, asyncio.wait_for(db_lookup(True), 3))
+                await asyncio.to_thread(asyncio.run, asyncio.wait_for(db_lookup(True), 3))
 
         await asyncio.gather(db_lookup(False), wrap_in_thread(), wrap_in_thread())
 
@@ -212,7 +197,7 @@ async def test_multi_thread_db_contextmanager(
                 ops = []
                 while depth >= 0:
                     depth -= 1
-                    ops.append(to_thread(asyncio.run, db_connect(depth=depth)))
+                    ops.append(asyncio.to_thread(asyncio.run, db_connect(depth=depth)))
                 await asyncio.gather(*ops)
             assert new_database.ref_counter == 0
 
@@ -226,7 +211,7 @@ async def test_multi_thread_db_contextmanager(
             thread.start()
             future.result(4)
         else:
-            await to_thread(asyncio.run, asyncio.wait_for(db_connect(), 3))
+            await asyncio.to_thread(asyncio.run, asyncio.wait_for(db_connect(), 3))
     assert database.ref_counter == 0
     if force_rollback:
         async with database:
@@ -244,7 +229,7 @@ async def test_multi_thread_db_connect(database_url):
             await database.fetch_one("SELECT 1")
             await database.disconnect()
 
-        await to_thread(asyncio.run, db_connect())
+        await asyncio.to_thread(asyncio.run, db_connect())
 
 
 @pytest.mark.asyncio
@@ -256,4 +241,4 @@ async def test_multi_thread_db_fails(database_url):
             database.disconnect()
 
         with pytest.raises(RuntimeError):
-            await to_thread(asyncio.run, db_connect())
+            await asyncio.to_thread(asyncio.run, db_connect())
