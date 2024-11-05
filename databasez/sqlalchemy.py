@@ -290,4 +290,5 @@ class SQLAlchemyDatabase(DatabaseBackend):
         engine = self.engine
         self.engine = None
         assert engine is not None, "database is not initialized"
-        await engine.dispose()
+        await engine.dispose(close=True)
+        del engine
