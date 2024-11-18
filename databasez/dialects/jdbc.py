@@ -237,8 +237,9 @@ class JDBC_dialect(DefaultDialect):
 
             columns.append(
                 ReflectedColumn(
-                    jdbc_columns.getString("COLUMN_NAME"),
-                    sqlalchemy_datatype,
+                    name=jdbc_columns.getString("COLUMN_NAME"),
+                    type=sqlalchemy_datatype,
+                    default=jdbc_columns.getString("COLUMN_DEF"),
                     nullable=jdbc_columns.getString("IS_NULLABLE").lower() != "false",
                     autoincrement=jdbc_columns.getString("IS_AUTOINCREMENT").lower() == "true",
                 )
