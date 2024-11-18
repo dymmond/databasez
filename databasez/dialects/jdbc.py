@@ -7,7 +7,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import orjson
-from sqlalchemy import ReflectedColumn, exc
+from sqlalchemy import exc
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
 )
@@ -15,6 +15,7 @@ from sqlalchemy.engine import reflection
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.engine.interfaces import (
     ReflectedCheckConstraint,
+    ReflectedColumn,
     ReflectedForeignKeyConstraint,
     ReflectedIndex,
     ReflectedPrimaryKeyConstraint,
