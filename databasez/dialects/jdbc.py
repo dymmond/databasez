@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Collection, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from importlib import import_module
@@ -20,6 +21,7 @@ from sqlalchemy.engine.interfaces import (
     ReflectedIndex,
     ReflectedPrimaryKeyConstraint,
     ReflectedUniqueConstraint,
+    TableKey,
 )
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.sql import sqltypes, text
@@ -29,6 +31,7 @@ from sqlalchemy_utils.functions.orm import quote
 from databasez.utils import AsyncWrapper
 
 if TYPE_CHECKING:
+    from jpype.dbapi2 import Connection as JDBCConnection
     from sqlalchemy import URL
     from sqlalchemy.base import Connection
     from sqlalchemy.engine.interfaces import ConnectArgsType
@@ -36,6 +39,10 @@ if TYPE_CHECKING:
 
 class AsyncAdapt_adbapi2_connection(AsyncAdapt_dbapi_connection):
     pass
+
+
+def unpack_to_jdbc_connection(connection: Connection) -> JDBCConnection:
+    return connection.connection.dbapi_connection.driver_connection.connection
 
 
 class JDBC_dialect(DefaultDialect):
@@ -113,43 +120,55 @@ class JDBC_dialect(DefaultDialect):
     ) -> Any:
         return import_module("jpype.dbapi2")
 
-    @lru_cache(512)
     @staticmethod
-    def _escape_jdbc_name(inp: str, escape: str) -> str:
+    @lru_cache(512)
+    def _escape_jdbc_name(inp: str, escape: Any) -> str:
+        escape = str(escape) if escape else "\\"
         re_escaped = re.escape(escape)
-        return re.sub(f"({re_escaped}|_|%)", inp, f"{escape}\\1")
+        result_escape = escape
+        if result_escape == "\\":
+            result_escape = "\\\\"
+        return re.sub(f"({re_escaped}|_|%)", f"{result_escape}\\1", str(inp))
 
     @reflection.cache
     def get_schema_names(self, connection: Connection, **kw: Any) -> list[str]:
         jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        metadata = jdbc_connection.getMetaData()
         table_set = metadata.getSchemas()
         names: list[str] = []
-        while table_set.next():
-            names.append(table_set.getString("TABLE_SCHEM"))
+        try:
+            while table_set.next():
+                names.append(str(table_set.getString("TABLE_SCHEM")))
+        finally:
+            table_set.close()
         return names
 
     @reflection.cache
     def get_table_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+
+        # .driver_connection.connection
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         table_set = metadata.getTables(
             None, self._escape_jdbc_name(schema, escape) if schema else "", None, ["TABLE"]
         )
         names: list[str] = []
-        while table_set.next():
-            names.append(table_set.getString("TABLE_NAME"))
+        try:
+            while table_set.next():
+                names.append(str(table_set.getString("TABLE_NAME")))
+        finally:
+            table_set.close()
         return names
 
     @reflection.cache
     def get_temp_table_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         table_set = metadata.getTables(
             None,
@@ -158,38 +177,47 @@ class JDBC_dialect(DefaultDialect):
             ["GLOBAL TEMPORARY", "LOCAL TEMPORARY"],
         )
         names: list[str] = []
-        while table_set.next():
-            names.append(table_set.getString("TABLE_NAME"))
+        try:
+            while table_set.next():
+                names.append(str(table_set.getString("TABLE_NAME")))
+        finally:
+            table_set.close()
         return names
 
     @reflection.cache
     def get_temp_view_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         table_set = metadata.getTables(
             None, self._escape_jdbc_name(schema, escape) if schema else "", None, ["VIEW"]
         )
         names: list[str] = []
-        while table_set.next():
-            names.append(table_set.getString("TABLE_NAME"))
+        try:
+            while table_set.next():
+                names.append(str(table_set.getString("TABLE_NAME")))
+        finally:
+            table_set.close()
         return names
 
     @reflection.cache
     def get_view_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         table_set = metadata.getTables(
             None, self._escape_jdbc_name(schema, escape) if schema else "", None, ["VIEW"]
         )
         names: list[str] = []
-        while table_set.next():
-            names.append(table_set.getString("TABLE_NAME"))
+        try:
+            while table_set.next():
+                names.append(str(table_set.getString("TABLE_NAME")))
+        finally:
+            table_set.close()
         return names
 
     @reflection.cache
@@ -198,58 +226,68 @@ class JDBC_dialect(DefaultDialect):
     ) -> str:
         raise NotImplementedError()
 
-    @reflection.cache
-    def get_columns(
-        self, connection: Connection, table_name: str, schema: str | None = None, **kw: Any
-    ) -> list[ReflectedColumn]:
-        from jpype1 import dbapi2
+    def get_multi_columns(
+        self,
+        connection: Connection,
+        *,
+        schema: None | str = None,
+        filter_names: None | Collection[str] = None,
+        **kw: Any,
+    ) -> Iterable[tuple[TableKey, list[ReflectedColumn]]]:
+        from jpype import dbapi2
 
-        columns: list[ReflectedColumn] = []
-
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        columns_dict: dict[TableKey, list[ReflectedColumn]] = {}
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         jdbc_columns = metadata.getColumns(
             None,
             self._escape_jdbc_name(schema, escape) if schema else "",
-            self._escape_jdbc_name(table_name, escape),
+            "%",
             None,
         )
 
-        while jdbc_columns.next():
-            code_datatype: int = jdbc_columns.getInteger("DATA_TYPE")
-            jpype_datatype = dbapi2._registry.get(code_datatype)
-            sqlalchemy_datatype_class = getattr(sqltypes, jpype_datatype.name.upper())
-            # length or precision
-            datatype_size: int | None = jdbc_columns.getInteger("COLUMN_SIZE")
-            # decimal digits
-            datatype_digits: int | None = jdbc_columns.getInteger("DECIMAL_DIGITS")
+        try:
+            while jdbc_columns.next():
+                code_datatype: int = jdbc_columns.getInt("DATA_TYPE")
+                jpype_datatype = dbapi2._registry.get(code_datatype)
+                sqlalchemy_datatype_class = getattr(sqltypes, str(jpype_datatype).upper())
+                # length or precision
+                datatype_size: int | None = jdbc_columns.getInt("COLUMN_SIZE")
+                # decimal digits
+                datatype_digits: int | None = jdbc_columns.getInt("DECIMAL_DIGITS")
 
-            type_name = sqlalchemy_datatype_class.as_generic().__name__
+                type_name = sqlalchemy_datatype_class.__name__
 
-            field_params = {}
-            if type_name in {"String", "LargeBinary"}:
-                field_params["length"] = datatype_size
-            elif type_name == "Numeric":
-                field_params["precision"] = datatype_size
-                field_params["scale"] = datatype_digits
-            sqlalchemy_datatype = sqlalchemy_datatype_class(**field_params)
+                field_params = {}
+                if type_name in {"String", "LargeBinary"}:
+                    field_params["length"] = datatype_size
+                elif type_name == "Numeric":
+                    field_params["precision"] = datatype_size
+                    field_params["scale"] = datatype_digits
+                sqlalchemy_datatype = sqlalchemy_datatype_class(**field_params)
+                schema = jdbc_columns.getString("TABLE_SCHEM")
+                default_str = jdbc_columns.getString("COLUMN_DEF")
 
-            columns.append(
-                ReflectedColumn(
-                    name=jdbc_columns.getString("COLUMN_NAME"),
-                    type=sqlalchemy_datatype,
-                    default=jdbc_columns.getString("COLUMN_DEF"),
-                    nullable=jdbc_columns.getString("IS_NULLABLE").lower() != "false",
-                    autoincrement=jdbc_columns.getString("IS_AUTOINCREMENT").lower() == "true",
+                columns_dict.setdefault(
+                    (
+                        None if schema is None else str(schema),
+                        str(jdbc_columns.getString("TABLE_NAME")),
+                    ),
+                    [],
+                ).append(
+                    ReflectedColumn(
+                        name=str(jdbc_columns.getString("COLUMN_NAME")),
+                        type=sqlalchemy_datatype,
+                        default=None if default_str is None else str(default_str),
+                        nullable=str(jdbc_columns.getString("IS_NULLABLE")).lower() != "false",
+                        autoincrement=str(jdbc_columns.getString("IS_AUTOINCREMENT")).lower()
+                        == "true",
+                    )
                 )
-            )
-        if columns:
-            return columns
-        elif not self.has_table(connection, table_name, schema):
-            raise exc.NoSuchTableError(f"{schema}.{table_name}" if schema else table_name)
-        else:
-            return reflection.ReflectionDefaults.columns()
+        finally:
+            jdbc_columns.close()
+        return columns_dict.items()
 
     @reflection.cache
     def get_pk_constraint(
@@ -257,8 +295,8 @@ class JDBC_dialect(DefaultDialect):
     ) -> ReflectedPrimaryKeyConstraint:
         constraint_name: str | None = None
         pkeys: list[str] = []
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         jdbc_pkeys = metadata.getPrimaryKeys(
             None,
@@ -266,12 +304,15 @@ class JDBC_dialect(DefaultDialect):
             self._escape_jdbc_name(table_name, escape),
         )
         is_first: bool = True
-        while jdbc_pkeys.next():
-            if is_first:
-                constraint_name = jdbc_pkeys.getString("PK_NAME")
-            pkeys.append(jdbc_pkeys.getString("COLUMN_NAME"))
+        try:
+            while jdbc_pkeys.next():
+                if is_first:
+                    constraint_name = jdbc_pkeys.getString("PK_NAME")
+                pkeys.append(jdbc_pkeys.getString("COLUMN_NAME"))
 
-            is_first = False
+                is_first = False
+        finally:
+            jdbc_pkeys.close()
         if pkeys:
             return {"constrained_columns": pkeys, "name": constraint_name}
         else:
@@ -283,8 +324,8 @@ class JDBC_dialect(DefaultDialect):
     ) -> list[ReflectedForeignKeyConstraint]:
         # name, target schema, target table, update, delete, from, to
         fkeys: list[tuple[str | None, str, str, int, int, list[str], list[str]]] = []
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         jdbc_fkeys = metadata.getImportedKeys(
             None,
@@ -292,22 +333,25 @@ class JDBC_dialect(DefaultDialect):
             self._escape_jdbc_name(table_name, escape),
         )
         last_seq: int = 0
-        while jdbc_fkeys.next():
-            seq = jdbc_fkeys.getShort("KEY_SEQ")
-            if seq >= last_seq:
-                new_entry: tuple[str | None, str, str, int, int, list[str], list[str]] = (
-                    jdbc_fkeys.getString("FK_NAME"),
-                    jdbc_fkeys.getString("PKTABLE_SCHEM"),
-                    jdbc_fkeys.getString("PKTABLE_NAME"),
-                    jdbc_fkeys.getShort("UPDATE_RULE"),
-                    jdbc_fkeys.getShort("DELETE_RULE"),
-                    [],
-                    [],
-                )
-                fkeys.append(new_entry)
-            fkeys[-1][-2].append(jdbc_fkeys.getString("FKCOLUMN_NAME"))
-            fkeys[-1][-1].append(jdbc_fkeys.getString("PKCOLUMN_NAME"))
-            last_seq = seq
+        try:
+            while jdbc_fkeys.next():
+                seq = jdbc_fkeys.getShort("KEY_SEQ")
+                if seq >= last_seq:
+                    new_entry: tuple[str | None, str, str, int, int, list[str], list[str]] = (
+                        jdbc_fkeys.getString("FK_NAME"),
+                        jdbc_fkeys.getString("PKTABLE_SCHEM"),
+                        jdbc_fkeys.getString("PKTABLE_NAME"),
+                        jdbc_fkeys.getShort("UPDATE_RULE"),
+                        jdbc_fkeys.getShort("DELETE_RULE"),
+                        [],
+                        [],
+                    )
+                    fkeys.append(new_entry)
+                fkeys[-1][-2].append(jdbc_fkeys.getString("FKCOLUMN_NAME"))
+                fkeys[-1][-1].append(jdbc_fkeys.getString("PKCOLUMN_NAME"))
+                last_seq = seq
+        finally:
+            jdbc_fkeys.close()
         if fkeys:
             return [
                 ReflectedForeignKeyConstraint(
@@ -343,8 +387,8 @@ class JDBC_dialect(DefaultDialect):
     ) -> list[ReflectedIndex]:
         # name, unique, columns, expressions, sortings
         indexes: list[tuple[str | None, bool, list[str | None], list[str], list[str | None]]] = []
-        jdbc_connection = connection.connection.dbapi_connection.connection
-        metadata = jdbc_connection.getMetadata()
+        jdbc_connection = unpack_to_jdbc_connection(connection)
+        metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
         jdbc_indexes = metadata.getIndexInfo(
             None,
@@ -354,27 +398,30 @@ class JDBC_dialect(DefaultDialect):
             False,
         )
         last_seq: int = 0
-        while jdbc_indexes.next():
-            seq = jdbc_indexes.getShort("ORDINAL_POSITION")
-            if seq == 0:
+        try:
+            while jdbc_indexes.next():
+                seq = jdbc_indexes.getShort("ORDINAL_POSITION")
+                if seq == 0:
+                    last_seq = seq
+                    continue
+                if seq >= last_seq:
+                    new_entry: tuple[
+                        str | None, bool, list[str | None], list[str], list[str | None]
+                    ] = (
+                        jdbc_indexes.getString("INDEX_NAME"),
+                        not jdbc_indexes.getBoolean("NON_UNIQUE"),
+                        [],
+                        [],
+                        [],
+                    )
+                    indexes.append(new_entry)
+                colname = jdbc_indexes.getString("COLUMN_NAME")
+                indexes[-1][-3].append(colname)
+                indexes[-1][-2].append(colname)
+                indexes[-1][-1].append(jdbc_indexes.getString("ASC_OR_DESC"))
                 last_seq = seq
-                continue
-            if seq >= last_seq:
-                new_entry: tuple[
-                    str | None, bool, list[str | None], list[str], list[str | None]
-                ] = (
-                    jdbc_indexes.getString("INDEX_NAME"),
-                    not jdbc_indexes.getBoolean("NON_UNIQUE"),
-                    [],
-                    [],
-                    [],
-                )
-                indexes.append(new_entry)
-            colname = jdbc_indexes.getString("COLUMN_NAME")
-            indexes[-1][-3].append(colname)
-            indexes[-1][-2].append(colname)
-            indexes[-1][-1].append(jdbc_indexes.getString("ASC_OR_DESC"))
-            last_seq = seq
+        finally:
+            jdbc_indexes.close()
         indexes.sort(key=lambda d: d[0] or "~")  # sort None as last
         if indexes:
             return [
