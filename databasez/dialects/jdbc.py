@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Collection, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, cast
 
 import orjson
 from sqlalchemy import exc
@@ -59,10 +60,20 @@ class JDBC_dialect(DefaultDialect):
         self,
         json_serializer: Any = None,
         json_deserializer: Any = None,
+        transform_reflected_names: Literal["none", "upper", "lower"] = "none",
         **kwargs: Any,
     ) -> None:
+        self.transform_reflected_names = transform_reflected_names
         super().__init__(**kwargs)
         # dbapi to query is available
+
+    def transform_refl_name(self, name: Any) -> str:
+        name = str(name)
+        if self.transform_reflected_names == "lower":
+            return name.lower()
+        elif self.transform_reflected_names == "upper":
+            return name.upper()
+        return name
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         jdbc_dsn_driver: str = cast(str, url.query["jdbc_dsn_driver"])
@@ -138,7 +149,7 @@ class JDBC_dialect(DefaultDialect):
         names: list[str] = []
         try:
             while table_set.next():
-                names.append(str(table_set.getString("TABLE_SCHEM")))
+                names.append(self.transform_refl_name(table_set.getString("TABLE_SCHEM")))
         finally:
             table_set.close()
         return names
@@ -158,7 +169,7 @@ class JDBC_dialect(DefaultDialect):
         names: list[str] = []
         try:
             while table_set.next():
-                names.append(str(table_set.getString("TABLE_NAME")))
+                names.append(self.transform_refl_name(table_set.getString("TABLE_NAME")))
         finally:
             table_set.close()
         return names
@@ -179,7 +190,7 @@ class JDBC_dialect(DefaultDialect):
         names: list[str] = []
         try:
             while table_set.next():
-                names.append(str(table_set.getString("TABLE_NAME")))
+                names.append(self.transform_refl_name(table_set.getString("TABLE_NAME")))
         finally:
             table_set.close()
         return names
@@ -197,7 +208,7 @@ class JDBC_dialect(DefaultDialect):
         names: list[str] = []
         try:
             while table_set.next():
-                names.append(str(table_set.getString("TABLE_NAME")))
+                names.append(self.transform_refl_name(table_set.getString("TABLE_NAME")))
         finally:
             table_set.close()
         return names
@@ -215,7 +226,7 @@ class JDBC_dialect(DefaultDialect):
         names: list[str] = []
         try:
             while table_set.next():
-                names.append(str(table_set.getString("TABLE_NAME")))
+                names.append(self.transform_refl_name(table_set.getString("TABLE_NAME")))
         finally:
             table_set.close()
         return names
@@ -234,6 +245,8 @@ class JDBC_dialect(DefaultDialect):
         filter_names: None | Collection[str] = None,
         **kw: Any,
     ) -> Iterable[tuple[TableKey, list[ReflectedColumn]]]:
+        # this requires the jpype.imports import in overwrites
+        from java.sql import SQLException
         from jpype import dbapi2
 
         columns_dict: dict[TableKey, list[ReflectedColumn]] = {}
@@ -268,6 +281,16 @@ class JDBC_dialect(DefaultDialect):
                 sqlalchemy_datatype = sqlalchemy_datatype_class(**field_params)
                 schema = jdbc_columns.getString("TABLE_SCHEM")
                 default_str = jdbc_columns.getString("COLUMN_DEF")
+                reflected_col = ReflectedColumn(
+                    name=str(jdbc_columns.getString("COLUMN_NAME")),
+                    type=sqlalchemy_datatype,
+                    default=None if default_str is None else str(default_str),
+                    nullable=str(jdbc_columns.getString("IS_NULLABLE")).lower() != "false",
+                )
+                with contextlib.suppress(SQLException):
+                    reflected_col["autoincrement"] = (
+                        str(jdbc_columns.getString("IS_AUTOINCREMENT")).lower() == "true"
+                    )
 
                 columns_dict.setdefault(
                     (
@@ -275,16 +298,7 @@ class JDBC_dialect(DefaultDialect):
                         str(jdbc_columns.getString("TABLE_NAME")),
                     ),
                     [],
-                ).append(
-                    ReflectedColumn(
-                        name=str(jdbc_columns.getString("COLUMN_NAME")),
-                        type=sqlalchemy_datatype,
-                        default=None if default_str is None else str(default_str),
-                        nullable=str(jdbc_columns.getString("IS_NULLABLE")).lower() != "false",
-                        autoincrement=str(jdbc_columns.getString("IS_AUTOINCREMENT")).lower()
-                        == "true",
-                    )
-                )
+                ).append(reflected_col)
         finally:
             jdbc_columns.close()
         return columns_dict.items()
@@ -322,16 +336,23 @@ class JDBC_dialect(DefaultDialect):
     def get_foreign_keys(
         self, connection: Connection, table_name: str, schema: str | None = None, **kw: Any
     ) -> list[ReflectedForeignKeyConstraint]:
+        # this requires the jpype.imports import in overwrites
+        from java.sql import SQLException
+
         # name, target schema, target table, update, delete, from, to
         fkeys: list[tuple[str | None, str, str, int, int, list[str], list[str]]] = []
         jdbc_connection = unpack_to_jdbc_connection(connection)
         metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
-        jdbc_fkeys = metadata.getImportedKeys(
-            None,
-            self._escape_jdbc_name(schema, escape) if schema else "",
-            self._escape_jdbc_name(table_name, escape),
-        )
+        try:
+            jdbc_fkeys = metadata.getImportedKeys(
+                None,
+                self._escape_jdbc_name(schema, escape) if schema else "",
+                self._escape_jdbc_name(table_name, escape),
+            )
+        except SQLException:
+            # some jdbc drivers have not implemented this
+            return reflection.ReflectionDefaults.foreign_keys()
         last_seq: int = 0
         try:
             while jdbc_fkeys.next():
@@ -385,18 +406,25 @@ class JDBC_dialect(DefaultDialect):
         unique: bool = False,
         **kw: Any,
     ) -> list[ReflectedIndex]:
+        # this requires the jpype.imports import in overwrites
+        from java.sql import SQLException
+
         # name, unique, columns, expressions, sortings
         indexes: list[tuple[str | None, bool, list[str | None], list[str], list[str | None]]] = []
         jdbc_connection = unpack_to_jdbc_connection(connection)
         metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
-        jdbc_indexes = metadata.getIndexInfo(
-            None,
-            self._escape_jdbc_name(schema, escape) if schema else "",
-            self._escape_jdbc_name(table_name, escape),
-            unique,
-            False,
-        )
+        try:
+            jdbc_indexes = metadata.getIndexInfo(
+                None,
+                self._escape_jdbc_name(schema, escape) if schema else "",
+                self._escape_jdbc_name(table_name, escape),
+                unique,
+                False,
+            )
+        except SQLException:
+            # some jdbc drivers have not implemented this
+            return reflection.ReflectionDefaults.indexes()
         last_seq: int = 0
         try:
             while jdbc_indexes.next():

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 # ensure jpype.dbapi2 is initialized. Prevent race condition.
 import jpype.dbapi2  # noqa
+import jpype.imports  # noqa
 from jpype import addClassPath, isJVMStarted, startJVM
 
 from databasez.sqlalchemy import SQLAlchemyDatabase, SQLAlchemyTransaction

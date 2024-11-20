@@ -132,3 +132,28 @@ async def test_jdbc_queries():
                 assert batched_iterate_results[1][0].completed is True
         finally:
             await connection.drop_all(metadata)
+
+
+@pytest.mark.asyncio
+async def test_reflection():
+    """
+    Test that the basic `execute()`, `execute_many()`, `fetch_all()``,
+    `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
+    """
+    async with Database(
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
+        poolclass=StaticPool,
+        transform_reflected_names="lower",
+    ) as database:
+        async with database.connection() as connection, connection.transaction() as transaction:
+            await connection.create_all(metadata)
+            await transaction.commit()
+        try:
+            # fetch_all()
+            query = notes.select()
+            assert await database.fetch_all(query=query) == []
+            metadata_reflected = sqlalchemy.MetaData()
+            await database.run_sync(metadata_reflected.reflect)
+        finally:
+            await database.drop_all(metadata)
+    assert metadata_reflected.tables.keys()
