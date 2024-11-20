@@ -70,10 +70,10 @@ class JDBC_dialect(DefaultDialect):
     def transform_refl_name(self, name: Any) -> str:
         name = str(name)
         if self.transform_reflected_names == "lower":
-            return name.lower()
+            return cast(str, name.lower())
         elif self.transform_reflected_names == "upper":
-            return name.upper()
-        return name
+            return cast(str, name.upper())
+        return cast(str, name)
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         jdbc_dsn_driver: str = cast(str, url.query["jdbc_dsn_driver"])
