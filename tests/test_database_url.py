@@ -58,7 +58,7 @@ def test_password_with_escape_update():
     u = u.replace(username="foo", password=r"@[]{5}")
     assert u.username == "foo"
     assert u.password == r"@[]{5}"
-    assert u.userinfo == f"foo:{quote(r"@[]{5}")}".encode()
+    assert u.userinfo == f"foo:{quote(r'@[]{5}')}".encode()
     assert str(u).count("@") == 1
 
     u2 = DatabaseURL(u)
