@@ -61,9 +61,11 @@ class JDBC_dialect(DefaultDialect):
         json_serializer: Any = None,
         json_deserializer: Any = None,
         transform_reflected_names: Literal["none", "upper", "lower"] = "none",
+        use_code_datatype: bool = False,
         **kwargs: Any,
     ) -> None:
         self.transform_reflected_names = transform_reflected_names
+        self.use_code_datatype = use_code_datatype
         super().__init__(**kwargs)
         # dbapi to query is available
 
@@ -262,15 +264,18 @@ class JDBC_dialect(DefaultDialect):
 
         try:
             while jdbc_columns.next():
-                code_datatype: int = jdbc_columns.getInt("DATA_TYPE")
-                jpype_datatype = dbapi2._registry.get(code_datatype)
-                sqlalchemy_datatype_class = getattr(sqltypes, str(jpype_datatype).upper())
+                if self.use_code_datatype:
+                    code_datatype: int = jdbc_columns.getInt("DATA_TYPE")
+                    string_datatype = str(dbapi2._registry.get(code_datatype))
+                else:
+                    string_datatype = str(jdbc_columns.getString("TYPE_NAME")).split("(", 1)[0]
+                sqlalchemy_datatype_class = getattr(sqltypes, string_datatype.upper())
                 # length or precision
                 datatype_size: int | None = jdbc_columns.getInt("COLUMN_SIZE")
                 # decimal digits
                 datatype_digits: int | None = jdbc_columns.getInt("DECIMAL_DIGITS")
 
-                type_name = sqlalchemy_datatype_class.__name__
+                type_name = sqlalchemy_datatype_class().as_generic().__class__.__name__
 
                 field_params = {}
                 if type_name in {"String", "LargeBinary"}:
@@ -281,16 +286,20 @@ class JDBC_dialect(DefaultDialect):
                 sqlalchemy_datatype = sqlalchemy_datatype_class(**field_params)
                 schema = jdbc_columns.getString("TABLE_SCHEM")
                 default_str = jdbc_columns.getString("COLUMN_DEF")
+                # some implementations return incorrectly just one char
+                nullable_val = str(jdbc_columns.getString("IS_NULLABLE")).upper()
                 reflected_col = ReflectedColumn(
                     name=str(jdbc_columns.getString("COLUMN_NAME")),
                     type=sqlalchemy_datatype,
                     default=None if default_str is None else str(default_str),
-                    nullable=str(jdbc_columns.getString("IS_NULLABLE")).lower() != "false",
+                    nullable=nullable_val.startswith("Y"),
                 )
+                # old jdbc libraries raise on this reflection
                 with contextlib.suppress(SQLException):
-                    reflected_col["autoincrement"] = (
-                        str(jdbc_columns.getString("IS_AUTOINCREMENT")).lower() == "true"
-                    )
+                    autoincrement_val = str(jdbc_columns.getString("IS_AUTOINCREMENT")).upper()
+                    # empty string for unknown
+                    if autoincrement_val:
+                        reflected_col["autoincrement"] = autoincrement_val.startswith("Y")
 
                 columns_dict.setdefault(
                     (

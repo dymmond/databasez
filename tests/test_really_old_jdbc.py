@@ -141,7 +141,7 @@ async def test_reflection():
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
     async with Database(
-        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
         poolclass=StaticPool,
         transform_reflected_names="lower",
     ) as database:
@@ -157,3 +157,11 @@ async def test_reflection():
         finally:
             await database.drop_all(metadata)
     assert metadata_reflected.tables.keys()
+    assert not metadata_reflected.tables["notes"].c.id.nullable
+    assert (
+        metadata_reflected.tables["notes"].c.text.type.as_generic().__class__ == sqlalchemy.String
+    )
+
+    assert (
+        metadata_reflected.tables["notes"].c.id.type.as_generic().__class__ == sqlalchemy.Integer
+    )

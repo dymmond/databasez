@@ -13,9 +13,9 @@ if not sys.platform.startswith("linux") and not sys.platform.startswith("win"):
         allow_module_level=True,
     )
 
-if platform.processor() not in {"aarch64", "x86_64"}:
+if platform.machine() not in {"aarch64", "x86_64"}:
     pytest.skip(
-        f"Unsupported processor architecture for jdbc test: {platform.processor()}",
+        f"Unsupported processor architecture for jdbc test: {platform.machine()}",
         allow_module_level=True,
     )
 
@@ -163,3 +163,10 @@ async def test_reflection():
         finally:
             await database.drop_all(metadata)
     assert metadata_reflected.tables.keys()
+    assert not metadata_reflected.tables["notes"].c.id.nullable
+    assert (
+        metadata_reflected.tables["notes"].c.id.type.as_generic().__class__ == sqlalchemy.Integer
+    )
+    assert (
+        metadata_reflected.tables["notes"].c.text.type.as_generic().__class__ == sqlalchemy.String
+    )
