@@ -23,7 +23,7 @@ jobs:
         image: mariadb:11
         env:
           MYSQL_USER: username
-          MYSQL_PASSWORD: passwsss*1348394#
+          MYSQL_PASSWORD: passwsss*1348394#@
           MYSQL_ROOT_PASSWORD: password
           MYSQL_DATABASE: testsuite
         ports:
@@ -34,7 +34,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: username
-          POSTGRES_PASSWORD: passwsss*1348394#
+          POSTGRES_PASSWORD: passwsss*1348394#@
           POSTGRES_DB: testsuite
         ports:
           - 5432:5432
@@ -43,7 +43,7 @@ jobs:
       mssql:
         image: mcr.microsoft.com/mssql/server:2022-CU13-ubuntu-22.04
         env:
-          MSSQL_SA_PASSWORD: Mssql123mssql-
+          MSSQL_SA_PASSWORD: Mssql123mssql-@
           ACCEPT_EULA: "Y"
           MSSQL_PID: Developer
         ports:
