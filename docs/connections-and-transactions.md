@@ -233,7 +233,7 @@ Let us now use an example using `MSSQL` which usually requires more options to b
 * Type: `mssql`
 * Database name: `master`
 * User: `sa`
-* Password: `Mssql123mssql`
+* Password: `Mssql123mssql-`
 * Port: `1433`
 * Host: `localhost`
 
