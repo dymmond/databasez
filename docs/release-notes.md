@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.11.0
+
+### Added
+
+- Add support for jdbc reflection.
+
 ## 0.10.3
 
 ### Fixed
