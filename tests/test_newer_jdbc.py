@@ -1,15 +1,25 @@
 import contextlib
+import platform
+import sys
 
 import pytest
 import sqlalchemy
-from sqlalchemy.pool import StaticPool
 
 from databasez import Database
 
-# Use StaticPool to be sure to not use multi-threaded access.
-# Just for more safety with an old driver but shouldn't be neccessary.
+if not sys.platform.startswith("linux") and not sys.platform.startswith("win"):
+    pytest.skip(
+        "Unsupported system for jdbc test. Only Windows and Linux (with glibc) can execute the test.",
+        allow_module_level=True,
+    )
 
-# we have not many db types available
+if platform.processor() not in {"aarch64", "x86_64"}:
+    pytest.skip(
+        f"Unsupported processor architecture for jdbc test: {platform.processor()}",
+        allow_module_level=True,
+    )
+
+
 metadata = sqlalchemy.MetaData()
 
 notes = sqlalchemy.Table(
@@ -29,7 +39,6 @@ async def test_jdbc_connect():
     async with (
         Database(
             "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
-            poolclass=StaticPool,
         ) as database,
         database.connection(),
     ):
@@ -45,7 +54,6 @@ async def test_jdbc_queries():
     async with (
         Database(
             "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
-            poolclass=StaticPool,
         ) as database,
         database.connection() as connection,
     ):
@@ -142,7 +150,6 @@ async def test_reflection():
     """
     async with Database(
         "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
-        poolclass=StaticPool,
     ) as database:
         async with database.connection() as connection, connection.transaction() as transaction:
             await connection.create_all(metadata)
