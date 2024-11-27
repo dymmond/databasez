@@ -282,6 +282,14 @@ The jdbc driver supports some extra parameters which will be removed from the qu
 * **jdbc_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
 * **jdbc_dsn_driver** - Not really required because of the rewrite but if the url only specifies jdbc:// withouth the dsn driver you can set it here manually.
 
+### Direct-only parameters
+
+These parameters are directly set in database as keywords and have no DSN conversion.
+
+* **transform_reflected_names** - Because JDBC drivers  (especially old) do strange name mangling we may need this parameter.
+  It has 3 possible values: "upper", "lower", "none" (default). When upper or lower is used, all names are converted in this case.
+  This is required for ancient sqlite jdbc drivers.
+* **use_code_datatype** - When True the java code type is evaluated instead of parsing the SQL string datatype. By default False.
 
 ## dbapi2
 

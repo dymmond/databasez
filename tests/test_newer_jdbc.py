@@ -1,15 +1,25 @@
 import contextlib
+import platform
+import sys
 
 import pytest
 import sqlalchemy
-from sqlalchemy.pool import StaticPool
 
 from databasez import Database
 
-# Use StaticPool to be sure to not use multi-threaded access.
-# Just for more safety with an old driver but shouldn't be neccessary.
+if not sys.platform.startswith("linux") and not sys.platform.startswith("win"):
+    pytest.skip(
+        "Unsupported system for jdbc test. Only Windows and Linux (with glibc) can execute the test.",
+        allow_module_level=True,
+    )
 
-# we have not many db types available
+if platform.machine() not in {"aarch64", "x86_64"}:
+    pytest.skip(
+        f"Unsupported processor architecture for jdbc test: {platform.machine()}",
+        allow_module_level=True,
+    )
+
+
 metadata = sqlalchemy.MetaData()
 
 notes = sqlalchemy.Table(
@@ -28,8 +38,7 @@ async def test_jdbc_connect():
     """
     async with (
         Database(
-            "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
-            poolclass=StaticPool,
+            "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
         ) as database,
         database.connection(),
     ):
@@ -44,8 +53,7 @@ async def test_jdbc_queries():
     """
     async with (
         Database(
-            "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
-            poolclass=StaticPool,
+            "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
         ) as database,
         database.connection() as connection,
     ):
@@ -141,9 +149,7 @@ async def test_reflection():
     `fetch_one()`, `iterate()` and `batched_iterate()` interfaces are all supported (using SQLAlchemy core).
     """
     async with Database(
-        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC",
-        poolclass=StaticPool,
-        transform_reflected_names="lower",
+        "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC",
     ) as database:
         async with database.connection() as connection, connection.transaction() as transaction:
             await connection.create_all(metadata)
@@ -159,9 +165,8 @@ async def test_reflection():
     assert metadata_reflected.tables.keys()
     assert not metadata_reflected.tables["notes"].c.id.nullable
     assert (
-        metadata_reflected.tables["notes"].c.text.type.as_generic().__class__ == sqlalchemy.String
-    )
-
-    assert (
         metadata_reflected.tables["notes"].c.id.type.as_generic().__class__ == sqlalchemy.Integer
+    )
+    assert (
+        metadata_reflected.tables["notes"].c.text.type.as_generic().__class__ == sqlalchemy.String
     )

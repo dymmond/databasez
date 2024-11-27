@@ -1,0 +1,16 @@
+Here a short guide how to shrink sqlite jars for tests
+
+1. open archive with archive manager
+2. remove in the native folder unrequired architectures and systems
+
+Kept systems (sqlite-jdbc-3.47.0.0):
+
+- windows
+- linux
+
+and
+
+architectures:
+
+- aarch64
+- x86_64
