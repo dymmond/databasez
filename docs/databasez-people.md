@@ -1,9 +1,7 @@
 # Databasez People
 
-## The Special Ones
+Databasez wouldn't be possible in this way without these people.
 
-Currently there are no special ones but we are hoping this will change soon.
+- @devkral (https://github.com/devkral)
 
-## The Legends
-
-Currently there are no legends but we are hoping this will change soon.
+  He refactored databasez nearly completely and added JDBC support as well as the mixed async-multithreading support.
