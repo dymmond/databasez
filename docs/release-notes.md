@@ -319,5 +319,5 @@ forked from [Encode](https://github.com/encode/databases) with additional featur
 
 * SQLAlchemy 2+ integration.
 * Additonal support for `mssql`.
-* [Connection as dict](./connections-and-transactions.md#connection-options-as-a-dictionary).
+* [Connection as dict](./database.md#connection-options-as-a-dictionary).
 * Brings a native test client.
