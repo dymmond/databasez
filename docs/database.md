@@ -1,4 +1,4 @@
-# Connection and Database
+# Connecting to a database
 
 Databasez handles database connection pooling and transaction management
 with minimal fuss. It'll automatically deal with acquiring and releasing

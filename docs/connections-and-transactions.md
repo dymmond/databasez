@@ -23,7 +23,7 @@ This way all connections are running in a per-thread pool. The global connection
 Whenever it is accessed by an other thread, asyncio.run_coroutine_threadsafe is used.
 In the full-isolation mode (default) the global connection is even moved to an own thread.
 
-### Self-resetting global connection
+### Global connection with auto-rollback
 
 Sometimes, especially for tests, you want a connection in which all changes are resetted when the database is closed.
 For having this reliable, a global connection is lazily initialized when requested on the database object via the
@@ -49,20 +49,26 @@ Whenever the transaction is activated, a connected database is required.
 A second way to get a transaction is via the `Connection`. It has also a `transaction()` method.
 
 
+### Auto-rollback (`force_rollback`)
+
+Transactions support an keyword parameter named `force_rollback` which default to `False`.
+When set to `True` at the end of the transaction a rollback is tried.
+This means all changes are undone.
+
+This is a simpler variant of `force_rollback` of the database object.
+
+
 ### The three ways to use a transaction
 
 #### Via the async context manager protocol
 
 ```python
-async with database.transaction():
-    ...
+{!> ../docs_src/transactions/async_context_database.py !}
 ```
 It can also be acquired from a specific database connection:
 
 ```python
-async with database.connection() as connection:
-    async with connection.transaction():
-        ...
+{!> ../docs_src/transactions/async_context_connection.py !}
 ```
 
 #### Via decorating
@@ -70,9 +76,7 @@ async with database.connection() as connection:
 You can also use `.transaction()` as a function decorator on any async function:
 
 ```python
-@database.transaction()
-async def create_users(request):
-    ...
+{!> ../docs_src/transactions/decorating.py !}
 ```
 
 #### Manually
@@ -80,16 +84,10 @@ async def create_users(request):
 For a lower-level transaction API:
 
 ```python
-transaction = await database.transaction()
-try:
-    ...
-except:
-    await transaction.rollback()
-else:
-    await transaction.commit()
+{!> ../docs_src/transactions/manually.py !}
 ```
 
-### Advanced operations
+### Isolation level
 
 The state of a transaction is liked to the connection used in the currently executing async task.
 If you would like to influence an active transaction from another task, the connection must be
@@ -98,48 +96,13 @@ shared:
 Transaction isolation-level can be specified if the driver backend supports that:
 
 ```python
-async def add_excitement(connnection: databases.core.Connection, id: int):
-    await connection.execute(
-        "UPDATE notes SET text = CONCAT(text, '!!!') WHERE id = :id",
-        {"id": id}
-    )
-
-
-async with Database(database_url) as database:
-    async with database.transaction():
-        # This note won't exist until the transaction closes...
-        await database.execute(
-            "INSERT INTO notes(id, text) values (1, 'databases is cool')"
-        )
-        # ...but child tasks can use this connection now!
-        await asyncio.create_task(add_excitement(database.connection(), id=1))
-
-    await database.fetch_val("SELECT text FROM notes WHERE id=1")
-    # ^ returns: "databases is cool!!!"
+{!> ../docs_src/transactions/isolation_level.py !}
 ```
+
+### Nested transactions
 
 Nested transactions are fully supported, and are implemented using database savepoints:
 
 ```python
-async with databases.Database(database_url) as db:
-    async with db.transaction() as outer:
-        # Do something in the outer transaction
-        ...
-
-        # Suppress to prevent influence on the outer transaction
-        with contextlib.suppress(ValueError):
-            async with db.transaction():
-                # Do something in the inner transaction
-                ...
-
-                raise ValueError('Abort the inner transaction')
-
-    # Observe the results of the outer transaction,
-    # without effects from the inner transaction.
-    await db.fetch_all('SELECT * FROM ...')
-```
-
-```python
-async with database.transaction(isolation_level="serializable"):
-    ...
+{!> ../docs_src/transactions/nested_transactions.py !}
 ```
