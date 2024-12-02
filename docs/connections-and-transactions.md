@@ -34,6 +34,12 @@ available.
 This means you have to be careful when using `iterate` to not open another connection via `connection` (except you set `force_rollback` to False before opening the connection).
 Otherwise it will deadlock.
 
+Example for `force_rollback`:
+
+```python
+{!> ../docs_src/connections/force_rollback.py !}
+```
+
 ## Transactions
 
 Transactions are lazily initialized. You dont't need a connected database to create them via `database.transaction()`.
@@ -47,15 +53,6 @@ When created, there are three ways to activate the Transaction
 Whenever the transaction is activated, a connected database is required.
 
 A second way to get a transaction is via the `Connection`. It has also a `transaction()` method.
-
-
-### Auto-rollback (`force_rollback`)
-
-Transactions support an keyword parameter named `force_rollback` which default to `False`.
-When set to `True` at the end of the transaction a rollback is tried.
-This means all changes are undone.
-
-This is a simpler variant of `force_rollback` of the database object.
 
 
 ### The three ways to use a transaction
@@ -86,6 +83,18 @@ For a lower-level transaction API:
 ```python
 {!> ../docs_src/transactions/manually.py !}
 ```
+
+### Auto-rollback (`force_rollback`)
+
+Transactions support an keyword parameter named `force_rollback` which default to `False`.
+When set to `True` at the end of the transaction a rollback is tried.
+This means all changes are undone.
+
+This is a simpler variant of `force_rollback` of the database object.
+```python
+{!> ../docs_src/transactions/force_rollback_transaction.py !}
+```
+
 
 ### Isolation level
 
