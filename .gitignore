@@ -12,4 +12,5 @@ venv/
 .idea/
 testsuite.sqlite3
 test_testsuite.sqlite3
-site
+/site
+/dist
