@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Python 3.9 compatibility
+- Python 3.9 compatibility.
 
 ## 0.11.0
 
