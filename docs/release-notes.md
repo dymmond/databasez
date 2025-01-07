@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.11.1
+
+### Fixed
+
+- Python 3.9 compatibility
+
 ## 0.11.0
 
 ### Added
