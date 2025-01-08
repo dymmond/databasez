@@ -1,5 +1,17 @@
 # Release Notes
 
+## 0.11.1
+
+### Fixed
+
+- Python 3.9 compatibility.
+
+## 0.11.0
+
+### Added
+
+- Add support for jdbc reflection.
+
 ## 0.10.3
 
 ### Fixed
@@ -313,5 +325,5 @@ forked from [Encode](https://github.com/encode/databases) with additional featur
 
 * SQLAlchemy 2+ integration.
 * Additonal support for `mssql`.
-* [Connection as dict](./connections-and-transactions.md#connection-options-as-a-dictionary).
+* [Connection as dict](./database.md#connection-options-as-a-dictionary).
 * Brings a native test client.

@@ -9,7 +9,6 @@ long_description = "Async database support for Python."
 readme = "README.md"
 requires-python = ">=3.9"
 dynamic = ['version']
-license = "MIT"
 authors = [{ name = "Tiago Silva", email = "tiago.arasilva@gmail.com" }]
 classifiers = [
     "Intended Audience :: Information Technology",
@@ -23,20 +22,18 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
     "Topic :: Software Development",
     "Typing :: Typed",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
     "Framework :: AnyIO",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
-    "Topic :: Internet :: WWW/HTTP",
 ]
 dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "sqlalchemy_utils>=0.40.0"]
 keywords = [
@@ -213,9 +210,9 @@ extra-dependencies = [
 [tool.hatch.envs.hatch-test.env-vars]
 TEST_DATABASE_URLS = """
 sqlite+aiosqlite:///testsuite.sqlite3,\
-mysql+aiomysql://username:passwsss*1348394#@localhost:3306/testsuite,\
-mysql+asyncmy://username:passwsss*1348394#@localhost:3306/testsuite,\
-postgresql+psycopg://username:passwsss*1348394#@localhost:5432/testsuite,\
-postgresql+asyncpg://username:passwsss*1348394#@localhost:5432/testsuite,\
-mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&Encrypt=Optional\
+mysql+aiomysql://username:passwsss*1348394#%40@localhost:3306/testsuite,\
+mysql+asyncmy://username:passwsss*1348394#%40@localhost:3306/testsuite,\
+postgresql+psycopg://username:passwsss*1348394#%40@localhost:5432/testsuite,\
+postgresql+asyncpg://username:passwsss*1348394#%40@localhost:5432/testsuite,\
+mssql+aioodbc://sa:Mssql123mssql-%40@localhost:1433/master?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&Encrypt=Optional\
 """

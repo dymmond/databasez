@@ -41,16 +41,31 @@ def test_database_url_properties():
 
 
 def test_database_url_escape():
-    u = DatabaseURL(f"postgresql://username:{quote('[password')}@localhost/mydatabase")
+    u = DatabaseURL(f"postgresql://username:{quote('[@password')}@localhost/mydatabase")
     assert u.username == "username"
-    assert u.password == "[password"
-    assert u.userinfo == f"username:{quote('[password')}".encode()
+    assert u.password == "[@password"
+    assert u.userinfo == f"username:{quote('[@password')}".encode()
 
     u2 = DatabaseURL(u)
-    assert u2.password == "[password"
+    assert u2.password == "[@password"
 
     u3 = DatabaseURL(str(u))
-    assert u3.password == "[password"
+    assert u3.password == "[@password"
+
+
+def test_password_with_escape_update():
+    u = DatabaseURL("postgresql://@localhost/mydatabase")
+    u = u.replace(username="foo", password=r"@[]{5}")
+    assert u.username == "foo"
+    assert u.password == r"@[]{5}"
+    assert u.userinfo == f"foo:{quote(r'@[]{5}')}".encode()
+    assert str(u).count("@") == 1
+
+    u2 = DatabaseURL(u)
+    assert u2.password == r"@[]{5}"
+
+    u3 = DatabaseURL(str(u))
+    assert u3.password == r"@[]{5}"
 
 
 def test_database_url_constructor():

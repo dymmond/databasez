@@ -1,352 +1,102 @@
 # Connections and Transactions
 
-Databasez handles database connection pooling and transaction management
-with minimal fuss. It'll automatically deal with acquiring and releasing
-connections to the pool as needed, and supports a simple transaction API
-that transparently handles the use of either transactions or savepoints.
+## Connections
 
-## Database
+Connections are the heart-piece of databasez. They are enabling rollback behavior, via transactions
+and provide all manipulation functions.
+Despite there are shortcut methods on the [Database object](./database.md), they are all using
+connections internally.
+When wanting for performance reasons one connection doing multiple jobs, retrieving a connection via
+`connection()` and perform all tasks within the connection context (connections are async contextmanagers) are the way to go.
 
-This is the main object used for the connections and it is a very powerful object.
+### Multithreading
 
-```python
-from databasez import Database
-```
+`sqlalchemy`'s async addon is also multi-threading capable but we cannot use this for two reasons:
 
-**Parameters**
+- Only the `NullPool` is supported which is afaik just no pooling.
+- No global connection which is reliable resetted would be possible.
 
-* **url** - The `url` of the connection string or a Database object to copy from.
+Therefor `databasez` uses an other approach: `isolation`:
 
-  <sup>Default: `None`</sup>
+Event-loops are per thread. So in this approach for every new event-loop detected the database object is copied and assigned to it.
+This way all connections are running in a per-thread pool. The global connection is a bit different from the rest.
+Whenever it is accessed by an other thread, asyncio.run_coroutine_threadsafe is used.
+In the full-isolation mode (default) the global connection is even moved to an own thread.
 
-* **force_rollback** - An optional boolean flag for force_rollback. Overwritable at runtime possible.
-                       Note: when None it copies the value from the provided Database object or sets it to False.
+### Global connection with auto-rollback
 
-  <sup>Default: `None`</sup>
+Sometimes, especially for tests, you want a connection in which all changes are resetted when the database is closed.
+For having this reliable, a global connection is lazily initialized when requested on the database object via the
+`force_rollback` contextmanager/parameter/pseudo-attribute.
 
-* **full_isolation** - Special mode for using force_rollback with nested queries. This parameter fully isolates the global connection
-                       in an extra thread. This way it is possible to use blocking operations like locks with force_rollback.
-                       This parameter has no use when used without force_rollback and causes a slightly slower setup (Lock is initialized).
-                       It is required for edgy or other frameworks which use threads in tests and the force_rollback parameter.
+Whenever `connection()` is called, the same global connection is returned. It behaves nearly normally except you have just one connection
+available.
+This means you have to be careful when using `iterate` to not open another connection via `connection` (except you set `force_rollback` to False before opening the connection).
+Otherwise it will deadlock.
 
-  <sup>Default: `None`</sup>
-
-* **poll_interval** - When using multithreading, the poll_interval is used to retrieve results from other loops. It defaults to a sane value.
-
-  <sup>Default: `None`</sup>
-
-* **config** - A python like dictionary as alternative to the `url` that contains the information
-to connect to the database.
-
-  <sup>Default: `None`</sup>
-
-* **options** - Any other configuration. The classic `kwargs`.
-
-!!! Warning
-    Be careful when setting up the `url` or `config`. You can use one or the other but not both
-    at the same time.
-
-!!! Warning
-    `full_isolation` is not mature and shouldn't be used in production code.
-
-**Attributes***
-
-* **force_rollback**:
-    It evaluates its trueness value to the active value of force_rollback for this context.
-    You can delete it to reset it (`del database.force_rollback`) (it uses the descriptor magic).
-
-**Functions**
-
-* **__copy__** - Either usable directly or via copy from the copy module. A fresh Database object with the same options as the existing is created.
-                 Note: for creating a copy with overwritten initial force_rollback you can use: `Database(database_obj, force_rollback=False)`.
-                 Note: you have to connect it.
-
-* **force_rollback(force_rollback=True)**: - The magic attribute is also function returning a context-manager for temporary overwrites of force_rollback.
-
-* **asgi** - ASGI lifespan interception shim.
-
-## Connecting and disconnecting
-
-You can control the database connection, by using it as a async context manager.
+Example for `force_rollback`:
 
 ```python
-async with Database(DATABASE_URL) as database:
-    ...
+{!> ../docs_src/connections/force_rollback.py !}
 ```
-
-Or by using explicit `.connect()` and `disconnect()`:
-
-```python
-database = Database(DATABASE_URL)
-
-await database.connect()
-...
-await database.disconnect()
-```
-
-If you're integrating against a web framework, then you'll probably want
-to hook into framework startup or shutdown events. For example, with
-[Esmerald][esmerald] you would use the following:
-
-```python
-@app.on_event("startup")
-async def startup():
-    await database.connect()
-
-@app.on_event("shutdown")
-async def shutdown():
-    await database.disconnect()
-```
-
-Starlette is deprecating the previous way of declaring events in favour of the newly created
-`Lifespan`.
-
-[Esmerald][esmerald] on the other hand, will allow you to continue to use the events in both ways.
-Internally Esmerald handles the `on_startup` and `on_shutdown` in a unique and clean way where
-it will automatically generate the `Lifespan` events for you.
-
-!!! Note
-    Since the author of [Esmerald][esmerald] and [Edgy][edgy] is the same and you would like to
-    have those same type of events to continue also for Starlette even after the deprecation and without
-    breaking your code or diverge from Starlette's base, the same author is the creator of
-    [Starlette Bridge][starlette-bridge] where it was shared the same approach created for Esmerald with
-    everyone to use with Starlette or any Starlette related project, for example, FastAPI.
-
-
-## Connection options as a string
-
-The PostgreSQL and MySQL backends provide a few connection options for SSL
-and for configuring the connection pool.
-
-```python
-# Use an SSL connection.
-database = Database('postgresql+asyncpg://localhost/example?ssl=true')
-
-# Use an SSL connection and configure pool
-database = Database('postgresql+asyncpg://localhost/example?ssl=true&pool_size=20')
-```
-
-You can also use keyword arguments to pass in any connection options.
-Available keyword arguments may differ between database backends. Keywords can be used like in create_async_engine (most are passed through).
-This means also the keyword extraction works like in sqlalchemy
-
-```python
-database = Database('postgresql+asyncpg://localhost/example', ssl=True, pool_size=20)
-```
-
-Note: not all query values are morphed into kwargs arguments.
-Options which will be transformed are in `databasez/sqlalchemy.py` in `extract_options`
-
-Some transformed options are:
-
-- ssl: enable ssl.
-- echo: enable echo.
-- echo_pool: enable echo for pool.
-- pool_size: maximal amount of connections, int (former name: min_size).
-- max_overflow: maximal amount of connections, int (former name: max_size).
-- pool_recycle: maximal duration a connection may live, float.
-- isolation_level: isolation_level, str.
-
-
-## Connection options as a dictionary
-
-**Databasez** also provides another way of passing the connection options by using dictionaries.
-
-For those who are used to other frameworks handling the connections in this way, this was also a
-reason why this was also added.
-
-Databasez expects a python dictionary like object with the following structure.
-
-```python
-
-"connection": {
-    "credentials": {
-        "scheme": 'sqlite', "postgres" ...
-        "host": ...,
-        "port": ...,
-        "user": ...,
-        "password": ...,
-        "database": ...,
-        "options": {  # only query
-            "driver": ... # In case of MSSQL
-            "ssl": ...
-        }
-    }
-}
-```
-
-When a python dictionary like is passed into the `Database` object, then the `config` parameter
-needs to be set.
-
-```python
-from databasez import Database
-
-CONFIG = {
-    "connection": {
-        "credentials": {
-             "scheme": 'sqlite', "postgres" ...
-             "host": ...,
-             "port": ...,
-             "user": ...,
-             "password": ...,
-             "database": ...,
-             "options": {
-             "driver": ... # In case of MSSQL
-             "ssl": ...
-            }
-        }
-    }
-}
-
-database = Database(config=CONFIG)
-```
-
-The `options` **is everything else that should go in the query parameters, meaning, after the `?`**
-
-### Normal cases
-
-Let us see an example. Let us assume we have a database with the following:
-
-* Type: `postgres`
-* Database name: `my_db`
-* User: `postgres`
-* Password: `password`
-* Port: `5432`
-* Host: `localhost`
-
-This would look like this:
-
-```python
-{! ../docs_src/connections/as_dict.py!}
-```
-
-This is the equivalent to:
-
-```shell
-postgresql+asyncpg://postgres:password@localhost:5432/my_db
-```
-
-### A more complex example
-
-Let us now use an example using `MSSQL` which usually requires more options to be passed.
-
-* Type: `mssql`
-* Database name: `master`
-* User: `sa`
-* Password: `Mssql123mssql`
-* Port: `1433`
-* Host: `localhost`
-
-This would look like this:
-
-```python
-{! ../docs_src/connections/mssql.py!}
-```
-
-This is the equivalent to:
-
-```shell
-mssql+aioodbc://sa:Mssql123mssql-@localhost:1433/master?driver=ODBC+Driver+17+for+SQL+Server
-```
-
-!!! Note
-    As you can see, Databasez offers some other ways of achieving the same results and offers
-    multiple forms of creating a [Database](#database) object.
-
-## JDBC
-
-Databasez injects a jdbc driver. You can use it as simple as:
-
-`jdbc+jdbc-dsn-driver-name://dsn?jdbc_driver=?`
-
-or for modern jdbc drivers
-
-`jdbc+jdbc-dsn-driver-name://dsn`
-
-Despite the jdbc-dsn-driver-name is not known by sqlalchemy this works. The overwrites rewrite the URL for sqlalchemy.
-
-
-!!! Warning
-    It seems like injecting classpathes in a running JVM doesn't work properly. If you have more then one jdbc driver,
-    make sure all classpathes are specified.
-
-
-!!! Warning
-    The jdbc driver doesn't support setting the isolation_level yet (this is highly db vendor specific).
-
-### Parameters
-
-The jdbc driver supports some extra parameters which will be removed from the query (note: most of them can be also passed via keywords)
-
-* **jdbc_driver** - import path of the jdbc driver (java format). Required for old jdbc drivers.
-* **jdbc_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
-* **jdbc_dsn_driver** - Not really required because of the rewrite but if the url only specifies jdbc:// withouth the dsn driver you can set it here manually.
-
-
-## dbapi2
-
-
-Databasez injects a dbapi2 driver. You can use it as simple as:
-
-`dbapi2+foo://dsn`
-
-or simply
-
-`dbapi2://dsn`
-
-!!! Warning
-    The dbapi2 driver doesn't support setting the isolation_level yet (this is highly db vendor specific).
-
-### Parameters
-
-The dbapi2 driver supports some extra parameters which will be removed from the query (note: most of them can be also passed via keywords)
-
-* **dbapi_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
-* **dbapi_dsn_driver** - If required it is possible to set the dsn driver here. Normally it should work without. You can use the same trick like in jdbc to provide a dsn driver.
-* **dbapi_pool** - thread/process. Default: thread. How the dbapi2. is isolated. Either via ProcessPool or ThreadPool (with one worker).
-* **dbapi_force_async_wrapper** - bool/None. Default: None. Figure out if the async_wrapper is required. By setting a bool the wrapper can be enforced or removed.
-
-The dbapi2 has some extra options which cannot be passed via the url, some of them are required:
-
-* **dbapi_path** - Import path of the dbapi2 module. Required
 
 ## Transactions
 
-Transactions are managed by async context blocks.
+Transactions are lazily initialized. You dont't need a connected database to create them via `database.transaction()`.
 
-A transaction can be acquired from the database connection pool:
+When created, there are three ways to activate the Transaction
+
+1. The async context manager way via `async with transaction: ...`
+2. Entering a method decorated with a transaction.
+3. The manual way via `await transaction`
+
+Whenever the transaction is activated, a connected database is required.
+
+A second way to get a transaction is via the `Connection`. It has also a `transaction()` method.
+
+
+### The three ways to use a transaction
+
+#### Via the async context manager protocol
 
 ```python
-async with database.transaction():
-    ...
+{!> ../docs_src/transactions/async_context_database.py !}
 ```
 It can also be acquired from a specific database connection:
 
 ```python
-async with database.connection() as connection:
-    async with connection.transaction():
-        ...
+{!> ../docs_src/transactions/async_context_connection.py !}
 ```
 
-For a lower-level transaction API:
-
-```python
-transaction = await database.transaction()
-try:
-    ...
-except:
-    await transaction.rollback()
-else:
-    await transaction.commit()
-```
+#### Via decorating
 
 You can also use `.transaction()` as a function decorator on any async function:
 
 ```python
-@database.transaction()
-async def create_users(request):
-    ...
+{!> ../docs_src/transactions/decorating.py !}
 ```
+
+#### Manually
+
+For a lower-level transaction API:
+
+```python
+{!> ../docs_src/transactions/manually.py !}
+```
+
+### Auto-rollback (`force_rollback`)
+
+Transactions support an keyword parameter named `force_rollback` which default to `False`.
+When set to `True` at the end of the transaction a rollback is tried.
+This means all changes are undone.
+
+This is a simpler variant of `force_rollback` of the database object.
+```python
+{!> ../docs_src/transactions/force_rollback_transaction.py !}
+```
+
+
+### Isolation level
 
 The state of a transaction is liked to the connection used in the currently executing async task.
 If you would like to influence an active transaction from another task, the connection must be
@@ -355,74 +105,13 @@ shared:
 Transaction isolation-level can be specified if the driver backend supports that:
 
 ```python
-async def add_excitement(connnection: databases.core.Connection, id: int):
-    await connection.execute(
-        "UPDATE notes SET text = CONCAT(text, '!!!') WHERE id = :id",
-        {"id": id}
-    )
-
-
-async with Database(database_url) as database:
-    async with database.transaction():
-        # This note won't exist until the transaction closes...
-        await database.execute(
-            "INSERT INTO notes(id, text) values (1, 'databases is cool')"
-        )
-        # ...but child tasks can use this connection now!
-        await asyncio.create_task(add_excitement(database.connection(), id=1))
-
-    await database.fetch_val("SELECT text FROM notes WHERE id=1")
-    # ^ returns: "databases is cool!!!"
+{!> ../docs_src/transactions/isolation_level.py !}
 ```
+
+### Nested transactions
 
 Nested transactions are fully supported, and are implemented using database savepoints:
 
 ```python
-async with databases.Database(database_url) as db:
-    async with db.transaction() as outer:
-        # Do something in the outer transaction
-        ...
-
-        # Suppress to prevent influence on the outer transaction
-        with contextlib.suppress(ValueError):
-            async with db.transaction():
-                # Do something in the inner transaction
-                ...
-
-                raise ValueError('Abort the inner transaction')
-
-    # Observe the results of the outer transaction,
-    # without effects from the inner transaction.
-    await db.fetch_all('SELECT * FROM ...')
+{!> ../docs_src/transactions/nested_transactions.py !}
 ```
-
-```python
-async with database.transaction(isolation_level="serializable"):
-    ...
-```
-
-## Reusing sqlalchemy engine of databasez
-
-For integration in other libraries databasez has also the AsyncEngine exposed via the `engine` property.
-If a database is connected you can retrieve the engine from there.
-
-## Debugging (multithreading)
-
-Sometimes there is a lockup. To get of the underlying issues, you can set
-
-`databasez.utils.DATABASEZ_RESULT_TIMEOUT` to a positive float/int value.
-
-This way lockups will raise an exception.
-
-
-## Special jdbc/dbapi2 stuff
-
-Currently there is not much documentation and you have to check the overwrites and dialects yourself to get an idea how it works.
-Additional there is a jdbc test with a really old sqlite jdbc jar so you may get an idea how it works.
-
-However it is planned to update the documentation.
-
-[esmerald]: https://github.com/dymmond/esmerald
-[edgy]: https://github.com/dymmond/edgy
-[saffier]: https://github.com/tarsil/saffier
-[starlette-bridge]: https://github.com/tarsil/starlette-bridge
