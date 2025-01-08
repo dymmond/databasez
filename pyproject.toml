@@ -33,6 +33,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "sqlalchemy_utils>=0.40.0"]
 keywords = [
