@@ -244,7 +244,7 @@ def get_dialect(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Dialect:
         return async_conn_or_dialect
     if hasattr(async_conn_or_dialect, "bind"):
         async_conn_or_dialect = async_conn_or_dialect.bind
-    return cast("Dialect", async_conn_or_dialect.dialect)
+    return cast("SQLAConnection", async_conn_or_dialect).dialect
 
 
 def get_quoter(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Callable[[str], str]:

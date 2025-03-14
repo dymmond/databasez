@@ -154,6 +154,8 @@ include = ["/databasez"]
 [tool.hatch.envs.default]
 features = ["all"]
 extra-dependencies = [
+    # for debugging
+    "sqlalchemy_utils",
     "ipdb>=0.13.13",
     "pre-commit>=2.17.0,<4.0.0",
 ]
@@ -179,10 +181,10 @@ serve = "mkdocs serve --dev-addr localhost:8000"
 
 
 [tool.hatch.envs.test]
+# type-checking
 features = ["all"]
 extra-dependencies = [
     "mypy>=1.1.0,<2.0.0",
-    "psycopg[binary]",
 ]
 
 [tool.hatch.envs.test.scripts]
@@ -198,6 +200,8 @@ dependencies = ["ruff==0.10.0"]
 features = ["all"]
 
 extra-dependencies = [
+    # for debugging
+    "sqlalchemy_utils",
     "ipdb>=0.13.13",
     "esmerald>=1.1.0",
     "mypy>=1.1.0,<2.0.0",
