@@ -328,7 +328,7 @@ class Database:
         return False
 
     async def connect_hook(self) -> None:
-        """Refcount protected connect hook. Executed begore engine and global connection setup."""
+        """Refcount protected connect hook. Executed before engine and global connection setup."""
 
     async def connect(self) -> bool:
         """
@@ -343,9 +343,9 @@ class Database:
                 raise RuntimeError("Subdatabases and polling are disabled")
             # copy when not in map
             if loop not in self._databases_map:
-                assert (
-                    self._global_connection is not None
-                ), "global connection should have been set"
+                assert self._global_connection is not None, (
+                    "global connection should have been set"
+                )
                 # correctly initialize force_rollback with parent value
                 database = self.__class__(
                     self, force_rollback=bool(self.force_rollback), full_isolation=False
@@ -405,7 +405,9 @@ class Database:
             assert not self._databases_map, "sub databases still active, force terminate them"
             for sub_database in self._databases_map.values():
                 await arun_coroutine_threadsafe(
-                    sub_database.disconnect(True), sub_database._loop, self.poll_interval
+                    sub_database.disconnect(True),
+                    sub_database._loop,
+                    self.poll_interval,
                 )
             self._databases_map = {}
         assert not self._databases_map, "sub databases still active"
@@ -556,7 +558,9 @@ class Database:
     @multiloop_protector(False)
     def _non_global_connection(
         self,
-        timeout: float | None = None,  # stub for type checker, multiloop_protector handles timeout
+        timeout: (
+            float | None
+        ) = None,  # stub for type checker, multiloop_protector handles timeout
     ) -> Connection:
         if self._connection is None:
             _connection = self._connection = Connection(self)
@@ -624,7 +628,8 @@ class Database:
                 module = importlib.import_module(imp_path)
             except ImportError as exc:
                 logging.debug(
-                    f'Import of "{imp_path}" failed. This is not an error.', exc_info=exc
+                    f'Import of "{imp_path}" failed. This is not an error.',
+                    exc_info=exc,
                 )
                 if "+" in scheme:
                     imp_path = f"{overwrite_path}.{scheme.split('+', 1)[0]}"
@@ -632,7 +637,8 @@ class Database:
                         module = importlib.import_module(imp_path)
                     except ImportError as exc:
                         logging.debug(
-                            f'Import of "{imp_path}" failed. This is not an error.', exc_info=exc
+                            f'Import of "{imp_path}" failed. This is not an error.',
+                            exc_info=exc,
                         )
             if module is not None:
                 break

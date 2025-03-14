@@ -57,9 +57,9 @@ class SQLAlchemyTransaction(TransactionBackend):
             self.old_transaction_level = ""
         if extra_options:
             await connection.execution_options(**extra_options)
-        assert (
-            await connection.get_isolation_level() != "AUTOCOMMIT"
-        ), "transactions doesn't work with AUTOCOMMIT. Please specify another transaction level."
+        assert await connection.get_isolation_level() != "AUTOCOMMIT", (
+            "transactions doesn't work with AUTOCOMMIT. Please specify another transaction level."
+        )
         if in_transaction:
             self.raw_transaction = await connection.begin_nested()
         else:

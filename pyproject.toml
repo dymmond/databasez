@@ -188,6 +188,11 @@ extra-dependencies = [
 [tool.hatch.envs.test.scripts]
 check_types = "mypy -p databasez"
 
+[tool.hatch.envs.hatch-static-analysis]
+# disables custom ruff rules, required to align with pre-commit
+config-path = "none"
+dependencies = ["ruff==0.10.0"]
+
 
 [tool.hatch.envs.hatch-test]
 features = ["all"]

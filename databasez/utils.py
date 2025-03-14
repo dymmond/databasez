@@ -170,9 +170,11 @@ class ThreadPassingExceptions(Thread):
             self._exc_raised = exc
 
     def join(self, timeout: float | int | None = None) -> None:
-        super().join(timeout=timeout)
-        if self._exc_raised:
-            raise self._exc_raised
+        try:
+            super().join(timeout=timeout)
+        finally:
+            if self._exc_raised is not None:
+                raise self._exc_raised
 
 
 MultiloopProtectorCallable = TypeVar("MultiloopProtectorCallable", bound=Callable)
