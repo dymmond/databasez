@@ -5,10 +5,9 @@ from typing import Any, Union
 
 import sqlalchemy
 from sqlalchemy.exc import OperationalError, ProgrammingError
-from sqlalchemy_utils.functions.orm import quote
 
 from databasez import Database, DatabaseURL
-from databasez.utils import DATABASEZ_POLL_INTERVAL, ThreadPassingExceptions
+from databasez.utils import DATABASEZ_POLL_INTERVAL, ThreadPassingExceptions, get_quoter
 
 
 class DatabaseTestClient(Database):
@@ -201,8 +200,9 @@ class DatabaseTestClient(Database):
     ) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
-        dialect_name = url.sqla_url.get_dialect(True).name
-        dialect_driver = url.sqla_url.get_dialect(True).driver
+        dialect = url.sqla_url.get_dialect(True)
+        dialect_name = dialect.name
+        dialect_driver = dialect.driver
 
         # we don't want to connect to a not existing db
         if dialect_name == "postgresql":
@@ -231,29 +231,34 @@ class DatabaseTestClient(Database):
                 if not template:
                     template = "template1"
 
-                async with db_client.engine.begin() as conn:  # type: ignore
+                async with db_client.connection() as conn:
+                    quote = get_quoter(conn.async_connection)
                     text = (
-                        f"CREATE DATABASE {quote(conn, database)} ENCODING "
-                        f"'{encoding}' TEMPLATE {quote(conn, template)}"
+                        f"CREATE DATABASE {quote(database)} ENCODING "
+                        f"'{encoding}' TEMPLATE {quote(template)}"
                     )
                     await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "mysql":
-                async with db_client.engine.begin() as conn:  # type: ignore
-                    text = f"CREATE DATABASE {quote(conn, database)} CHARACTER SET = '{encoding}'"
+                async with db_client.connection() as conn:
+                    quote = get_quoter(conn.async_connection)
+                    text = f"CREATE DATABASE {quote(database)} CHARACTER SET = '{quote(encoding)}'"
                     await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "sqlite" and database != ":memory:":
                 if database:
                     # create a sqlite file
-                    async with db_client.engine.begin() as conn:  # type: ignore
-                        await conn.execute(sqlalchemy.text("CREATE TABLE DB(id int)"))
-                        await conn.execute(sqlalchemy.text("DROP TABLE DB"))
+                    async with (
+                        db_client.connection() as conn,
+                        conn.transaction(force_rollback=False),
+                    ):
+                        await conn.execute("CREATE TABLE _dropme_DB(id int)")
+                        await conn.execute("DROP TABLE _dropme_DB")
 
             else:
-                async with db_client.engine.begin() as conn:  # type: ignore
-                    text = f"CREATE DATABASE {quote(conn, database)}"
-                    await conn.execute(sqlalchemy.text(text))
+                async with db_client.connection() as conn:
+                    quote = get_quoter(conn.async_connection)
+                    await conn.execute(sqlalchemy.text(f"CREATE DATABASE {quote(database)}"))
 
     @classmethod
     async def drop_database(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL]) -> None:
@@ -290,6 +295,7 @@ class DatabaseTestClient(Database):
                     os.remove(database)
             elif dialect_name.startswith("postgres"):
                 async with db_client.connection() as conn:
+                    quote = get_quoter(conn.async_connection)
                     # Disconnect all users from the database we are dropping.
                     server_version_raw = (
                         await conn.fetch_val(
@@ -298,7 +304,7 @@ class DatabaseTestClient(Database):
                     ).split(" ")[0]
                     version = tuple(map(int, server_version_raw.split(".")))
                     pid_column = "pid" if (version >= (9, 2)) else "procpid"
-                    quoted_db = quote(conn.async_connection, database)
+                    quoted_db = quote(database)
                     text = f"""
                     SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
                     FROM pg_stat_activity
@@ -313,7 +319,8 @@ class DatabaseTestClient(Database):
                         await conn.execute(text)
             else:
                 async with db_client.connection() as conn:
-                    text = f"DROP DATABASE {quote(conn.async_connection, database)}"
+                    quote = get_quoter(conn.async_connection)
+                    text = f"DROP DATABASE {quote(database)}"
                     with contextlib.suppress(ProgrammingError):
                         await conn.execute(sqlalchemy.text(text))
 

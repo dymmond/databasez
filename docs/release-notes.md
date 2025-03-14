@@ -1,5 +1,14 @@
 # Release Notes
 
+## 0.11.2
+
+### Fixed
+
+- Ruff calls were using different rulesets.
+- Cleaned up `database_exist`, `drop_database`, `create_database` methods of DatabaseTestClient.
+- Remove dependency on sqlalchemy_utils.
+- Provide get_quoter for retrieving a quote method.
+
 ## 0.11.1
 
 ### Fixed

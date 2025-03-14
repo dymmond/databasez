@@ -8,6 +8,9 @@ from functools import partial, wraps
 from threading import Thread
 from typing import Any, TypeVar, cast
 
+from sqlalchemy.engine import Connection as SQLAConnection
+from sqlalchemy.engine import Dialect
+
 DATABASEZ_RESULT_TIMEOUT: float | None = None
 # Poll with 0.1ms, this way CPU isn't at 100%
 DATABASEZ_POLL_INTERVAL: float = 0.0001
@@ -234,3 +237,19 @@ def multiloop_protector(
         return cast(MultiloopProtectorCallable, wrapper)
 
     return _decorator
+
+
+def get_dialect(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Dialect:
+    if isinstance(async_conn_or_dialect, Dialect):
+        return async_conn_or_dialect
+    if hasattr(async_conn_or_dialect, "bind"):
+        async_conn_or_dialect = async_conn_or_dialect.bind
+    return cast("Dialect", async_conn_or_dialect.dialect)
+
+
+def get_quoter(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Callable[[str], str]:
+    # needs underlying async connection as object or dialect
+    dialect = get_dialect(async_conn_or_dialect)
+    if hasattr(dialect, "identifier_preparer"):
+        return dialect.identifier_preparer.quote
+    return dialect.preparer(dialect).quote
