@@ -12,6 +12,7 @@ import sqlalchemy
 from sqlalchemy.engine import URL, make_url
 
 from databasez import Database, DatabaseURL
+from databasez.utils import get_quoter
 from tests.shared_db import (
     AsyncMock,
     articles,
@@ -242,6 +243,25 @@ async def test_ddl_queries(database_url):
         # CreateTable()
         query = sqlalchemy.schema.CreateTable(notes)
         await database.execute(query)
+
+
+@pytest.mark.asyncio
+async def test_dialects_quote(database_url):
+    async with Database(database_url) as database:
+        dialect = database.engine.dialect
+        assert await database.run_sync(dialect.has_table, "notes")
+        assert not await database.run_sync(dialect.has_table, "no'\"%tes")
+        if getattr(dialect, "identifier_preparer", None):
+            assert dialect.identifier_preparer.quote("ijfosisdfop") == "ijfosisdfop"
+            assert dialect.identifier_preparer.quote("ijfos'i'sdfop") != "ijfos'i'sdfop"
+        quoter = get_quoter(dialect)
+        assert quoter("ijfosisdfop") == "ijfosisdfop"
+        assert quoter("ijfos'i'sdfop") != "ijfos'i'sdfop"
+
+        async with database.connection() as con:
+            quoter = get_quoter(con.async_connection)
+            assert quoter("ijfosisdfop") == "ijfosisdfop"
+            assert quoter("ijfos'i'sdfop") != "ijfos'i'sdfop"
 
 
 @pytest.mark.asyncio
