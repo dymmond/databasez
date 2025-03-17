@@ -155,7 +155,7 @@ class DatabaseTestClient(Database):
             return False
 
         elif dialect_name == "mysql":
-            for db in (database, None):
+            for db in (database, None, "root"):
                 url = url.replace(database=db)
                 try:
                     async with Database(
