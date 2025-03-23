@@ -35,7 +35,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "sqlalchemy_utils>=0.40.0"]
+dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson"]
 keywords = [
     "mysql",
     "postgres",
@@ -154,6 +154,8 @@ include = ["/databasez"]
 [tool.hatch.envs.default]
 features = ["all"]
 extra-dependencies = [
+    # for debugging
+    "sqlalchemy_utils",
     "ipdb>=0.13.13",
     "pre-commit>=2.17.0,<4.0.0",
 ]
@@ -179,20 +181,27 @@ serve = "mkdocs serve --dev-addr localhost:8000"
 
 
 [tool.hatch.envs.test]
+# type-checking
 features = ["all"]
 extra-dependencies = [
     "mypy>=1.1.0,<2.0.0",
-    "psycopg[binary]",
 ]
 
 [tool.hatch.envs.test.scripts]
 check_types = "mypy -p databasez"
+
+[tool.hatch.envs.hatch-static-analysis]
+# disables custom ruff rules, required to align with pre-commit
+config-path = "none"
+dependencies = ["ruff==0.10.0"]
 
 
 [tool.hatch.envs.hatch-test]
 features = ["all"]
 
 extra-dependencies = [
+    # for debugging
+    "sqlalchemy_utils",
     "ipdb>=0.13.13",
     "esmerald>=1.1.0",
     "mypy>=1.1.0,<2.0.0",
@@ -203,6 +212,7 @@ extra-dependencies = [
     "pytest-timeouts",
     "pytest-rerunfailures",
     "pytest-asyncio",
+    "pytest-xdist",
     "anyio",
     "uvloop"
 ]

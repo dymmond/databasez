@@ -37,6 +37,25 @@ async def test_jdbc_connect():
 
 
 @pytest.mark.asyncio
+async def test_dialect_quote():
+    async with (
+        Database(
+            "jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.6.13.jar&jdbc_driver=org.sqlite.JDBC"
+        ) as database,
+        database.connection() as connection,
+    ):
+        dialect = database.engine.dialect
+        await connection.create_all(metadata)
+        try:
+            assert await connection.run_sync(dialect.has_table, "notes")
+            assert not await connection.run_sync(dialect.has_table, "no'\"%tes")
+            assert dialect.identifier_preparer.quote("ijfosisdfop") == "ijfosisdfop"
+            assert dialect.identifier_preparer.quote("ijfos'i'sdfop") != "ijfos'i'sdfop"
+        finally:
+            await database.drop_all(metadata)
+
+
+@pytest.mark.asyncio
 async def test_jdbc_queries():
     """
     Test that the basic `execute()`, `execute_many()`, `fetch_all()``,

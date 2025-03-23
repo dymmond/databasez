@@ -8,6 +8,9 @@ from functools import partial, wraps
 from threading import Thread
 from typing import Any, TypeVar, cast
 
+from sqlalchemy.engine import Connection as SQLAConnection
+from sqlalchemy.engine import Dialect
+
 DATABASEZ_RESULT_TIMEOUT: float | None = None
 # Poll with 0.1ms, this way CPU isn't at 100%
 DATABASEZ_POLL_INTERVAL: float = 0.0001
@@ -170,9 +173,11 @@ class ThreadPassingExceptions(Thread):
             self._exc_raised = exc
 
     def join(self, timeout: float | int | None = None) -> None:
-        super().join(timeout=timeout)
-        if self._exc_raised:
-            raise self._exc_raised
+        try:
+            super().join(timeout=timeout)
+        finally:
+            if self._exc_raised is not None:
+                raise self._exc_raised
 
 
 MultiloopProtectorCallable = TypeVar("MultiloopProtectorCallable", bound=Callable)
@@ -232,3 +237,19 @@ def multiloop_protector(
         return cast(MultiloopProtectorCallable, wrapper)
 
     return _decorator
+
+
+def get_dialect(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Dialect:
+    if isinstance(async_conn_or_dialect, Dialect):
+        return async_conn_or_dialect
+    if hasattr(async_conn_or_dialect, "bind"):
+        async_conn_or_dialect = async_conn_or_dialect.bind
+    return cast("SQLAConnection", async_conn_or_dialect).dialect
+
+
+def get_quoter(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Callable[[str], str]:
+    # needs underlying async connection as object or dialect
+    dialect = get_dialect(async_conn_or_dialect)
+    if hasattr(dialect, "identifier_preparer"):
+        return dialect.identifier_preparer.quote
+    return dialect.preparer(dialect).quote

@@ -27,7 +27,6 @@ from sqlalchemy.engine.interfaces import (
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.sql import sqltypes, text
 from sqlalchemy.util.concurrency import await_only
-from sqlalchemy_utils.functions.orm import quote
 
 from databasez.utils import AsyncWrapper
 
@@ -113,7 +112,8 @@ class JDBC_dialect(DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
-        stmt = text(f"select * from '{quote(connection, table_name)}' LIMIT 1")
+        quoted = self.identifier_preparer.quote(table_name)
+        stmt = text(f"SELECT 1 from '{quoted}' LIMIT 1")
         try:
             connection.execute(stmt)
             return True

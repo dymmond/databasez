@@ -14,7 +14,6 @@ from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from sqlalchemy.sql import text
 from sqlalchemy.util.concurrency import await_only
-from sqlalchemy_utils.functions.orm import quote
 
 from databasez.utils import AsyncWrapper
 
@@ -118,7 +117,8 @@ class DBAPI2_dialect(DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
-        stmt = text(f"select * from '{quote(connection, table_name)}' LIMIT 1")
+        quoted = self.identifier_preparer.quote(table_name)
+        stmt = text(f"select 1 from '{quoted}' LIMIT 1")
         try:
             connection.execute(stmt)
             return True

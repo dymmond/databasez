@@ -65,7 +65,7 @@ async def test_iterate_outside_transaction_with_values(database_url):
         pytest.skip("MySQL does not support `FROM (VALUES ...)` (F641)")
 
     async with Database(database_url) as database:
-        if database_url.dialect == "mssql":
+        if database_url.dialect == "mssql":  # noqa: SIM108
             query = "SELECT * FROM (VALUES (1), (2), (3), (4), (5)) as X(t)"
         else:
             query = "SELECT * FROM (VALUES (1), (2), (3), (4), (5)) as t"
@@ -244,7 +244,10 @@ async def test_transaction_commit(database_url):
     Ensure that transaction commit is supported.
     """
 
-    async with Database(database_url) as database, database.transaction(force_rollback=True):
+    async with (
+        Database(database_url) as database,
+        database.transaction(force_rollback=True),
+    ):
         async with database.transaction():
             query = notes.insert().values(text="example1", completed=True)
             await database.execute(query)
@@ -363,7 +366,10 @@ async def test_transaction_rollback_low_level(database_url):
     Ensure that an explicit `await transaction.rollback()` is supported.
     """
 
-    async with Database(database_url) as database, database.transaction(force_rollback=True):
+    async with (
+        Database(database_url) as database,
+        database.transaction(force_rollback=True),
+    ):
         transaction = await database.transaction()
         try:
             query = notes.insert().values(text="example1", completed=True)

@@ -5,6 +5,7 @@ import pytest
 
 from databasez import Database, DatabaseURL
 from databasez.testclient import DatabaseTestClient
+from databasez.utils import DATABASEZ_POLL_INTERVAL
 
 assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
@@ -36,14 +37,63 @@ class FailingDisconnectTestClient(LazyTestClient):
         raise HookException()
 
 
+@pytest.mark.parametrize(
+    "var,result",
+    [
+        ("testclient_default_full_isolation", True),
+        ("testclient_default_force_rollback", False),
+        ("testclient_default_lazy_setup", False),
+        ("testclient_default_use_existing", False),
+        ("testclient_default_drop_database", False),
+    ],
+)
+def test_defaults_bool(var, result):
+    assert getattr(DatabaseTestClient, var) is result
+
+
+@pytest.mark.parametrize(
+    "var,result",
+    [
+        ("testclient_default_test_prefix", "test_"),
+        ("testclient_default_poll_interval", DATABASEZ_POLL_INTERVAL),
+    ],
+)
+def test_defaults_other(var, result):
+    assert getattr(DatabaseTestClient, var) == result
+
+
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
 @pytest.mark.asyncio
-async def test_non_existing_normal(database_url):
-    test_db = DatabaseTestClient(database_url, lazy_setup=True)
+async def test_non_existing_normal_eager(database_url):
+    db_url = DatabaseURL(database_url)
+    if db_url.dialect != "mssql" and await DatabaseTestClient.database_exists(database_url):
+        await DatabaseTestClient.drop_database(database_url)
+    test_db = DatabaseTestClient(database_url, lazy_setup=False, test_prefix="")
     async with Database(test_db) as database:
         assert database.is_connected
+        assert await database.fetch_val("select 1")
     async with Database(test_db) as database:
         assert database.is_connected
+    assert await test_db.database_exists(test_db.test_db_url)
+
+
+@pytest.mark.parametrize("database_url", DATABASE_URLS)
+@pytest.mark.asyncio
+async def test_non_existing_normal_lazy(database_url):
+    db_url = DatabaseURL(database_url)
+    test_db = DatabaseTestClient(
+        database_url, lazy_setup=True, drop_database=db_url.dialect != "mssql"
+    )
+    if db_url.dialect != "mssql" and await DatabaseTestClient.database_exists(test_db.test_db_url):
+        await DatabaseTestClient.drop_database(test_db.test_db_url)
+    async with test_db:
+        async with Database(test_db) as database:
+            assert database.is_connected
+        async with Database(test_db) as database:
+            assert database.is_connected
+    # could have been disabled, so check drop
+    if test_db.drop:
+        assert not await test_db.database_exists(test_db.test_db_url)
 
 
 @pytest.mark.parametrize("database_url", DATABASE_URLS)
@@ -91,7 +141,11 @@ async def test_client_drop_existing(database_url):
     await database.disconnect()
     assert await database.database_exists(database.test_db_url)
     database2 = DatabaseTestClient(
-        database_url, test_prefix="foobar", use_existing=True, drop_database=True, lazy_setup=True
+        database_url,
+        test_prefix="foobar",
+        use_existing=True,
+        drop_database=True,
+        lazy_setup=True,
     )
     async with database2, database2.connection() as conn:
         # doesn't crash
