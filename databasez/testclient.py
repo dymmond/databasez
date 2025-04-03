@@ -324,8 +324,8 @@ class DatabaseTestClient(Database):
             else:
                 async with db_client.connection() as conn:
                     quote = get_quoter(conn.async_connection)
+                    text = f"DROP DATABASE {exists_text}{quote(database)}"
                     with contextlib.suppress(ProgrammingError):
-                        text = f"DROP DATABASE {exists_text}{quote(database)}"
                         await conn.execute(text)
 
 
