@@ -261,8 +261,9 @@ class DatabaseTestClient(Database):
                     await conn.execute(sqlalchemy.text(f"CREATE DATABASE {quote(database)}"))
 
     @classmethod
-    async def drop_database(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL]) -> None:
+    async def drop_database(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL], *, use_if_exists: bool = True) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
+        exists_text = "IF EXISTS " if use_if_exists else ""
         database = url.database
         dialect = url.sqla_url.get_dialect(True)
         dialect_name = dialect.name
@@ -277,6 +278,12 @@ class DatabaseTestClient(Database):
         elif dialect_name != "sqlite":
             url = url.replace(database=None)
 
+        if dialect_name == "sqlite" :
+            if database and database != ":memory:":
+                with contextlib.suppress(FileNotFoundError):
+                    os.remove(database)
+            return
+
         if (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
@@ -290,10 +297,7 @@ class DatabaseTestClient(Database):
         else:
             db_client = Database(url, force_rollback=False, full_isolation=False)
         async with db_client:
-            if dialect_name == "sqlite" and database and database != ":memory:":
-                with contextlib.suppress(FileNotFoundError):
-                    os.remove(database)
-            elif dialect_name.startswith("postgres"):
+            if dialect_name.startswith("postgres"):
                 async with db_client.connection() as conn:
                     quote = get_quoter(conn.async_connection)
                     # Disconnect all users from the database we are dropping.
@@ -314,15 +318,16 @@ class DatabaseTestClient(Database):
                     await conn.execute(text)
 
                     # Drop the database.
-                    text = f"DROP DATABASE {quoted_db}"
+                    text = f"DROP DATABASE {exists_text}{quoted_db}"
                     with contextlib.suppress(ProgrammingError):
                         await conn.execute(text)
             else:
                 async with db_client.connection() as conn:
                     quote = get_quoter(conn.async_connection)
-                    text = f"DROP DATABASE {quote(database)}"
                     with contextlib.suppress(ProgrammingError):
-                        await conn.execute(sqlalchemy.text(text))
+                        text = f"DROP DATABASE {exists_text}{quote(database)}"
+                        await conn.execute(text)
+
 
     def drop_db_protected(self) -> None:
         thread = ThreadPassingExceptions(
