@@ -261,7 +261,9 @@ class DatabaseTestClient(Database):
                     await conn.execute(sqlalchemy.text(f"CREATE DATABASE {quote(database)}"))
 
     @classmethod
-    async def drop_database(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL], *, use_if_exists: bool = True) -> None:
+    async def drop_database(
+        cls, url: Union[str, "sqlalchemy.URL", DatabaseURL], *, use_if_exists: bool = True
+    ) -> None:
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         exists_text = "IF EXISTS " if use_if_exists else ""
         database = url.database
@@ -278,7 +280,7 @@ class DatabaseTestClient(Database):
         elif dialect_name != "sqlite":
             url = url.replace(database=None)
 
-        if dialect_name == "sqlite" :
+        if dialect_name == "sqlite":
             if database and database != ":memory:":
                 with contextlib.suppress(FileNotFoundError):
                     os.remove(database)
@@ -327,7 +329,6 @@ class DatabaseTestClient(Database):
                     text = f"DROP DATABASE {exists_text}{quote(database)}"
                     with contextlib.suppress(ProgrammingError):
                         await conn.execute(text)
-
 
     def drop_db_protected(self) -> None:
         thread = ThreadPassingExceptions(
