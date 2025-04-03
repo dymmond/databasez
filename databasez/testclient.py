@@ -282,6 +282,8 @@ class DatabaseTestClient(Database):
 
         if dialect_name == "sqlite":
             if database and database != ":memory:":
+                # WARNING: this can be used to remove arbitary files
+                # make sure you sanitize the database name
                 with contextlib.suppress(FileNotFoundError):
                     os.remove(database)
             return
