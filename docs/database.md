@@ -270,6 +270,14 @@ Sometimes there is a lockup. To get of the underlying issues, you can set
 
 This way lockups will raise an exception.
 
+## Debugging overwrites
+
+If you want more extensive logging when creating a custom overwrite, you can set
+
+`databasez.utils.DATABASEZ_OVERWRITE_LOGGING` to `True` to enable stack traces for import errors in debug messages.
+
+By default this is off, to not confuse people.
+
 ## Links
 
 [esmerald]: https://github.com/dymmond/esmerald

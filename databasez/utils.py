@@ -11,6 +11,7 @@ from typing import Any, TypeVar, cast
 from sqlalchemy.engine import Connection as SQLAConnection
 from sqlalchemy.engine import Dialect
 
+DATABASEZ_OVERWRITE_LOGGING: bool = False
 DATABASEZ_RESULT_TIMEOUT: float | None = None
 # Poll with 0.1ms, this way CPU isn't at 100%
 DATABASEZ_POLL_INTERVAL: float = 0.0001
