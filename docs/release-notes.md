@@ -1,5 +1,12 @@
 # Release Notes
 
+## 0.11.3
+
+### Fixed
+
+- Excessive and confusing debug logging for overwrite selection.
+- Allow `DATABASEZ_POLL_INTERVAL` overwrites.
+
 ## 0.11.2
 
 ### Fixed

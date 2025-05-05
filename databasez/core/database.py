@@ -12,9 +12,8 @@ from functools import lru_cache, partial
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, cast, overload
 
-from databasez import interfaces
+from databasez import interfaces, utils
 from databasez.utils import (
-    DATABASEZ_POLL_INTERVAL,
     _arun_with_timeout,
     arun_coroutine_threadsafe,
     multiloop_protector,
@@ -219,7 +218,7 @@ class Database:
         force_rollback: bool | None = None,
         config: DictAny | None = None,
         full_isolation: bool | None = None,
-        # for
+        # for custom poll intervals
         poll_interval: float | None = None,
         **options: Any,
     ):
@@ -252,7 +251,8 @@ class Database:
             if full_isolation is None:
                 full_isolation = False
             if poll_interval is None:
-                poll_interval = DATABASEZ_POLL_INTERVAL
+                # when not using utils...., the constant cannot be changed at runtime
+                poll_interval = utils.DATABASEZ_POLL_INTERVAL
         self.poll_interval = poll_interval
         self._full_isolation = full_isolation
         self._force_rollback = ForceRollback(force_rollback)
@@ -622,14 +622,16 @@ class Database:
         type[interfaces.TransactionBackend],
     ]:
         module: Any = None
+        # when not using utils...., the constant cannot be changed at runtime for debug purposes
+        more_debug = utils.DATABASEZ_OVERWRITE_LOGGING
         for overwrite_path in overwrite_paths:
             imp_path = f"{overwrite_path}.{scheme.replace('+', '_')}" if scheme else overwrite_path
             try:
                 module = importlib.import_module(imp_path)
             except ImportError as exc:
                 logging.debug(
-                    f'Import of "{imp_path}" failed. This is not an error.',
-                    exc_info=exc,
+                    f'Could not import "{imp_path}". Continue search.',
+                    exc_info=exc if more_debug else None,
                 )
                 if "+" in scheme:
                     imp_path = f"{overwrite_path}.{scheme.split('+', 1)[0]}"
@@ -637,11 +639,15 @@ class Database:
                         module = importlib.import_module(imp_path)
                     except ImportError as exc:
                         logging.debug(
-                            f'Import of "{imp_path}" failed. This is not an error.',
-                            exc_info=exc,
+                            f'Could not import "{imp_path}". Continue search.',
+                            exc_info=exc if more_debug else None,
                         )
             if module is not None:
                 break
+        if module is None:
+            logging.debug(
+                "No overwrites found. Use default.",
+            )
         database_class = getattr(module, database_name, database_class)
         assert database_class is not None and issubclass(
             database_class, interfaces.DatabaseBackend
