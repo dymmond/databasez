@@ -602,10 +602,10 @@ class Database:
         """Return wrapper for asgi integration."""
 
         async def setup() -> contextlib.AsyncExitStack:
-            cm = contextlib.AsyncExitStack()
+            cleanupstack = contextlib.AsyncExitStack()
             await self.connect()
-            cm.push_async_callback(self.disconnect)
-            return cm
+            cleanupstack.push_async_callback(self.disconnect)
+            return cleanupstack
 
         return LifespanHook(app, setup=setup, do_forward=not handle_lifespan)
 
