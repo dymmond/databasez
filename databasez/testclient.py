@@ -35,15 +35,15 @@ class DatabaseTestClient(Database):
 
     def __init__(
         self,
-        url: Union[str, DatabaseURL, sqlalchemy.URL, Database, None] = None,
+        url: str | DatabaseURL | sqlalchemy.URL | Database | None = None,
         *,
-        force_rollback: Union[bool, None] = None,
-        full_isolation: Union[bool, None] = None,
-        poll_interval: Union[float, None] = None,
-        use_existing: Union[bool, None] = None,
-        drop_database: Union[bool, None] = None,
-        lazy_setup: Union[bool, None] = None,
-        test_prefix: Union[str, None] = None,
+        force_rollback: bool | None = None,
+        full_isolation: bool | None = None,
+        poll_interval: float | None = None,
+        use_existing: bool | None = None,
+        drop_database: bool | None = None,
+        lazy_setup: bool | None = None,
+        test_prefix: str | None = None,
         **options: Any,
     ):
         if use_existing is None:

@@ -6,7 +6,7 @@ from collections.abc import Collection, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, Literal, Optional, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import orjson
 from sqlalchemy import exc
@@ -16,6 +16,7 @@ from sqlalchemy.connectors.asyncio import (
 from sqlalchemy.engine import reflection
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.engine.interfaces import (
+    DBAPIConnection,
     ReflectedCheckConstraint,
     ReflectedColumn,
     ReflectedForeignKeyConstraint,
@@ -32,8 +33,7 @@ from databasez.utils import AsyncWrapper
 
 if TYPE_CHECKING:
     from jpype.dbapi2 import Connection as JDBCConnection
-    from sqlalchemy import URL
-    from sqlalchemy.base import Connection
+    from sqlalchemy import URL, Connection
     from sqlalchemy.engine.interfaces import ConnectArgsType
 
 
@@ -42,7 +42,9 @@ class AsyncAdapt_adbapi2_connection(AsyncAdapt_dbapi_connection):
 
 
 def unpack_to_jdbc_connection(connection: Connection) -> JDBCConnection:
-    return connection.connection.dbapi_connection.driver_connection.connection
+    return cast(
+        DBAPIConnection, connection.connection.dbapi_connection
+    ).driver_connection.connection
 
 
 class JDBC_dialect(DefaultDialect):
@@ -78,7 +80,7 @@ class JDBC_dialect(DefaultDialect):
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         jdbc_dsn_driver: str = cast(str, url.query["jdbc_dsn_driver"])
-        jdbc_driver: str | None = cast(Optional[str], url.query.get("jdbc_driver"))
+        jdbc_driver: str | None = cast(str | None, url.query.get("jdbc_driver"))
         driver_args: Any = url.query.get("jdbc_driver_args")
         if driver_args:
             driver_args = orjson.loads(driver_args)
@@ -89,7 +91,7 @@ class JDBC_dialect(DefaultDialect):
 
         return (dsn,), {"driver_args": driver_args, "driver": jdbc_driver}
 
-    def connect(self, *arg: Any, **kw: Any) -> AsyncAdapt_adbapi2_connection:
+    def connect(self, *arg: Any, **kw: Any) -> DBAPIConnection:
         creator_fn = AsyncWrapper(
             self.loaded_dbapi,
             pool=ThreadPoolExecutor(1, thread_name_prefix="jpype"),
@@ -99,9 +101,12 @@ class JDBC_dialect(DefaultDialect):
 
         creator_fn = kw.pop("async_creator_fn", creator_fn)
 
-        return AsyncAdapt_adbapi2_connection(  # type: ignore
-            self,
-            await_only(creator_fn(*arg, **kw)),
+        return cast(
+            DBAPIConnection,
+            AsyncAdapt_adbapi2_connection(
+                self,
+                await_only(creator_fn(*arg, **kw)),
+            ),
         )
 
     @reflection.cache
@@ -145,7 +150,7 @@ class JDBC_dialect(DefaultDialect):
 
     @reflection.cache
     def get_schema_names(self, connection: Connection, **kw: Any) -> list[str]:
-        jdbc_connection = connection.connection.dbapi_connection.connection
+        jdbc_connection = cast(DBAPIConnection, connection.connection.dbapi_connection).connection
         metadata = jdbc_connection.getMetaData()
         table_set = metadata.getSchemas()
         names: list[str] = []

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
 from itertools import islice
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import orjson
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
@@ -113,9 +113,9 @@ class SQLAlchemyConnection(ConnectionBackend):
             query = query.limit(1)
         with await self.execute_raw(query) as result:
             if pos >= 0:
-                return cast(Optional[Record], result.first())
+                return cast(Record | None, result.first())
             elif pos == -1:
-                return cast(Optional[Record], result.last())
+                return cast(Record | None, result.last())
             else:
                 raise NotImplementedError(
                     f"Only positive numbers and -1 for the last result are currently supported: {pos}"

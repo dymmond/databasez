@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import importlib
 import logging
-import sys
 import weakref
 from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextvars import ContextVar
@@ -266,10 +265,7 @@ class Database:
         self._global_connection: Connection | None = None
 
         self.ref_counter: int = 0
-        if sys.version_info >= (3, 10):
-            self.ref_lock: asyncio.Lock = asyncio.Lock()
-        else:
-            self.ref_lock = cast(asyncio.Lock, None)
+        self.ref_lock: asyncio.Lock = asyncio.Lock()
 
     def __copy__(self) -> Database:
         return self.__class__(self)
@@ -335,9 +331,6 @@ class Database:
         """
         Establish the connection pool.
         """
-        # py39 compatibility
-        if cast(Any, self.ref_lock) is None:
-            self.ref_lock = asyncio.Lock()
         loop = asyncio.get_running_loop()
         if self._loop is not None and loop != self._loop:
             if self.poll_interval < 0:

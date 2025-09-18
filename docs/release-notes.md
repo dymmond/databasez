@@ -5,6 +5,7 @@
 ### Changed
 
 - Use monkay.asgi helpers.
+- Bump to python>=3.10.
 
 ## 0.11.3
 
