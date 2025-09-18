@@ -8,9 +8,11 @@ import sys
 import weakref
 from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextvars import ContextVar
-from functools import lru_cache, partial
+from functools import lru_cache
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, cast, overload
+
+from monkay.asgi import ASGIApp, LifespanHook
 
 from databasez import interfaces, utils
 from databasez.utils import (
@@ -19,7 +21,6 @@ from databasez.utils import (
     multiloop_protector,
 )
 
-from .asgi import ASGIApp, ASGIHelper
 from .connection import Connection
 from .databaseurl import DatabaseURL
 from .transaction import Transaction
@@ -584,24 +585,27 @@ class Database:
         self,
         app: None,
         handle_lifespan: bool = False,
-    ) -> Callable[[ASGIApp], ASGIHelper]: ...
+    ) -> Callable[[ASGIApp], ASGIApp]: ...
 
     @overload
     def asgi(
         self,
         app: ASGIApp,
         handle_lifespan: bool = False,
-    ) -> ASGIHelper: ...
+    ) -> ASGIApp: ...
 
     def asgi(
         self,
         app: ASGIApp | None = None,
         handle_lifespan: bool = False,
-    ) -> ASGIHelper | Callable[[ASGIApp], ASGIHelper]:
+    ) -> ASGIApp | Callable[[ASGIApp], ASGIApp]:
         """Return wrapper for asgi integration."""
-        if app is not None:
-            return ASGIHelper(app=app, database=self, handle_lifespan=handle_lifespan)
-        return partial(ASGIHelper, database=self, handle_lifespan=handle_lifespan)
+        async def setup() -> contextlib.AsyncExitStack:
+            cm = contextlib.AsyncExitStack()
+            await self.connect()
+            cm.push_async_callback(self.disconnect)
+            return cm
+        return LifespanHook(app, setup=setup, do_forward=not handle_lifespan)
 
     @classmethod
     def get_backends(

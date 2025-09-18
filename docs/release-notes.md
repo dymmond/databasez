@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.11.4
+
+### Changed
+
+- Use monkay.asgi helpers.
+
 ## 0.11.3
 
 ### Fixed
