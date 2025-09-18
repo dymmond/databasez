@@ -600,11 +600,13 @@ class Database:
         handle_lifespan: bool = False,
     ) -> ASGIApp | Callable[[ASGIApp], ASGIApp]:
         """Return wrapper for asgi integration."""
+
         async def setup() -> contextlib.AsyncExitStack:
             cm = contextlib.AsyncExitStack()
             await self.connect()
             cm.push_async_callback(self.disconnect)
             return cm
+
         return LifespanHook(app, setup=setup, do_forward=not handle_lifespan)
 
     @classmethod

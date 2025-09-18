@@ -156,8 +156,11 @@ def get_esmerald_app(database_url):
 
     return app
 
+
 async def plain_lifespan(database):
-    async with Lifespan(database.asgi(get_asgi_no_lifespan(str(database.url)), handle_lifespan=True)):
+    async with Lifespan(
+        database.asgi(get_asgi_no_lifespan(str(database.url)), handle_lifespan=True)
+    ):
         query = notes.insert().values(text="example", completed=True)
         await database.execute(query)
         query = notes.select()
@@ -165,7 +168,8 @@ async def plain_lifespan(database):
         assert result.text == "example"
         assert result.completed
 
-@pytest.mark.parametetrize("db_url", DATABASE_URLS)
+
+@pytest.mark.parametrize("db_url", DATABASE_URLS)
 def test_plain_lifespan(db_url):
     loop = asyncio.new_event_loop()
     database = loop.run_until_complete(database_client(db_url, metadata))
