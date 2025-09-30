@@ -7,7 +7,7 @@ name = "databasez"
 description = "Async database support for Python."
 long_description = "Async database support for Python."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dynamic = ['version']
 authors = [{ name = "Tiago Silva", email = "tiago.arasilva@gmail.com" }]
 classifiers = [
@@ -35,7 +35,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson"]
+dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "monkay>=0.5"]
 keywords = [
     "mysql",
     "postgres",
@@ -193,7 +193,7 @@ check_types = "mypy -p databasez"
 [tool.hatch.envs.hatch-static-analysis]
 # disables custom ruff rules, required to align with pre-commit
 config-path = "none"
-dependencies = ["ruff==0.11.8"]
+dependencies = ["ruff==0.13.0"]
 
 
 [tool.hatch.envs.hatch-test]

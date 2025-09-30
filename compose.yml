@@ -1,8 +1,7 @@
-version: "3.8"
 services:
   postgres:
     restart: always
-    image: postgres:16
+    image: postgres:17
     environment:
       POSTGRES_USER: username
       POSTGRES_PASSWORD: passwsss*1348394#@
@@ -12,7 +11,7 @@ services:
 
   mariadb:
     restart: always
-    image: mariadb:11
+    image: mariadb:12
     environment:
       MYSQL_USER: username
       MYSQL_PASSWORD: passwsss*1348394#@

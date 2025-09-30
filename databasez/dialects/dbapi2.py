@@ -18,8 +18,7 @@ from sqlalchemy.util.concurrency import await_only
 from databasez.utils import AsyncWrapper
 
 if TYPE_CHECKING:
-    from sqlalchemy import URL
-    from sqlalchemy.base import Connection
+    from sqlalchemy import URL, Connection
     from sqlalchemy.engine.interfaces import ConnectArgsType
 
 
@@ -81,7 +80,7 @@ class DBAPI2_dialect(DefaultDialect):
 
         return (dsn,), {k: v for k, v in kwargs_passed.items() if v is not None}
 
-    def connect(
+    def connect(  # type: ignore
         self,
         *arg: Any,
         dbapi_pool: Literal["thread", "process"] = "thread",
@@ -101,7 +100,7 @@ class DBAPI2_dialect(DefaultDialect):
         elif dbapi_force_async_wrapper:
             dbapi_namespace = AsyncWrapper(dbapi_namespace, get_pool_for(dbapi_pool))  # type: ignore
         creator_fn = kw.pop("async_creator_fn", dbapi_namespace.connect)
-        return AsyncAdapt_dbapi_connection(  # type: ignore
+        return AsyncAdapt_dbapi_connection(
             self,
             await_only(creator_fn(*arg, **(driver_args or {}))),
         )

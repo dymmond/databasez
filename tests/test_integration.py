@@ -7,6 +7,7 @@ from esmerald import Gateway, Request, route
 from esmerald import JSONResponse as EsmeraldJSONResponse
 from esmerald.applications import Esmerald
 from esmerald.testclient import EsmeraldTestClient
+from monkay.asgi import Lifespan
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -154,6 +155,26 @@ def get_esmerald_app(database_url):
         await database.disconnect()
 
     return app
+
+
+async def plain_lifespan(database):
+    async with Lifespan(
+        database.asgi(get_asgi_no_lifespan(str(database.url)), handle_lifespan=True)
+    ):
+        query = notes.insert().values(text="example", completed=True)
+        await database.execute(query)
+        query = notes.select()
+        result = await database.fetch_one(query)
+        assert result.text == "example"
+        assert result.completed
+
+
+@pytest.mark.parametrize("db_url", DATABASE_URLS)
+def test_plain_lifespan(db_url):
+    loop = asyncio.new_event_loop()
+    database = loop.run_until_complete(database_client(db_url, metadata))
+    loop.run_until_complete(plain_lifespan(database))
+    loop.run_until_complete(stop_database_client(database, metadata))
 
 
 @pytest.mark.parametrize("get_app", [get_starlette_app, get_asgi_app, get_asgi_no_lifespan])

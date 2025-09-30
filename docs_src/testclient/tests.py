@@ -7,9 +7,9 @@ from enum import Enum
 import pytest
 import saffier
 from saffier.db.models import fields
+from tests.settings import DATABASE_URL
 
 from databasez.testclient import DatabaseTestClient
-from tests.settings import DATABASE_URL
 
 database = DatabaseTestClient(DATABASE_URL, drop_database=True)
 models = saffier.Registry(database=database)
