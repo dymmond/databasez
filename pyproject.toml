@@ -35,7 +35,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "monkay>=0.5"]
+dependencies = ["anyio>=4.11.0", "sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "monkay>=0.5"]
 keywords = [
     "mysql",
     "postgres",
@@ -72,7 +72,6 @@ all = ["databasez[jdbc,mysql,aiomysql,odbc,postgresql,sqlite]"]
 
 [tool.hatch.version]
 path = "databasez/__init__.py"
-
 
 [tool.mypy]
 strict = true

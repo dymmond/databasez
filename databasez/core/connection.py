@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import warnings
 import weakref
-from collections.abc import AsyncGenerator, Callable, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Sequence
 from functools import partial
 from threading import Event, Lock, Thread, current_thread
 from types import TracebackType
@@ -12,6 +13,7 @@ from sqlalchemy import text
 
 from databasez import interfaces
 from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multiloop_protector
+from databasez.utils import map_concurrently as _map_concurrently_util
 
 from .transaction import Transaction
 
@@ -451,3 +453,36 @@ class Connection:
             return query.values(values)  # type: ignore
 
         return query
+
+    async def map_concurrently(
+        self,
+        items: Sequence[Any],
+        fn: Callable[[Any, Connection], Coroutine[Any, Any, Any]],
+        *,
+        limit: int | None = None,
+        new_connection: bool = False,
+    ) -> list[Any]:
+        """
+        Map `fn(item, connection)` over items.
+
+        - On a single connection: queries are serialized by design (!).
+        - If you want true parallelism across queries, set `new_connection=True`, which borrows from
+          the owning Database and fans out each item on a new connection.
+        """
+        if new_connection:
+            db = self.database
+            assert db is not None, "Connection has no owning database"
+            return await db.map_concurrently(items, fn, limit=limit)
+        else:
+            if limit not in (None, 1):
+                warnings.warn(
+                    "Parallelism on a single DB connection is inherently serialized.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+
+            # Still useful if `fn` does unrelated async work, otherwise this is sequential under the hood.
+            async def _seq(item: Any):
+                return await fn(item, self)
+
+            return await _map_concurrently_util(items, _seq, limit=1)

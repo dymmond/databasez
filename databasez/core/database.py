@@ -5,7 +5,7 @@ import contextlib
 import importlib
 import logging
 import weakref
-from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Sequence
 from contextvars import ContextVar
 from functools import lru_cache
 from types import TracebackType
@@ -17,6 +17,8 @@ from databasez import interfaces, utils
 from databasez.utils import (
     _arun_with_timeout,
     arun_coroutine_threadsafe,
+    gather_limited,
+    map_concurrently,
     multiloop_protector,
 )
 
@@ -267,6 +269,10 @@ class Database:
         self.ref_counter: int = 0
         self.ref_lock: asyncio.Lock = asyncio.Lock()
 
+        self.max_concurrency: int | None = options.get("max_concurrency")  # may be None
+        # If engine isn't ready yet, we’ll infer later or else default to 10.
+        self._default_concurrency_fallback: int = 10
+
     def __copy__(self) -> Database:
         return self.__class__(self)
 
@@ -291,6 +297,21 @@ class Database:
             self._connection_map[task] = connection
 
         return self._connection
+
+    def _infer_pool_limit(self) -> int:
+        try:
+            backend = self.backend
+            engine = getattr(backend, "engine", None)
+            if engine is not None and getattr(engine, "pool", None) is not None:
+                pool = engine.pool
+                size = getattr(pool, "size", None)
+                if callable(size):
+                    size = size()
+                if isinstance(size, int) and size > 0:
+                    return size
+        except Exception:  # noqa
+            ...
+        return self._default_concurrency_fallback
 
     async def inc_refcount(self) -> bool:
         """
@@ -686,3 +707,48 @@ class Database:
         assert url.sqla_url.get_dialect(True).is_async, f'Dialect: "{url.scheme}" is not async.'
 
         return backend, url, options
+
+    async def execute_concurrently(
+        self,
+        callables: Sequence[Callable[[Connection], Coroutine[Any, Any, Any]]],
+        *,
+        limit: int | None = None,
+        timeout: float | None = None,
+    ) -> list[Any]:
+        """
+        Run N callables in parallel, each getting its own acquired Connection.
+        We respect pool limits; set `limit` to bound concurrency (defaults to engine pool size).
+        """
+        if limit is None:
+            limit = self.max_concurrency or self._infer_pool_limit()
+
+        async def _runner(fn: Callable[[Connection], Coroutine[Any, Any, Any]]):
+            async with self.connection() as conn:
+                return await fn(conn)
+
+        factories = [lambda f=f: _runner(f) for f in callables]
+        results = await gather_limited(factories, limit=limit)
+        # optional overall timeout on the whole batch
+        return await _arun_with_timeout(asyncio.sleep(0, result=results), timeout)
+
+    async def map_concurrently(
+        self,
+        items: Sequence[Any],
+        fn: Callable[[Any, Connection], Coroutine[Any, Any, Any]],
+        *,
+        limit: int | None = None,
+        timeout: float | None = None,
+    ) -> list[Any]:
+        """
+        Like `execute_concurrently`, but pass (item, connection) to fn.
+        Each item runs on its own fresh connection so queries don't serialize.
+        """
+        if limit is None:
+            limit = self.max_concurrency or self._infer_pool_limit()
+
+        async def _on_item(item: Any):
+            async with self.connection() as conn:
+                return await fn(item, conn)
+
+        results = await map_concurrently(items, _on_item, limit=limit)
+        return await _arun_with_timeout(asyncio.sleep(0, result=results), timeout)

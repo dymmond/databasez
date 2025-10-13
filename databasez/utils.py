@@ -1,5 +1,14 @@
 from __future__ import annotations
 
+try:
+    import anyio
+    from anyio import CapacityLimiter, create_task_group, fail_after, move_on_after
+    from anyio.to_thread import run_sync as anyio_run_sync
+except Exception as _e:  # pragma: no cover
+    anyio = None
+    create_task_group = fail_after = move_on_after = CapacityLimiter = None  # type: ignore
+    anyio_run_sync = None  # type: ignore
+
 import asyncio
 import inspect
 from collections.abc import Callable, Coroutine
@@ -140,9 +149,12 @@ class AsyncWrapper:
         async def fn3(*args: Any, **kwargs: Any) -> Any:
             loop = asyncio.get_running_loop()
             try:
-                result = await loop.run_in_executor(
-                    self._async_pool, partial(attr, *args, **kwargs)
-                )
+                if anyio_run_sync is not None:
+                    result = await anyio_run_sync(partial(attr, *args, **kwargs))
+                else:
+                    result = await loop.run_in_executor(
+                        self._async_pool, partial(attr, *args, **kwargs)
+                    )
             except Exception as exc:
                 if self._async_stringify_exceptions:
                     raise Exception(str(exc)) from None
@@ -184,18 +196,34 @@ class ThreadPassingExceptions(Thread):
 MultiloopProtectorCallable = TypeVar("MultiloopProtectorCallable", bound=Callable)
 
 
-def _run_with_timeout(inp: Any, timeout: float | None) -> Any:
-    if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
-        inp = asyncio.wait_for(inp, timeout=timeout)
-    return inp
+def _run_with_timeout(awaitable, timeout: float | None) -> Any:  # noqa
+    """
+    Synchronous entrypoint used by multiloop_protector in sync contexts.
+    """
+    if timeout is None:
+        return asyncio.get_event_loop().run_until_complete(awaitable)
+    if anyio is not None:
+
+        async def _runner():
+            with fail_after(timeout):
+                return await awaitable
+
+        return asyncio.get_event_loop().run_until_complete(_runner())
+    else:
+        return asyncio.get_event_loop().run_until_complete(asyncio.wait_for(awaitable, timeout))
 
 
-async def _arun_with_timeout(inp: Any, timeout: float | None) -> Any:
-    if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
-        return await asyncio.wait_for(inp, timeout=timeout)
-    elif inspect.isawaitable(inp):
-        return await inp
-    return inp
+async def _arun_with_timeout(awaitable: Any, timeout: float | None) -> Any:  # noqa
+    """
+    Async entrypoint that respects cooperative cancellation.
+    """
+    if timeout is None:
+        return await awaitable
+    if anyio is not None:
+        with fail_after(timeout):
+            return await awaitable
+    else:
+        return await asyncio.wait_for(awaitable, timeout)
 
 
 def multiloop_protector(
@@ -254,3 +282,45 @@ def get_quoter(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Callable[[
     if hasattr(dialect, "identifier_preparer"):
         return dialect.identifier_preparer.quote
     return dialect.preparer(dialect).quote
+
+
+async def gather_limited(
+    coros: list[Callable[[], Coroutine[Any, Any, Any]]], limit: int | None = None
+):
+    """
+    Run a list of 0-arg coroutine factories with an optional concurrency limit.
+    Returns results in the same order.
+    """
+    if not coros:
+        return []
+
+    results: list[Any] = [None] * len(coros)
+    if anyio is None or limit is None:
+        # Fallback: naive gather
+        async def _wrap(i, f):
+            results[i] = await f()
+
+        await asyncio.gather(*(_wrap(i, f) for i, f in enumerate(coros)))
+        return results
+
+    limiter = anyio.Semaphore(limit)
+
+    async def _worker(i: int, f: Callable[[], Coroutine[Any, Any, Any]]):
+        async with limiter:
+            results[i] = await f()
+
+    async with create_task_group() as tg:
+        for i, f in enumerate(coros):
+            tg.start_soon(_worker, i, f)
+
+    return results
+
+
+async def map_concurrently(
+    items, fn: Callable[[Any], Coroutine[Any, Any, Any]], *, limit: int | None = None
+):
+    """
+    Map an async function over items with optional concurrency limits.
+    """
+    coros = [lambda x=x: fn(x) for x in items]
+    return await gather_limited(coros, limit=limit)

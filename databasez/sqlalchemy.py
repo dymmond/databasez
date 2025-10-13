@@ -1,9 +1,3 @@
-"""
-Forwarding implementations of interfaces to sqlalchemy.
-
-Adjustments should be inherit from here.
-"""
-
 from __future__ import annotations
 
 import logging
