@@ -31,21 +31,6 @@ if TYPE_CHECKING:
 
     from databasez.types import BatchCallable, BatchCallableResult, DictAny
 
-try:  # pragma: no cover
-    import click
-
-    # Extra log info for optional coloured terminal outputs.
-    LOG_EXTRA = {"color_message": "Query: " + click.style("%s", bold=True) + " Args: %s"}
-    CONNECT_EXTRA = {"color_message": "Connected to database " + click.style("%s", bold=True)}
-    DISCONNECT_EXTRA = {
-        "color_message": "Disconnected from database " + click.style("%s", bold=True)
-    }
-except ImportError:  # pragma: no cover
-    LOG_EXTRA = {}
-    CONNECT_EXTRA = {}
-    DISCONNECT_EXTRA = {}
-
-
 logger = logging.getLogger("databasez")
 
 default_database: type[interfaces.DatabaseBackend]
@@ -363,7 +348,6 @@ class Database:
         self._loop = asyncio.get_event_loop()
 
         await self.backend.connect(self.url, **self.options)
-        logger.info("Connected to database %s", self.url.obscure_password, extra=CONNECT_EXTRA)
         self.is_connected = True
 
         if self._global_connection is None:
@@ -386,7 +370,7 @@ class Database:
         # parent_database is injected and should not be specified manually
         if not await self.decr_refcount() or force:
             if not self.is_connected:
-                logger.debug("Already disconnected, skipping disconnection")
+                logger.debug("Already disconnected, skip disconnecting")
                 return False
             if force:
                 logger.warning("Force disconnect, despite refcount not 0")
@@ -413,11 +397,6 @@ class Database:
                 self._global_connection = None
             self._connection = None
         finally:
-            logger.info(
-                "Disconnected from database %s",
-                self.url.obscure_password,
-                extra=DISCONNECT_EXTRA,
-            )
             self.is_connected = False
             await self.backend.disconnect()
             self._loop = None

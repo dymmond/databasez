@@ -278,6 +278,13 @@ If you want more extensive logging when creating a custom overwrite, you can set
 
 By default this is off, to not confuse people.
 
+See `tests/conftest.py` for an example.
+
+## Debugging db connects
+
+If you want to get debug output for successfully connecting to the db, you can pass `echo=True` as argument.
+
+
 ## Links
 
 [esmerald]: https://github.com/dymmond/esmerald
