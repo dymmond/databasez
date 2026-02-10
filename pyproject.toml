@@ -34,8 +34,9 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
-dependencies = ["sqlalchemy[asyncio]>=2.0.25,<2.1", "orjson", "monkay>=0.5"]
+dependencies = ["sqlalchemy[asyncio]>=1.4.54,<2.1", "orjson", "monkay>=0.5"]
 keywords = [
     "mysql",
     "postgres",
