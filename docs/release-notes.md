@@ -5,7 +5,8 @@
 ### Changed
 
 - Use monkay.asgi helpers.
-- Bump to python>=3.10.
+- Bump to Python 3.10+.
+- Reduce noise by removing info log messages when connecting to/disconnecting from a db.
 
 ## 0.11.3
 

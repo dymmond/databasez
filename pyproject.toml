@@ -42,9 +42,9 @@ keywords = [
     "sqlalchemy",
     "sqlite",
     "asyncio",
-    "esmerald",
+    "ravyn",
     "saffier",
-    "jdbc"
+    "jdbc",
 ]
 
 [project.urls]
@@ -94,15 +94,15 @@ fix = true
 
 [tool.ruff.lint]
 select = [
-    "E", # pycodestyle errors
-    "W", # pycodestyle warnings
-    "F", # pyflakes
-    "C", # flake8-comprehensions
-    "B", # flake8-bugbear
-    "I", # isort
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "C",     # flake8-comprehensions
+    "B",     # flake8-bugbear
+    "I",     # isort
     "ASYNC", # ASYNC
     "UP",
-    "SIM", # simplification
+    "SIM",   # simplification
 ]
 
 ignore = [
@@ -116,7 +116,7 @@ ignore = [
 "docs_src/*" = ["ASYNC", "F704", "B007"]
 
 [tool.ruff.lint.isort]
-known-third-party = ["esmerald", "starlette"]
+known-third-party = ["ravyn", "starlette", "lilya"]
 
 [tool.ruff.lint.pycodestyle]
 max-line-length = 120
@@ -137,7 +137,11 @@ module = "docs_src.*"
 ignore_errors = true
 
 [tool.pytest.ini_options]
-addopts = ["--strict-config", "--strict-markers", "--pdbcls=IPython.terminal.debugger:Pdb"]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "--pdbcls=IPython.terminal.debugger:Pdb",
+]
 xfail_strict = true
 junit_family = "xunit2"
 setup_timeout = 5
@@ -179,13 +183,10 @@ build = "mkdocs build"
 serve = "mkdocs serve --dev-addr localhost:8000"
 
 
-
 [tool.hatch.envs.test]
 # type-checking
 features = ["all"]
-extra-dependencies = [
-    "mypy>=1.1.0,<2.0.0",
-]
+extra-dependencies = ["mypy>=1.1.0,<2.0.0"]
 
 [tool.hatch.envs.test.scripts]
 check_types = "mypy -p databasez"
@@ -203,7 +204,7 @@ extra-dependencies = [
     # for debugging
     "sqlalchemy_utils",
     "ipdb>=0.13.13",
-    "esmerald>=1.1.0",
+    "ravyn>=0.3.8",
     "mypy>=1.1.0,<2.0.0",
     "starlette>=0.26.1",
     "httpx",
@@ -214,7 +215,7 @@ extra-dependencies = [
     "pytest-asyncio",
     "pytest-xdist",
     "anyio",
-    "uvloop"
+    "uvloop",
 ]
 
 [tool.hatch.envs.hatch-test.env-vars]
