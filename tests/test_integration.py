@@ -3,11 +3,11 @@ import contextlib
 
 import pytest
 import sqlalchemy
-from esmerald import Gateway, Request, route
-from esmerald import JSONResponse as EsmeraldJSONResponse
-from esmerald.applications import Esmerald
-from esmerald.testclient import EsmeraldTestClient
 from monkay.asgi import Lifespan
+from ravyn import Gateway, Request, route
+from ravyn import JSONResponse as EsmeraldJSONResponse
+from ravyn.applications import Ravyn
+from ravyn.testclient import RavynTestClient
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -144,7 +144,7 @@ def get_esmerald_app(database_url):
         await database.execute(query)
         return EsmeraldJSONResponse({"text": data["text"], "completed": data["completed"]})
 
-    app = Esmerald(routes=[Gateway(handler=list_notes), Gateway(handler=add_notes)])
+    app = Ravyn(routes=[Gateway(handler=list_notes), Gateway(handler=add_notes)])
 
     @app.on_event("startup")
     async def startup():
@@ -200,7 +200,7 @@ def test_integration(database_url, get_app):
 def test_integration_esmerald(database_url):
     app = get_esmerald_app(database_url)
 
-    with EsmeraldTestClient(app) as client:
+    with RavynTestClient(app) as client:
         response = client.post("/notes", json={"text": "example", "completed": True})
         assert response.status_code == 200
         assert response.json() == {"text": "example", "completed": True}
@@ -209,7 +209,7 @@ def test_integration_esmerald(database_url):
         assert response.status_code == 200
         assert response.json() == [{"text": "example", "completed": True}]
 
-    with EsmeraldTestClient(app) as client:
+    with RavynTestClient(app) as client:
         # Ensure sessions are isolated
         response = client.get("/notes")
         assert response.status_code == 200
