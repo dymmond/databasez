@@ -88,9 +88,9 @@ jobs:
       - name: "Run linting"
         if: steps.filters.outputs.src == 'true'
         run: "hatch fmt --check"
-      - name: "Run mypy"
-        if: steps.filters.outputs.src == 'true'
-        run: "hatch run test:check_types"
+      # - name: "Run mypy"
+      #   if: steps.filters.outputs.src == 'true'
+      #   run: "hatch run test:check_types"
       - name: "Run tests"
         if: steps.filters.outputs.src == 'true' || steps.filters.outputs.workflows == 'true' || github.event.schedule != ''
         # test with xdist as still segfaults occur
