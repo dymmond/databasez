@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.11.5
+
+### Changed
+
+- Update internal imports to be compatible with SQLAlchemy 1.4+.
+
 ## 0.11.4
 
 ### Changed
