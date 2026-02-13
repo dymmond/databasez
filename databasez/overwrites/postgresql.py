@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any
 from databasez.sqlalchemy import SQLAlchemyConnection, SQLAlchemyDatabase
 
 if TYPE_CHECKING:
-    from sqlalchemy.sql import ClauseElement
+    try:
+        from sqlalchemy.sql import ClauseElement
+    except Exception:
+        ClauseElement = Any
 
     from databasez.core.databaseurl import DatabaseURL
 

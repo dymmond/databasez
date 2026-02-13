@@ -25,9 +25,14 @@ from .databaseurl import DatabaseURL
 from .transaction import Transaction
 
 if TYPE_CHECKING:
-    from sqlalchemy import URL, MetaData
+    from sqlalchemy import MetaData
+    from sqlalchemy.engine import URL
     from sqlalchemy.ext.asyncio import AsyncEngine
-    from sqlalchemy.sql import ClauseElement
+
+    try:
+        from sqlalchemy.sql import ClauseElement
+    except Exception:
+        ClauseElement = Any
 
     from databasez.types import BatchCallable, BatchCallableResult, DictAny
 

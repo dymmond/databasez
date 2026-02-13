@@ -1,21 +1,25 @@
 from __future__ import annotations
 
-__all__ = ["Record", "DatabaseBackend", "ConnectionBackend", "TransactionBackend"]
-
-
 import weakref
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from sqlalchemy import AsyncEngine, Transaction
-    from sqlalchemy.sql import ClauseElement
-
+    try:
+        from sqlalchemy.engine import Transaction
+        from sqlalchemy.ext.asyncio.engine import AsyncEngine
+        from sqlalchemy.sql import ClauseElement
+    except Exception:
+        AsyncEngine = Any
+        Transaction = Any
+        ClauseElement = Any
     from databasez.core.database import Connection as RootConnection
     from databasez.core.database import Database as RootDatabase
     from databasez.core.databaseurl import DatabaseURL
     from databasez.core.transaction import Transaction as RootTransaction
+
+__all__ = ["Record", "DatabaseBackend", "ConnectionBackend", "TransactionBackend"]
 
 
 class Record(Sequence):

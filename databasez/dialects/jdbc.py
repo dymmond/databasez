@@ -33,8 +33,12 @@ from databasez.utils import AsyncWrapper
 
 if TYPE_CHECKING:
     from jpype.dbapi2 import Connection as JDBCConnection
-    from sqlalchemy import URL, Connection
-    from sqlalchemy.engine.interfaces import ConnectArgsType
+    from sqlalchemy.engine import URL, Connection
+
+    try:
+        from sqlalchemy.engine.interfaces import ConnectArgsType
+    except Exception:
+        ConnectArgsType = Any
 
 
 class AsyncAdapt_adbapi2_connection(AsyncAdapt_dbapi_connection):

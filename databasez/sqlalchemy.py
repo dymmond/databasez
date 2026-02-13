@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING, Any, cast
 
 import orjson
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
-from sqlalchemy.sql import ClauseElement
+
+try:
+    from sqlalchemy.sql import ClauseElement
+except Exception:
+    ClauseElement = Any
 
 from databasez.interfaces import ConnectionBackend, DatabaseBackend, Record, TransactionBackend
 
