@@ -4,8 +4,7 @@ from functools import cached_property
 from typing import Any
 from urllib.parse import SplitResult, parse_qs, quote, unquote, urlencode, urlsplit
 
-from sqlalchemy import URL
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine.url import URL, make_url
 
 
 class DatabaseURL:

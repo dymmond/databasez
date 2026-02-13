@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from databasez.core.Database import Database
+    from databasez.core.database import Database
 
 ASGIApp = Callable[
     [
@@ -18,8 +18,7 @@ ASGIApp = Callable[
 ]
 
 
-class MuteInteruptException(BaseException):
-    pass
+class MuteInteruptException(BaseException): ...
 
 
 @dataclass

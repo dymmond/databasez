@@ -7,19 +7,23 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, Literal
 
 import orjson
+from sqlalchemy import text
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
 )
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.pool import AsyncAdaptedQueuePool
-from sqlalchemy.sql import text
 from sqlalchemy.util.concurrency import await_only
 
 from databasez.utils import AsyncWrapper
 
 if TYPE_CHECKING:
-    from sqlalchemy import URL, Connection
-    from sqlalchemy.engine.interfaces import ConnectArgsType
+    from sqlalchemy.engine import URL, Connection
+
+    try:
+        from sqlalchemy.engine.interfaces import ConnectArgsType
+    except Exception:
+        ConnectArgsType = Any
 
 
 def get_pool_for(pool: Literal["thread", "process"]) -> Any:
