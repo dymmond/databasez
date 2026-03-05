@@ -1,5 +1,23 @@
 # Release Notes
 
+## 0.12.0
+
+### Fixed
+
+- Fixed `extract_options` in `SQLAlchemyDatabase` popping the wrong key when extracting `isolation_level` from URL query parameters. The loop variable `param` retained the value `"echo_pool"` from the previous iteration, so `isolation_level` was never actually extracted.
+- Fixed transaction decorator (`Transaction.__call__`) silently discarding the decorated function's return value. `await func(...)` is now `return await func(...)`.
+- Fixed force-disconnect cleanup in `Database.disconnect()` being unreachable dead code. An `assert not self._databases_map` inside an `if self._databases_map:` block always fired before the sub-database cleanup loop could execute.
+- Fixed `Database._connection` property setter returning a value (silently discarded by Python) and having an incorrect `-> Connection | None` return annotation. Setters are now correctly `-> None`.
+
+### Changed
+
+- Narrowed `except Exception` to `except ImportError` in `TYPE_CHECKING` blocks in `interfaces.py` and `core/database.py` to avoid masking genuine errors like `SyntaxError` or `AttributeError`.
+- Replaced mutable list defaults `["databasez.overwrites"]` with immutable tuples `("databasez.overwrites",)` in `Database.get_backends()` and `Database.apply_database_url_and_options()`.
+- Extracted duplicated dialect detection, URL redirection, and AUTOCOMMIT logic in `DatabaseTestClient` into `_resolve_admin_url()`, `_needs_autocommit()`, and `_admin_client()` helper methods.
+- Tightened type annotations: `column: Any` → `column: int | str`, `template: Any` → `template: str | None`.
+- Removed duplicated exception handling block in `AsyncWrapper.__getattribute__` (second block was unreachable dead code).
+- Simplified `else: raise exc` anti-patterns to bare `raise` in `utils.py`.
+
 ## 0.11.5
 
 ### Changed
