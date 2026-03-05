@@ -12,14 +12,32 @@ from sqlalchemy.engine import Connection as SQLAConnection
 from sqlalchemy.engine import Dialect
 
 DATABASEZ_OVERWRITE_LOGGING: bool = False
+"""When ``True``, include full tracebacks when overwrite import fails."""
+
 DATABASEZ_RESULT_TIMEOUT: float | None = None
-# Poll with 0.1ms, this way CPU isn't at 100%
+"""Global timeout (seconds) for cross-loop result polling. ``None`` = no limit."""
+
+# Poll with 0.1 ms so the CPU isn't pegged at 100 %.
 DATABASEZ_POLL_INTERVAL: float = 0.0001
+"""Default poll interval (seconds) for cross-loop awaiting."""
 
 
 async def _arun_coroutine_threadsafe_result_shim(
-    future: Future, loop: asyncio.AbstractEventLoop, poll_interval: float
+    future: Future[Any], loop: asyncio.AbstractEventLoop, poll_interval: float
 ) -> Any:
+    """Poll *future* until it completes, sleeping between checks.
+
+    Args:
+        future: A :class:`~concurrent.futures.Future` submitted to *loop*.
+        loop: The event loop *future* is running on.
+        poll_interval: Seconds to sleep between polls.
+
+    Returns:
+        Any: The result of the future.
+
+    Raises:
+        RuntimeError: If *loop* is closed before the future finishes.
+    """
     while not future.done():
         if loop.is_closed():
             raise RuntimeError("loop submitted to is closed")
@@ -28,8 +46,30 @@ async def _arun_coroutine_threadsafe_result_shim(
 
 
 async def arun_coroutine_threadsafe(
-    coro: Coroutine, loop: asyncio.AbstractEventLoop | None, poll_interval: float
+    coro: Coroutine[Any, Any, Any],
+    loop: asyncio.AbstractEventLoop | None,
+    poll_interval: float,
 ) -> Any:
+    """Schedule *coro* on a foreign event loop and await the result.
+
+    If the *running* loop is the same as *loop*, the coroutine is simply
+    awaited directly.  Otherwise it is submitted via
+    :func:`asyncio.run_coroutine_threadsafe` and polled.
+
+    Args:
+        coro: The coroutine to run.
+        loop: The target event loop (must be running).
+        poll_interval: Seconds to sleep between result polls.  A negative
+            value disables polling and raises :class:`RuntimeError`.
+
+    Returns:
+        Any: The return value of *coro*.
+
+    Raises:
+        AssertionError: If *loop* is ``None`` or not running.
+        RuntimeError: If *poll_interval* is negative.
+        TimeoutError: If :data:`DATABASEZ_RESULT_TIMEOUT` is exceeded.
+    """
     running_loop = asyncio.get_running_loop()
     assert loop is not None and loop.is_running(), "loop is closed"
     if running_loop is loop:
@@ -58,6 +98,25 @@ default_exclude_types = (int, bool, dict, list, tuple, BaseException)
 
 
 class AsyncWrapper:
+    """Wrap a synchronous DBAPI2 object to present an async interface.
+
+    All method calls on the wrapped object are dispatched to a thread-pool
+    executor so that they do not block the event loop.  Certain attributes
+    and types can be excluded from async wrapping.
+
+    Attributes:
+        _async_wrapped: The original synchronous object.
+        _async_pool: The :class:`~concurrent.futures.Executor` used for
+            offloading blocking calls.
+        _async_exclude_attrs: A mapping of attribute names that should be
+            dispatched synchronously or recursively wrapped.
+        _async_exclude_types: Tuple of types whose instances are returned
+            directly without wrapping.
+        _async_stringify_exceptions: When ``True``, re-raise driver
+            exceptions as plain :class:`Exception` with stringified messages
+            to avoid pickling issues across threads.
+    """
+
     __slots__ = async_wrapper_slots
     _async_wrapped: Any
     _async_pool: Any
@@ -73,13 +132,37 @@ class AsyncWrapper:
         exclude_types: tuple[type[Any], ...] = default_exclude_types,
         stringify_exceptions: bool = False,
     ) -> None:
+        """Initialise the async wrapper.
+
+        Args:
+            wrapped: The synchronous object to wrap.
+            pool: A :class:`~concurrent.futures.Executor` for blocking calls.
+            exclude_attrs: Mapping of attribute names to either ``True``
+                (dispatch synchronously) or a nested dict for recursive
+                exclusion.
+            exclude_types: Types that should be returned un-wrapped.
+            stringify_exceptions: Whether to stringify driver exceptions.
+        """
         self._async_wrapped = wrapped
         self._async_pool = pool
         self._async_exclude_attrs = exclude_attrs or {}
         self._async_exclude_types = exclude_types
         self._async_stringify_exceptions = stringify_exceptions
 
-    def __getattribute__(self, name: str) -> Any:
+    def __getattribute__(self, name: str) -> Any:  # noqa: C901
+        """Intercept attribute access and wrap callables for async dispatch.
+
+        Async dunder names (``__aenter__``, ``__aexit__``, ``__aiter__``,
+        ``__anext__``) are mapped to their synchronous counterparts on the
+        wrapped object.
+
+        Args:
+            name: The attribute name being accessed.
+
+        Returns:
+            Any: The attribute value — either the original value (for
+                excluded attrs / non-callables) or an async wrapper function.
+        """
         if name in async_wrapper_slots:
             return super().__getattribute__(name)
         if name == "__aenter__":
@@ -104,12 +187,11 @@ class AsyncWrapper:
         except Exception as exc:
             if self._async_stringify_exceptions:
                 raise Exception(str(exc)) from None
-            else:
-                raise exc
+            raise
 
         if self._async_exclude_attrs.get(name) is True:
             if inspect.isroutine(attr):
-                # submit to threadpool
+                # Submit to threadpool synchronously and wrap result.
                 def fn2(*args: Any, **kwargs: Any) -> Any:
                     try:
                         return AsyncWrapper(
@@ -122,12 +204,7 @@ class AsyncWrapper:
                     except Exception as exc:
                         if self._async_stringify_exceptions:
                             raise Exception(str(exc)) from None
-                        else:
-                            raise exc
-                        if self._async_stringify_exceptions:
-                            raise Exception(str(exc)) from None
-                        else:
-                            raise exc
+                        raise
 
                 return fn2
 
@@ -146,8 +223,7 @@ class AsyncWrapper:
             except Exception as exc:
                 if self._async_stringify_exceptions:
                     raise Exception(str(exc)) from None
-                else:
-                    raise exc
+                raise
             if isinstance(result, self._async_exclude_types):
                 return result
             try:
@@ -165,15 +241,30 @@ class AsyncWrapper:
 
 
 class ThreadPassingExceptions(Thread):
-    _exc_raised: Any = None
+    """A :class:`~threading.Thread` that re-raises exceptions on :meth:`join`.
+
+    When the thread's ``run()`` method raises an exception it is captured and
+    re-raised in the thread that calls :meth:`join`.
+    """
+
+    _exc_raised: BaseException | None = None
 
     def run(self) -> None:
+        """Execute the thread target, capturing any exception."""
         try:
             super().run()
         except Exception as exc:
             self._exc_raised = exc
 
     def join(self, timeout: float | int | None = None) -> None:
+        """Wait for the thread to finish and re-raise captured exceptions.
+
+        Args:
+            timeout: Maximum seconds to wait (``None`` = forever).
+
+        Raises:
+            Exception: Any exception that occurred inside the thread.
+        """
         try:
             super().join(timeout=timeout)
         finally:
@@ -185,12 +276,36 @@ MultiloopProtectorCallable = TypeVar("MultiloopProtectorCallable", bound=Callabl
 
 
 def _run_with_timeout(inp: Any, timeout: float | None) -> Any:
+    """Wrap an awaitable with :func:`asyncio.wait_for` if *timeout* is positive.
+
+    This is a *synchronous* helper that returns a new awaitable (or the
+    original value if it is not awaitable / timeout is not set).
+
+    Args:
+        inp: A value or awaitable.
+        timeout: Maximum seconds, or ``None`` / non-positive to skip.
+
+    Returns:
+        Any: The (possibly wrapped) value.
+    """
     if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
         inp = asyncio.wait_for(inp, timeout=timeout)
     return inp
 
 
 async def _arun_with_timeout(inp: Any, timeout: float | None) -> Any:
+    """Await *inp* with an optional timeout.
+
+    Args:
+        inp: A value or awaitable.
+        timeout: Maximum seconds, or ``None`` / non-positive to skip.
+
+    Returns:
+        Any: The resolved value.
+
+    Raises:
+        TimeoutError: If the timeout is exceeded.
+    """
     if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
         return await asyncio.wait_for(inp, timeout=timeout)
     elif inspect.isawaitable(inp):
@@ -199,12 +314,34 @@ async def _arun_with_timeout(inp: Any, timeout: float | None) -> Any:
 
 
 def multiloop_protector(
-    fail_with_different_loop: bool, inject_parent: bool = False, passthrough_timeout: bool = False
+    fail_with_different_loop: bool,
+    inject_parent: bool = False,
+    passthrough_timeout: bool = False,
 ) -> Callable[[MultiloopProtectorCallable], MultiloopProtectorCallable]:
-    """For multiple threads or other reasons why the loop changes"""
+    """Decorator that guards methods against cross-event-loop calls.
 
-    # True works with all methods False only for methods of Database
-    # needs _loop attribute to check against
+    When the *current* running loop differs from the object's ``_loop``, the
+    decorator either:
+
+    - **Raises** :class:`RuntimeError` (if *fail_with_different_loop* is
+      ``True``), or
+    - **Transparently proxies** the call through the object's
+      ``async_helper`` (for seamless multi-loop / multi-thread support).
+
+    If the calling loop matches, the decorated function is invoked directly,
+    optionally wrapped with a timeout via :func:`_run_with_timeout`.
+
+    Args:
+        fail_with_different_loop: If ``True``, raise instead of proxying.
+        inject_parent: If ``True``, inject a ``parent_database`` keyword
+            argument when redirecting to a sub-database.
+        passthrough_timeout: If ``True``, do **not** pop ``timeout`` from
+            kwargs (some callers handle it themselves).
+
+    Returns:
+        Callable: A method decorator.
+    """
+
     def _decorator(fn: MultiloopProtectorCallable) -> MultiloopProtectorCallable:
         @wraps(fn)
         def wrapper(
@@ -222,9 +359,7 @@ def multiloop_protector(
             except RuntimeError:
                 loop = None
             if loop is not None and self._loop is not None and loop != self._loop:
-                # redirect call if self is Database and loop is in sub databases referenced
-                # afaik we can careless continue use the old database object from a subloop and all protected
-                # methods are forwarded
+                # Redirect call if self is Database and loop is in sub-databases.
                 if hasattr(self, "_databases_map") and loop in self._databases_map:
                     if inject_parent:
                         kwargs["parent_database"] = self
@@ -241,6 +376,14 @@ def multiloop_protector(
 
 
 def get_dialect(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Dialect:
+    """Extract the :class:`~sqlalchemy.engine.Dialect` from a connection.
+
+    Args:
+        async_conn_or_dialect: A SQLAlchemy connection or dialect instance.
+
+    Returns:
+        Dialect: The resolved dialect.
+    """
     if isinstance(async_conn_or_dialect, Dialect):
         return async_conn_or_dialect
     if hasattr(async_conn_or_dialect, "bind"):
@@ -249,7 +392,14 @@ def get_dialect(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Dialect:
 
 
 def get_quoter(async_conn_or_dialect: SQLAConnection | Dialect, /) -> Callable[[str], str]:
-    # needs underlying async connection as object or dialect
+    """Return an identifier-quoting function for the given dialect.
+
+    Args:
+        async_conn_or_dialect: A SQLAlchemy connection or dialect instance.
+
+    Returns:
+        Callable[[str], str]: A function that quotes a SQL identifier.
+    """
     dialect = get_dialect(async_conn_or_dialect)
     if hasattr(dialect, "identifier_preparer"):
         return dialect.identifier_preparer.quote

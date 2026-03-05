@@ -11,11 +11,25 @@ from databasez.utils import DATABASEZ_POLL_INTERVAL, ThreadPassingExceptions, ge
 
 
 class DatabaseTestClient(Database):
-    """
-    Client used only for unit testing.
+    """Database client used only for testing.
 
-    This client simply creates a "test_" from the database provided in the
-    connection.
+    On initialisation (or first :meth:`connect`), creates a test database whose
+    name is the original database name prefixed by *test_prefix* (default
+    ``"test_"``).  The test database is optionally dropped on disconnect.
+
+    Attributes:
+        testclient_operation_timeout: Timeout in seconds for setup / teardown
+            operations after the initial connect.
+        testclient_operation_timeout_init: Timeout in seconds for the very
+            first database creation (may be higher for cold starts).
+        test_db_url: The resolved test database URL.
+        testclient_default_full_isolation: Default for *full_isolation*.
+        testclient_default_force_rollback: Default for *force_rollback*.
+        testclient_default_poll_interval: Default poll interval.
+        testclient_default_lazy_setup: Default for *lazy_setup*.
+        testclient_default_use_existing: Default for *use_existing*.
+        testclient_default_drop_database: Default for *drop_database*.
+        testclient_default_test_prefix: Default name prefix.
     """
 
     # knob for changing the timeout of the setup and tear down of the db
@@ -45,7 +59,26 @@ class DatabaseTestClient(Database):
         lazy_setup: bool | None = None,
         test_prefix: str | None = None,
         **options: Any,
-    ):
+    ) -> None:
+        """Initialise the test client.
+
+        Args:
+            url: Connection URL, :class:`DatabaseURL`, SQLAlchemy URL, or an
+                existing :class:`Database` to derive settings from.
+            force_rollback: Whether to wrap every connection in a
+                rolled-back transaction (default class attribute).
+            full_isolation: Whether to create per-task connections.
+            poll_interval: Timeout poll interval for multi-loop helpers.
+            use_existing: If ``True``, reuse an existing test database
+                rather than dropping and recreating.
+            drop_database: If ``True``, drop the test database on
+                disconnect.
+            lazy_setup: If ``True`` (or ``None`` for non-Database URLs),
+                defer database creation until the first :meth:`connect`.
+            test_prefix: Prefix for the test database name.
+            **options: Additional keyword arguments forwarded to
+                :class:`~databasez.Database`.
+        """
         if use_existing is None:
             use_existing = self.testclient_default_use_existing
         if drop_database is None:
@@ -94,9 +127,11 @@ class DatabaseTestClient(Database):
                 self._setup_executed_init = True
 
     async def setup(self) -> None:
-        """
-        Makes sure the database is created if does not exist or use existing
-        if needed.
+        """Create the test database if it does not already exist.
+
+        When *use_existing* is ``False``, any existing test database is
+        dropped first and a fresh one is created.  When ``True``, the
+        database is created only if missing.
         """
         db_does_exist = await self.database_exists(self.test_db_url)
         if not self.use_existing:
@@ -114,24 +149,45 @@ class DatabaseTestClient(Database):
                     self.drop = False
 
     def setup_protected(self, operation_timeout: float) -> None:
+        """Run :meth:`setup` synchronously in a background thread.
+
+        Uses :class:`~databasez.utils.ThreadPassingExceptions` so that
+        exceptions propagate back to the caller.
+
+        Args:
+            operation_timeout: Maximum seconds to wait for setup.
+        """
         thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
         thread.start()
         with contextlib.suppress(TimeoutError):
             thread.join(operation_timeout)
 
     async def connect_hook(self) -> None:
+        """Pre-connection hook: run deferred setup if necessary."""
         if not self._setup_executed_init:
             self.setup_protected(self.testclient_operation_timeout)
         await super().connect_hook()
 
     async def is_database_exist(self) -> Any:
-        """
-        Checks if a database exists.
+        """Check whether the test database exists.
+
+        Returns:
+            bool: ``True`` when the test database exists.
         """
         return await self.database_exists(self.test_db_url)
 
     @classmethod
     async def database_exists(cls, url: Union[str, "sqlalchemy.URL", DatabaseURL]) -> bool:
+        """Check whether a database exists at the given URL.
+
+        Supports PostgreSQL, MySQL, SQLite, and generic fallback.
+
+        Args:
+            url: Database URL to check.
+
+        Returns:
+            bool: ``True`` if the database exists.
+        """
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect_name = url.sqla_url.get_dialect(True).name
@@ -192,19 +248,28 @@ class DatabaseTestClient(Database):
                 return False
 
     @classmethod
-    async def create_database(
+    def _resolve_admin_url(
         cls,
         url: Union[str, "sqlalchemy.URL", DatabaseURL],
-        encoding: str = "utf8",
-        template: Any = None,
-    ) -> None:
+    ) -> tuple[DatabaseURL, str, str, str]:
+        """Parse the URL and resolve the admin connection URL for DDL.
+
+        Returns a tuple of (admin_url, database_name, dialect_name,
+        dialect_driver) where *admin_url* has been redirected to the
+        appropriate admin database for the dialect.
+
+        Args:
+            url: The original database URL.
+
+        Returns:
+            tuple: ``(admin_url, database_name, dialect_name, dialect_driver)``.
+        """
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         database = url.database
         dialect = url.sqla_url.get_dialect(True)
-        dialect_name = dialect.name
-        dialect_driver = dialect.driver
+        dialect_name: str = dialect.name
+        dialect_driver: str = dialect.driver
 
-        # we don't want to connect to a not existing db
         if dialect_name == "postgresql":
             url = url.replace(database="postgres")
         elif dialect_name == "mssql":
@@ -214,18 +279,66 @@ class DatabaseTestClient(Database):
         elif dialect_name != "sqlite":
             url = url.replace(database=None)
 
-        if (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
+        return url, database, dialect_name, dialect_driver
+
+    @classmethod
+    def _needs_autocommit(cls, dialect_name: str, dialect_driver: str) -> bool:
+        """Return whether the dialect/driver pair requires AUTOCOMMIT for DDL.
+
+        Args:
+            dialect_name: The SQLAlchemy dialect name.
+            dialect_driver: The SQLAlchemy driver name.
+
+        Returns:
+            bool: ``True`` if AUTOCOMMIT isolation is needed.
+        """
+        return (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
             dialect_name == "postgresql"
             and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
-        ):
-            db_client = Database(
+        )
+
+    @classmethod
+    def _admin_client(cls, url: DatabaseURL, dialect_name: str, dialect_driver: str) -> Database:
+        """Create a :class:`Database` client suitable for DDL operations.
+
+        Args:
+            url: The admin database URL.
+            dialect_name: The SQLAlchemy dialect name.
+            dialect_driver: The SQLAlchemy driver name.
+
+        Returns:
+            Database: A database client configured for DDL.
+        """
+        if cls._needs_autocommit(dialect_name, dialect_driver):
+            return Database(
                 url,
                 isolation_level="AUTOCOMMIT",
                 force_rollback=False,
                 full_isolation=False,
             )
-        else:
-            db_client = Database(url, force_rollback=False, full_isolation=False)
+        return Database(url, force_rollback=False, full_isolation=False)
+
+    @classmethod
+    async def create_database(
+        cls,
+        url: Union[str, "sqlalchemy.URL", DatabaseURL],
+        encoding: str = "utf8",
+        template: str | None = None,
+    ) -> None:
+        """Create a new database.
+
+        Supports PostgreSQL (with optional *template* and *encoding*),
+        MySQL, SQLite, MSSQL, CockroachDB, and generic dialects.
+
+        Args:
+            url: Database URL.
+            encoding: Character encoding (PostgreSQL / MySQL).
+            template: PostgreSQL template name.
+        """
+        url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
+        url, database, dialect_name, dialect_driver = cls._resolve_admin_url(url)
+
+        db_client = cls._admin_client(url, dialect_name, dialect_driver)
         async with db_client:
             if dialect_name == "postgresql":
                 if not template:
@@ -264,21 +377,18 @@ class DatabaseTestClient(Database):
     async def drop_database(
         cls, url: Union[str, "sqlalchemy.URL", DatabaseURL], *, use_if_exists: bool = True
     ) -> None:
+        """Drop a database.
+
+        For PostgreSQL, terminates active connections before dropping.
+        For SQLite, removes the database file.
+
+        Args:
+            url: Database URL.
+            use_if_exists: Emit ``IF EXISTS`` in drop statement.
+        """
         url = url if isinstance(url, DatabaseURL) else DatabaseURL(url)
         exists_text = "IF EXISTS " if use_if_exists else ""
-        database = url.database
-        dialect = url.sqla_url.get_dialect(True)
-        dialect_name = dialect.name
-        dialect_driver = dialect.driver
-
-        if dialect_name == "postgresql":
-            url = url.replace(database="postgres")
-        elif dialect_name == "mssql":
-            url = url.replace(database="master")
-        elif dialect_name == "cockroachdb":
-            url = url.replace(database="defaultdb")
-        elif dialect_name != "sqlite":
-            url = url.replace(database=None)
+        url, database, dialect_name, dialect_driver = cls._resolve_admin_url(url)
 
         if dialect_name == "sqlite":
             if database and database != ":memory:":
@@ -288,18 +398,7 @@ class DatabaseTestClient(Database):
                     os.remove(database)
             return
 
-        if (dialect_name == "mssql" and dialect_driver in {"pymssql", "pyodbc"}) or (
-            dialect_name == "postgresql"
-            and dialect_driver in {"asyncpg", "pg8000", "psycopg", "psycopg2", "psycopg2cffi"}
-        ):
-            db_client = Database(
-                url,
-                isolation_level="AUTOCOMMIT",
-                force_rollback=False,
-                full_isolation=False,
-            )
-        else:
-            db_client = Database(url, force_rollback=False, full_isolation=False)
+        db_client = cls._admin_client(url, dialect_name, dialect_driver)
         async with db_client:
             if dialect_name.startswith("postgres"):
                 async with db_client.connection() as conn:
@@ -333,6 +432,7 @@ class DatabaseTestClient(Database):
                         await conn.execute(text)
 
     def drop_db_protected(self) -> None:
+        """Drop the test database synchronously in a background thread."""
         thread = ThreadPassingExceptions(
             target=asyncio.run, args=[self.drop_database(self.test_db_url)]
         )
@@ -341,6 +441,7 @@ class DatabaseTestClient(Database):
             thread.join(self.testclient_operation_timeout)
 
     async def disconnect_hook(self) -> None:
+        """Post-disconnect hook: optionally drop the test database."""
         # next connect the setup routine is reexecuted
         self._setup_executed_init = False
         if self.drop:

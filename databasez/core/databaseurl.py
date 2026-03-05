@@ -8,7 +8,31 @@ from sqlalchemy.engine.url import URL, make_url
 
 
 class DatabaseURL:
-    def __init__(self, url: str | DatabaseURL | URL | None = None):
+    """Parse, inspect, and manipulate a database connection URL.
+
+    Accepts a raw string, another :class:`DatabaseURL`, or a SQLAlchemy
+    :class:`~sqlalchemy.engine.url.URL`.  All components are lazily parsed
+    on first access.
+
+    Args:
+        url: The database URL.  ``None`` resolves to ``"invalid://localhost"``
+            as a safe placeholder.
+
+    Raises:
+        TypeError: If *url* is not a supported type.
+    """
+
+    def __init__(self, url: str | DatabaseURL | URL | None = None) -> None:
+        """Initialise from a URL string, another DatabaseURL, or a SQLAlchemy URL.
+
+        Args:
+            url: The database connection URL.  Pass ``None`` for a safe
+                placeholder (``invalid://localhost``).
+
+        Raises:
+            TypeError: If *url* is not ``str``, ``DatabaseURL``, ``URL``
+                or ``None``.
+        """
         if isinstance(url, DatabaseURL):
             self._url: str = url._url
         elif isinstance(url, URL):
@@ -24,6 +48,14 @@ class DatabaseURL:
 
     @cached_property
     def components(self) -> SplitResult:
+        """Return the parsed URL components.
+
+        Triple-leading-slash paths (common for SQLite) are normalised to a
+        double-leading-slash form.
+
+        Returns:
+            SplitResult: The five-part URL decomposition.
+        """
         url = self.sqla_url
         _components = urlsplit(url.render_as_string(hide_password=False))
         if _components.path.startswith("///"):
@@ -32,6 +64,14 @@ class DatabaseURL:
 
     @classmethod
     def get_url(cls, splitted: SplitResult) -> str:
+        """Reconstruct a URL string from its :class:`SplitResult` parts.
+
+        Args:
+            splitted: The five-part URL decomposition.
+
+        Returns:
+            str: The reassembled URL string.
+        """
         url = f"{splitted.scheme}://{(splitted.netloc or '')}{splitted.path}"
         if splitted.query:
             url = f"{url}?{splitted.query}"
@@ -41,14 +81,17 @@ class DatabaseURL:
 
     @property
     def scheme(self) -> str:
+        """The full scheme including driver (e.g. ``postgresql+asyncpg``)."""
         return self.components.scheme
 
     @property
     def dialect(self) -> str:
+        """The dialect portion of the scheme (e.g. ``postgresql``)."""
         return self.scheme.split("+")[0]
 
     @property
     def driver(self) -> str | None:
+        """The driver portion of the scheme, or ``None`` if absent."""
         splitted = self.scheme.split("+", 1)
         if len(splitted) == 1:
             return None
@@ -56,6 +99,7 @@ class DatabaseURL:
 
     @property
     def userinfo(self) -> bytes | None:
+        """The ``user:password`` portion encoded as bytes, or ``None``."""
         if self.components.username:
             info = quote(self.components.username, safe="+")
             if self.password:
@@ -65,18 +109,21 @@ class DatabaseURL:
 
     @property
     def username(self) -> str | None:
+        """The decoded username, or ``None``."""
         if self.components.username is None:
             return None
         return unquote(self.components.username)
 
     @property
     def password(self) -> str | None:
+        """The decoded password, or ``None``."""
         if self.components.password is None:
             return None
         return unquote(self.components.password)
 
     @property
     def hostname(self) -> str | None:
+        """The hostname from the URL or the ``host`` query option."""
         host = self.components.hostname or self.options.get("host")
         if isinstance(host, list):
             if len(host) > 0:
@@ -87,14 +134,17 @@ class DatabaseURL:
 
     @property
     def port(self) -> int | None:
+        """The port number, or ``None``."""
         return self.components.port
 
     @property
     def netloc(self) -> str | None:
+        """The full ``user:pass@host:port`` network location string."""
         return self.components.netloc
 
     @property
     def database(self) -> str:
+        """The database name extracted from the URL path."""
         path = self.components.path
         if path.startswith("/"):
             path = path[1:]
@@ -102,6 +152,14 @@ class DatabaseURL:
 
     @cached_property
     def options(self) -> dict[str, str | list[str]]:
+        """Parsed query-string options as a dictionary.
+
+        Single values are stored as plain strings; repeated keys produce
+        lists.
+
+        Returns:
+            dict[str, str | list[str]]: The parsed options.
+        """
         result: dict[str, str | list[str]] = {}
         for key, val in parse_qs(self.components.query).items():
             if len(val) == 1:
@@ -111,6 +169,18 @@ class DatabaseURL:
         return result
 
     def replace(self, **kwargs: Any) -> DatabaseURL:
+        """Return a new :class:`DatabaseURL` with components replaced.
+
+        Supports replacing ``username`` / ``user``, ``password``,
+        ``hostname`` / ``host``, ``port``, ``database``, ``dialect``,
+        ``driver``, ``options``, and any raw :class:`SplitResult` fields.
+
+        Args:
+            **kwargs: Components to replace.
+
+        Returns:
+            DatabaseURL: A new URL with the requested changes applied.
+        """
         if (
             "username" in kwargs
             or "user" in kwargs
@@ -158,25 +228,48 @@ class DatabaseURL:
 
     @cached_property
     def obscure_password(self) -> str:
+        """The URL string with the password replaced by ``***``."""
         return self.sqla_url.render_as_string(hide_password=True)
 
     @cached_property
     def sqla_url(self) -> URL:
+        """The equivalent SQLAlchemy :class:`~sqlalchemy.engine.url.URL`."""
         return make_url(self._url)
 
     def upgrade(self, **extra_options: Any) -> DatabaseURL:
+        """Apply backend-specific option extraction and return the cleaned URL.
+
+        This calls :meth:`Database.apply_database_url_and_options` to normalise
+        the URL for the target dialect.
+
+        Args:
+            **extra_options: Additional options forwarded to the backend.
+
+        Returns:
+            DatabaseURL: The upgraded / normalised URL.
+        """
         from .database import Database
 
         return Database.apply_database_url_and_options(self, **extra_options)[1]
 
     def __str__(self) -> str:
+        """Return the full URL string."""
         return self.get_url(self.components)
 
     def __repr__(self) -> str:
+        """Return a developer-friendly representation with the password hidden."""
         return f"{self.__class__.__name__}({repr(self.obscure_password)})"
 
     def __eq__(self, other: Any) -> bool:
-        # fix encoding
+        """Compare URLs by their string representation.
+
+        Args:
+            other: Another URL (``str`` or :class:`DatabaseURL`).
+
+        Returns:
+            bool: ``True`` if the URL strings are equal.
+        """
+        # Fix encoding differences by comparing canonical forms.
         if isinstance(other, str):
             other = DatabaseURL(other)
         return str(self) == str(other)

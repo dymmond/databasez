@@ -16,16 +16,51 @@ if TYPE_CHECKING:
 
 
 seen_classpathes: set[str] = set()
+"""Module-level set tracking classpath entries already added to the JVM.
+
+Prevents duplicate classpath additions across multiple ``Database.connect``
+calls within the same process.
+"""
 
 
 class Transaction(SQLAlchemyTransaction):
+    """Transaction backend for JDBC drivers.
+
+    Disables default transaction isolation level management, deferring
+    control entirely to the underlying JDBC driver.
+    """
+
     def get_default_transaction_isolation_level(
         self, is_root: bool, **extra_options: Any
     ) -> str | None:
+        """Return the default transaction isolation level.
+
+        Always returns ``None`` so that the JDBC driver manages its own
+        isolation level.
+
+        Args:
+            is_root: Whether this is a root (non-nested) transaction.
+            **extra_options: Additional transaction options.
+
+        Returns:
+            str | None: Always ``None``.
+        """
         return None
 
 
 class Database(SQLAlchemyDatabase):
+    """Database backend for JDBC drivers via JPype.
+
+    Extends the default SQLAlchemy database backend with JDBC-specific
+    option extraction and JVM lifecycle management.  On first connect the
+    JVM is started (if not already running) and requested classpath
+    entries are registered.
+
+    Attributes:
+        default_isolation_level: Set to ``None`` to bypass isolation
+            level configuration.
+    """
+
     default_isolation_level = None
 
     def extract_options(
@@ -33,6 +68,23 @@ class Database(SQLAlchemyDatabase):
         database_url: DatabaseURL,
         **options: Any,
     ) -> tuple[DatabaseURL, dict[str, Any]]:
+        """Extract and normalise JDBC-specific connection options.
+
+        Moves the JDBC DSN driver name, classpath entries, and driver
+        arguments from ``options`` into the URL query string so the JDBC
+        dialect can consume them at connect time.
+
+        Args:
+            database_url: The original database URL.
+            **options: Arbitrary connection options that may contain
+                ``classpath`` and ``jdbc_driver_args``.
+
+        Returns:
+            tuple[DatabaseURL, dict[str, Any]]: A 2-tuple of the
+                rewritten ``DatabaseURL`` (with driver set to ``None``
+                and enriched query options) and the remaining options
+                dictionary.
+        """
         database_url_new, options = super().extract_options(database_url, **options)
         new_query_options = dict(database_url.options)
         if database_url_new.driver:
@@ -61,6 +113,20 @@ class Database(SQLAlchemyDatabase):
         return database_url_new.replace(driver=None, options=new_query_options), options
 
     async def connect(self, database_url: DatabaseURL, **options: Any) -> None:
+        """Open a JDBC database connection.
+
+        Registers any requested Java classpath entries, starts the JVM
+        if it is not already running, and delegates to the parent
+        ``connect`` implementation.
+
+        Args:
+            database_url: The database URL to connect to.
+            **options: Connection options.  The ``classpath`` key, if
+                present, is consumed here and not forwarded.
+
+        Raises:
+            Exception: If a classpath entry cannot be added.
+        """
         classpath: str | list[str] | None = options.pop("classpath", None)
         if classpath:
             if isinstance(classpath, str):

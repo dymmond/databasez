@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
     try:
         from sqlalchemy.sql import ClauseElement
-    except Exception:
+    except ImportError:
         ClauseElement = Any
 
     from databasez.types import BatchCallable, BatchCallableResult, DictAny
@@ -45,7 +45,13 @@ default_transaction: type[interfaces.TransactionBackend]
 
 @lru_cache(1)
 def init() -> None:
-    """Lazy init global defaults and register sqlalchemy dialects."""
+    """Lazily initialise global defaults and register SQLAlchemy dialects.
+
+    This function is called exactly once (on first :class:`Database`
+    construction) to register the ``dbapi2`` and ``jdbc`` dialect entry
+    points with SQLAlchemy and to discover the default SQLAlchemy-backed
+    backend classes.
+    """
     global default_database, default_connection, default_transaction
     from sqlalchemy.dialects import registry
 
@@ -63,15 +69,38 @@ def init() -> None:
 ACTIVE_FORCE_ROLLBACKS: ContextVar[weakref.WeakKeyDictionary[ForceRollback, bool] | None] = (
     ContextVar("ACTIVE_FORCE_ROLLBACKS", default=None)
 )
+"""Context-local registry of active force-rollback overrides."""
 
 
 class ForceRollback:
+    """Context-aware boolean flag for controlling force-rollback mode.
+
+    Each :class:`Database` owns a ``ForceRollback`` instance.  Its boolean
+    value can be overridden per-context using :meth:`set` or the call
+    operator (which works as a context manager).  The default value is used
+    when no override is active in the current context.
+
+    Attributes:
+        default: The default boolean value when no override is set.
+    """
+
     default: bool
 
-    def __init__(self, default: bool):
+    def __init__(self, default: bool) -> None:
+        """Initialise with the given default value.
+
+        Args:
+            default: The initial default state.
+        """
         self.default = default
 
     def set(self, value: bool | None = None) -> None:
+        """Override the flag in the current context.
+
+        Args:
+            value: ``True`` / ``False`` to override, or ``None`` to reset
+                to the default for this context.
+        """
         force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()
         if force_rollbacks is None:
             # shortcut, we don't need to initialize anything for None (reset)
@@ -88,6 +117,7 @@ class ForceRollback:
         ACTIVE_FORCE_ROLLBACKS.set(force_rollbacks)
 
     def __bool__(self) -> bool:
+        """Return the effective boolean value for the current context."""
         force_rollbacks = ACTIVE_FORCE_ROLLBACKS.get()
         if force_rollbacks is None:
             return self.default
@@ -95,6 +125,14 @@ class ForceRollback:
 
     @contextlib.contextmanager
     def __call__(self, force_rollback: bool = True) -> Iterator[None]:
+        """Context manager to temporarily override the flag.
+
+        Args:
+            force_rollback: The value to set while inside the context.
+
+        Yields:
+            None
+        """
         initial = bool(self)
         self.set(force_rollback)
         try:
@@ -104,18 +142,33 @@ class ForceRollback:
 
 
 class ForceRollbackDescriptor:
+    """Descriptor enabling ``database.force_rollback = True/False/None``.
+
+    Setting to ``True`` or ``False`` overrides for the current context.
+    Setting to ``None`` (or deleting) resets the override.
+    """
+
     def __get__(self, obj: Database, objtype: type[Database]) -> ForceRollback:
+        """Return the :class:`ForceRollback` flag instance."""
         return obj._force_rollback
 
     def __set__(self, obj: Database, value: bool | None) -> None:
+        """Set or reset the force-rollback override."""
         assert value is None or isinstance(value, bool), f"Invalid type: {value!r}."
         obj._force_rollback.set(value)
 
     def __delete__(self, obj: Database) -> None:
+        """Reset the force-rollback override."""
         obj._force_rollback.set(None)
 
 
 class AsyncHelperDatabase:
+    """Proxy that dispatches Database methods to a different event loop.
+
+    Supports both plain ``await`` and async-context-manager usage so that
+    database operations transparently work across multiple event loops.
+    """
+
     def __init__(
         self,
         database: Database,
@@ -124,6 +177,15 @@ class AsyncHelperDatabase:
         kwargs: Any,
         timeout: float | None,
     ) -> None:
+        """Initialise the helper.
+
+        Args:
+            database: The database to proxy.
+            fn: The bound method.
+            args: Positional arguments.
+            kwargs: Keyword arguments.
+            timeout: Optional timeout in seconds.
+        """
         self.database = database
         self.fn = fn
         self.args = args
@@ -132,6 +194,11 @@ class AsyncHelperDatabase:
         self.ctm = None
 
     async def call(self) -> Any:
+        """Connect, execute, and disconnect in one shot.
+
+        Returns:
+            Any: The return value of the proxied method.
+        """
         async with self.database as database:
             return await _arun_with_timeout(
                 self.fn(database, *self.args, **self.kwargs), self.timeout
@@ -141,6 +208,7 @@ class AsyncHelperDatabase:
         return self.call().__await__()
 
     async def __aenter__(self) -> Any:
+        """Enter: connect the database and invoke the proxied method."""
         database = await self.database.__aenter__()
         self.ctm = await _arun_with_timeout(
             self.fn(database, *self.args, **self.kwargs), timeout=self.timeout
@@ -153,6 +221,7 @@ class AsyncHelperDatabase:
         exc_value: BaseException | None = None,
         traceback: TracebackType | None = None,
     ) -> None:
+        """Exit: clean up the context manager and disconnect."""
         assert self.ctm is not None
         try:
             await _arun_with_timeout(self.ctm.__aexit__(exc_type, exc_value, traceback), None)
@@ -258,10 +327,20 @@ class Database:
         self.ref_lock: asyncio.Lock = asyncio.Lock()
 
     def __copy__(self) -> Database:
+        """Create a shallow copy of the database (preserving backend state).
+
+        Returns:
+            Database: A new Database instance sharing the same backend.
+        """
         return self.__class__(self)
 
     @property
     def _current_task(self) -> asyncio.Task:
+        """Return the currently running asyncio task.
+
+        Raises:
+            RuntimeError: If no task is active.
+        """
         task = asyncio.current_task()
         if not task:
             raise RuntimeError("No currently active asyncio.Task found")
@@ -269,18 +348,18 @@ class Database:
 
     @property
     def _connection(self) -> Connection | None:
+        """Return the connection bound to the current task, if any."""
         return self._connection_map.get(self._current_task)
 
     @_connection.setter
-    def _connection(self, connection: Connection | None) -> Connection | None:
+    def _connection(self, connection: Connection | None) -> None:
+        """Bind or unbind a connection for the current task."""
         task = self._current_task
 
         if connection is None:
             self._connection_map.pop(task, None)
         else:
             self._connection_map[task] = connection
-
-        return self._connection
 
     async def inc_refcount(self) -> bool:
         """
@@ -315,11 +394,23 @@ class Database:
         return False
 
     async def connect_hook(self) -> None:
-        """Refcount protected connect hook. Executed before engine and global connection setup."""
+        """Hook called before engine setup on first connect.
+
+        Override this in subclasses to perform custom initialisation logic,
+        such as creating test databases.  Protected by the ref-counter so
+        it runs only on the *first* ``connect()`` call.
+        """
 
     async def connect(self) -> bool:
-        """
-        Establish the connection pool.
+        """Establish the connection pool.
+
+        If called from a different event loop than the one the database was
+        originally connected on, a sub-database is transparently created for
+        the current loop.
+
+        Returns:
+            bool: ``True`` if this was the first connection (pool created),
+                ``False`` if only the ref-counter was incremented.
         """
         loop = asyncio.get_running_loop()
         if self._loop is not None and loop != self._loop:
@@ -363,14 +454,28 @@ class Database:
         return True
 
     async def disconnect_hook(self) -> None:
-        """Refcount protected disconnect hook. Executed after connection, engine cleanup."""
+        """Hook called after engine teardown on last disconnect.
+
+        Override this in subclasses to perform custom cleanup logic.
+        Protected by the ref-counter so it runs only on the *last*
+        ``disconnect()`` call.
+        """
 
     @multiloop_protector(True, inject_parent=True)
     async def disconnect(
         self, force: bool = False, *, parent_database: Database | None = None
     ) -> bool:
-        """
-        Close all connections in the connection pool.
+        """Close all connections in the connection pool.
+
+        Args:
+            force: If ``True``, disconnect even when the ref-counter is
+                above zero.
+            parent_database: Injected by :func:`multiloop_protector`;
+                must not be supplied manually.
+
+        Returns:
+            bool: ``True`` if the pool was actually torn down, ``False``
+                if only the ref-counter was decremented.
         """
         # parent_database is injected and should not be specified manually
         if not await self.decr_refcount() or force:
@@ -385,7 +490,6 @@ class Database:
             loop = asyncio.get_running_loop()
             del parent_database._databases_map[loop]
         if force and self._databases_map:
-            assert not self._databases_map, "sub databases still active, force terminate them"
             for sub_database in self._databases_map.values():
                 await arun_coroutine_threadsafe(
                     sub_database.disconnect(True),
@@ -410,6 +514,7 @@ class Database:
         return True
 
     async def __aenter__(self) -> Database:
+        """Connect and return the database for the current loop."""
         await self.connect()
         # get right database
         loop = asyncio.get_running_loop()
@@ -422,6 +527,7 @@ class Database:
         exc_value: BaseException | None = None,
         traceback: TracebackType | None = None,
     ) -> None:
+        """Disconnect the database."""
         await self.disconnect()
 
     async def fetch_all(
@@ -430,6 +536,16 @@ class Database:
         values: dict | None = None,
         timeout: float | None = None,
     ) -> list[interfaces.Record]:
+        """Execute *query* and return all result rows.
+
+        Args:
+            query: SQL string or clause element.
+            values: Optional bind parameters.
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            list[interfaces.Record]: All result rows.
+        """
         async with self.connection() as connection:
             return await connection.fetch_all(query, values, timeout=timeout)
 
@@ -440,6 +556,17 @@ class Database:
         pos: int = 0,
         timeout: float | None = None,
     ) -> interfaces.Record | None:
+        """Execute *query* and return a single row.
+
+        Args:
+            query: SQL string or clause element.
+            values: Optional bind parameters.
+            pos: Row position (0-based, ``-1`` for last).
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            interfaces.Record | None: The row, or ``None``.
+        """
         async with self.connection() as connection:
             return await connection.fetch_one(query, values, pos=pos, timeout=timeout)
 
@@ -447,10 +574,22 @@ class Database:
         self,
         query: ClauseElement | str,
         values: dict | None = None,
-        column: Any = 0,
+        column: int | str = 0,
         pos: int = 0,
         timeout: float | None = None,
     ) -> Any:
+        """Execute *query* and return a single scalar value.
+
+        Args:
+            query: SQL string or clause element.
+            values: Optional bind parameters.
+            column: Column index or name.
+            pos: Row position.
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            Any: The scalar value, or ``None``.
+        """
         async with self.connection() as connection:
             return await connection.fetch_val(
                 query,
@@ -466,6 +605,16 @@ class Database:
         values: Any = None,
         timeout: float | None = None,
     ) -> interfaces.Record | int:
+        """Execute a statement and return a concise result.
+
+        Args:
+            query: SQL string or clause element.
+            values: Optional bind parameters.
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            interfaces.Record | int: Primary-key row / rowcount.
+        """
         async with self.connection() as connection:
             return await connection.execute(query, values, timeout=timeout)
 
@@ -475,6 +624,16 @@ class Database:
         values: Any = None,
         timeout: float | None = None,
     ) -> Sequence[interfaces.Record] | int:
+        """Execute a statement with multiple parameter sets.
+
+        Args:
+            query: SQL string or clause element.
+            values: A sequence of parameter mappings.
+            timeout: Optional timeout in seconds.
+
+        Returns:
+            Sequence[interfaces.Record] | int: Primary-key rows / rowcount.
+        """
         async with self.connection() as connection:
             return await connection.execute_many(query, values, timeout=timeout)
 
@@ -485,6 +644,17 @@ class Database:
         chunk_size: int | None = None,
         timeout: float | None = None,
     ) -> AsyncGenerator[interfaces.Record, None]:
+        """Execute *query* and yield rows one by one.
+
+        Args:
+            query: SQL string or clause element.
+            values: Optional bind parameters.
+            chunk_size: Backend batch-size hint.
+            timeout: Per-row timeout in seconds.
+
+        Yields:
+            interfaces.Record: Result rows.
+        """
         async with self.connection() as connection:
             async for record in connection.iterate(query, values, chunk_size, timeout=timeout):
                 yield record
@@ -497,6 +667,18 @@ class Database:
         batch_wrapper: BatchCallable = tuple,
         timeout: float | None = None,
     ) -> AsyncGenerator[BatchCallableResult, None]:
+        """Execute *query* and yield rows in batches.
+
+        Args:
+            query: SQL string or clause element.
+            values: Optional bind parameters.
+            batch_size: Rows per batch.
+            batch_wrapper: Callable to transform each batch.
+            timeout: Per-batch timeout in seconds.
+
+        Yields:
+            BatchCallableResult: Batches of result rows.
+        """
         async with self.connection() as connection:
             async for batch in cast(
                 AsyncGenerator["BatchCallableResult", None],
@@ -511,6 +693,15 @@ class Database:
                 yield batch
 
     def transaction(self, *, force_rollback: bool = False, **kwargs: Any) -> Transaction:
+        """Create a new :class:`Transaction` on the current connection.
+
+        Args:
+            force_rollback: If ``True``, always roll back on exit.
+            **kwargs: Extra options forwarded to the transaction backend.
+
+        Returns:
+            Transaction: A new transaction instance.
+        """
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
     async def run_sync(
@@ -520,32 +711,74 @@ class Database:
         timeout: float | None = None,
         **kwargs: Any,
     ) -> Any:
+        """Run a synchronous callable on the current connection.
+
+        Args:
+            fn: A synchronous function.
+            *args: Positional arguments.
+            timeout: Optional timeout in seconds.
+            **kwargs: Keyword arguments.
+
+        Returns:
+            Any: The return value of *fn*.
+        """
         async with self.connection() as connection:
             return await connection.run_sync(fn, *args, **kwargs, timeout=timeout)
 
     async def create_all(
         self, meta: MetaData, timeout: float | None = None, **kwargs: Any
     ) -> None:
+        """Create all tables defined in *meta*.
+
+        Args:
+            meta: A SQLAlchemy :class:`~sqlalchemy.MetaData`.
+            timeout: Optional timeout in seconds.
+            **kwargs: Extra arguments for ``meta.create_all``.
+        """
         async with self.connection() as connection:
             await connection.create_all(meta, **kwargs, timeout=timeout)
 
     async def drop_all(self, meta: MetaData, timeout: float | None = None, **kwargs: Any) -> None:
+        """Drop all tables defined in *meta*.
+
+        Args:
+            meta: A SQLAlchemy :class:`~sqlalchemy.MetaData`.
+            timeout: Optional timeout in seconds.
+            **kwargs: Extra arguments for ``meta.drop_all``.
+        """
         async with self.connection() as connection:
             await connection.drop_all(meta, **kwargs, timeout=timeout)
 
     @multiloop_protector(False)
     def _non_global_connection(
         self,
-        timeout: (
-            float | None
-        ) = None,  # stub for type checker, multiloop_protector handles timeout
+        timeout: float | None = None,  # stub for multiloop_protector
     ) -> Connection:
+        """Return or create the per-task connection (non-global).
+
+        Returns:
+            Connection: The connection for the current task.
+        """
         if self._connection is None:
             _connection = self._connection = Connection(self)
             return _connection
         return self._connection
 
     def connection(self, timeout: float | None = None) -> Connection:
+        """Return a connection suitable for the current context.
+
+        In force-rollback mode the global connection is returned; otherwise
+        a per-task connection is returned (created on demand).
+
+        Args:
+            timeout: Optional timeout for cross-loop proxying.
+
+        Returns:
+            Connection: The active connection.
+
+        Raises:
+            RuntimeError: If the database is not connected.
+        """
         if not self.is_connected:
             raise RuntimeError("Database is not connected")
         if self.force_rollback:
@@ -555,6 +788,7 @@ class Database:
     @property
     @multiloop_protector(True)
     def engine(self) -> AsyncEngine | None:
+        """The SQLAlchemy :class:`AsyncEngine`, if connected."""
         return self.backend.engine
 
     @overload
@@ -592,7 +826,7 @@ class Database:
         # let scheme empty for direct imports
         scheme: str = "",
         *,
-        overwrite_paths: Sequence[str] = ["databasez.overwrites"],
+        overwrite_paths: Sequence[str] = ("databasez.overwrites",),
         database_name: str = "Database",
         connection_name: str = "Connection",
         transaction_name: str = "Transaction",
@@ -604,6 +838,29 @@ class Database:
         type[interfaces.ConnectionBackend],
         type[interfaces.TransactionBackend],
     ]:
+        """Discover backend classes for the given scheme.
+
+        Searches *overwrite_paths* for modules that export ``Database``,
+        ``Connection``, and ``Transaction`` classes matching the scheme.
+        Falls back to the supplied defaults.
+
+        Args:
+            scheme: The dialect scheme (e.g. ``"postgresql+asyncpg"``).
+            overwrite_paths: Module paths searched for overwrite modules.
+            database_name: Attribute name for the database backend class.
+            connection_name: Attribute name for the connection backend class.
+            transaction_name: Attribute name for the transaction backend class.
+            database_class: Fallback database backend class.
+            connection_class: Fallback connection backend class.
+            transaction_class: Fallback transaction backend class.
+
+        Returns:
+            tuple: ``(database_class, connection_class, transaction_class)``.
+
+        Raises:
+            AssertionError: If a discovered class does not subclass its
+                expected abstract base.
+        """
         module: Any = None
         # when not using utils...., the constant cannot be changed at runtime for debug purposes
         more_debug = utils.DATABASEZ_OVERWRITE_LOGGING
@@ -650,9 +907,27 @@ class Database:
         cls,
         url: DatabaseURL | str,
         *,
-        overwrite_paths: Sequence[str] = ["databasez.overwrites"],
+        overwrite_paths: Sequence[str] = ("databasez.overwrites",),
         **options: Any,
     ) -> tuple[interfaces.DatabaseBackend, DatabaseURL, dict[str, Any]]:
+        """Build a backend instance and normalise URL + options.
+
+        Discovers the correct backend classes for the URL's scheme,
+        instantiates the database backend, and calls
+        :meth:`~DatabaseBackend.extract_options` to normalise the URL and
+        merge query-string options.
+
+        Args:
+            url: The original database URL.
+            overwrite_paths: Module paths searched for overwrite modules.
+            **options: Additional caller-supplied engine options.
+
+        Returns:
+            tuple: ``(backend, cleaned_url, options)``.
+
+        Raises:
+            AssertionError: If the resolved dialect is not async.
+        """
         url = DatabaseURL(url)
         database_class, connection_class, transaction_class = cls.get_backends(
             url.scheme,

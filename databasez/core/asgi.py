@@ -16,13 +16,34 @@ ASGIApp = Callable[
     ],
     Awaitable[None],
 ]
+"""Standard ASGI application callable signature."""
 
 
-class MuteInteruptException(BaseException): ...
+class MuteInteruptException(BaseException):
+    """Sentinel exception used to suppress lifespan failures without propagating."""
+
+    ...
 
 
 @dataclass
 class ASGIHelper:
+    """ASGI middleware that manages database connect/disconnect via lifespan.
+
+    Wraps an existing ASGI application and intercepts ``lifespan.startup``
+    and ``lifespan.shutdown`` events to call
+    :meth:`~databasez.core.database.Database.connect` and
+    :meth:`~databasez.core.database.Database.disconnect`.
+
+    When *handle_lifespan* is ``True`` the helper fully manages the lifespan
+    protocol loop instead of forwarding events to the inner application.
+
+    Attributes:
+        app: The wrapped ASGI application.
+        database: The :class:`Database` instance to manage.
+        handle_lifespan: When ``True``, handle the entire lifespan
+            protocol internally.
+    """
+
     app: ASGIApp
     database: Database
     handle_lifespan: bool = False
@@ -33,6 +54,17 @@ class ASGIHelper:
         receive: Callable[[], Awaitable[dict[str, Any]]],
         send: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
+        """Handle an ASGI event.
+
+        For ``lifespan`` scopes, intercept startup/shutdown to
+        connect/disconnect the database.  All other scopes are forwarded
+        to the wrapped application.
+
+        Args:
+            scope: The ASGI scope dictionary.
+            receive: The ASGI receive callable.
+            send: The ASGI send callable.
+        """
         if scope["type"] == "lifespan":
             original_receive = receive
 
