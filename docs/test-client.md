@@ -1,14 +1,8 @@
 # Test Client
 
-I'm sure that you already faced the problem with testing your database anmd thinking about a way
-of making sure the tests against models would land in a specific targeted database instead of the
-one used for development, right?
-
-Well, at least I did and it is annoying the amount of setup required to make it happen and for that
-reason, Saffier provides you already one client that exctly that job for you.
-
-For this example, we will be using [Saffier ORM](https://saffier.tarsild.io) as the author is the same
-and helps with the examples.
+When testing an application that uses a database, you often need a dedicated test database
+to avoid polluting your development data. ``DatabaseTestClient`` automates test database
+creation, connection, and teardown.
 
 Before continuing, make sure you have the databasez test client installed with the needed
 requirements.
@@ -17,17 +11,15 @@ requirements.
 $ pip install databasez[testing]
 ```
 
-## History behind it
+## History
 
-There are a lot of frameworks and helpers for databases that can help you with the `test_` database
-creation. A great example is Django that does it automatically for you when running the unit tests.
+Many frameworks and helpers exist for managing test databases. Django, for example,
+creates a test database automatically when running unit tests.
 
-When this was initially thought, `sqlalchemy_utils` was the package used to help with the process
-of creation and dropping of the databases. the issue found was the fact that up to the version
-`0.40.0`, the package wasn't updated for a very long time and no `async` support was added.
-
-When `DatabaseTestClient` was created was with that in mind, by rewritting some of those
-functionalities but with async support and native to the **databasez**.
+When ``DatabaseTestClient`` was first created, ``sqlalchemy_utils`` was the package used
+for database creation and dropping. However, up to version ``0.40.0`` that package lacked
+async support. ``DatabaseTestClient`` was built to provide async-native database lifecycle
+management directly within **databasez**.
 
 ## DatabaseTestClient
 

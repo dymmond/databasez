@@ -42,18 +42,50 @@ if TYPE_CHECKING:
 
 
 class AsyncAdapt_adbapi2_connection(AsyncAdapt_dbapi_connection):
+    """Thin subclass of SQLAlchemy's async-adapted DBAPI connection.
+
+    Exists as a distinct type so that JDBC-specific behaviour can be
+    attached in the future without modifying the base adapter.
+    """
+
     pass
 
 
 def unpack_to_jdbc_connection(connection: Connection) -> JDBCConnection:
+    """Extract the underlying JPype JDBC connection from a SQLAlchemy connection.
+
+    Traverses SQLAlchemy's connection wrapper hierarchy to reach the raw
+    ``java.sql.Connection`` object.
+
+    Args:
+        connection: A SQLAlchemy ``Connection`` instance.
+
+    Returns:
+        JDBCConnection: The unwrapped JPype JDBC connection.
+    """
     return cast(
         DBAPIConnection, connection.connection.dbapi_connection
     ).driver_connection.connection
 
 
 class JDBC_dialect(DefaultDialect):
-    """
-    Takes a (a)dbapi object and wraps the functions.
+    """Async SQLAlchemy dialect for JDBC drivers via JPype.
+
+    Wraps JPype's ``dbapi2`` compatibility layer and exposes JDBC
+    connections through SQLAlchemy's async engine infrastructure.
+    Provides full schema-reflection capabilities by querying JDBC
+    ``DatabaseMetaData``.
+
+    Attributes:
+        driver: The dialect driver name (``"jdbc"``).
+        supports_statement_cache: Always ``True``.
+        is_async: Always ``True``.
+        transform_reflected_names: Case transformation applied to
+            reflected identifiers (``"none"``, ``"upper"``, or
+            ``"lower"``).
+        use_code_datatype: When ``True``, use the integer
+            ``DATA_TYPE`` code to look up SQLAlchemy types instead
+            of the ``TYPE_NAME`` string.
     """
 
     driver = "jdbc"
@@ -69,12 +101,35 @@ class JDBC_dialect(DefaultDialect):
         use_code_datatype: bool = False,
         **kwargs: Any,
     ) -> None:
+        """Initialise the JDBC dialect.
+
+        Args:
+            json_serializer: JSON serializer callable (accepted for
+                interface compatibility).
+            json_deserializer: JSON deserializer callable (accepted for
+                interface compatibility).
+            transform_reflected_names: Case transformation to apply to
+                all reflected identifiers.
+            use_code_datatype: If ``True``, map JDBC integer type codes
+                to SQLAlchemy types rather than using the string
+                ``TYPE_NAME``.
+            **kwargs: Forwarded to
+                :class:`~sqlalchemy.engine.default.DefaultDialect`.
+        """
         self.transform_reflected_names = transform_reflected_names
         self.use_code_datatype = use_code_datatype
         super().__init__(**kwargs)
         # dbapi to query is available
 
     def transform_refl_name(self, name: Any) -> str:
+        """Apply the configured case transformation to a reflected name.
+
+        Args:
+            name: The identifier returned by JDBC metadata.
+
+        Returns:
+            str: The (optionally case-transformed) identifier string.
+        """
         name = str(name)
         if self.transform_reflected_names == "lower":
             return cast(str, name.lower())
@@ -83,6 +138,19 @@ class JDBC_dialect(DefaultDialect):
         return cast(str, name)
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
+        """Build positional and keyword arguments for ``connect()``.
+
+        Parses JDBC-specific query parameters from *url*, constructs the
+        JDBC DSN string, and returns the argument tuple expected by
+        SQLAlchemy.
+
+        Args:
+            url: The SQLAlchemy engine URL.
+
+        Returns:
+            ConnectArgsType: A 2-tuple of ``(args, kwargs)`` to be
+                passed to :meth:`connect`.
+        """
         jdbc_dsn_driver: str = cast(str, url.query["jdbc_dsn_driver"])
         jdbc_driver: str | None = cast(str | None, url.query.get("jdbc_driver"))
         driver_args: Any = url.query.get("jdbc_driver_args")
@@ -96,6 +164,21 @@ class JDBC_dialect(DefaultDialect):
         return (dsn,), {"driver_args": driver_args, "driver": jdbc_driver}
 
     def connect(self, *arg: Any, **kw: Any) -> DBAPIConnection:
+        """Establish a JDBC connection via JPype.
+
+        Wraps the JPype DBAPI2 module with
+        :class:`~databasez.utils.AsyncWrapper` and returns an
+        async-adapted connection.
+
+        Args:
+            *arg: Positional arguments forwarded to the driver's
+                ``connect()``.
+            **kw: Keyword arguments.  ``async_creator_fn`` overrides
+                the default ``connect`` callable.
+
+        Returns:
+            DBAPIConnection: An async-adapted JDBC DBAPI connection.
+        """
         creator_fn = AsyncWrapper(
             self.loaded_dbapi,
             pool=ThreadPoolExecutor(1, thread_name_prefix="jpype"),
@@ -121,6 +204,19 @@ class JDBC_dialect(DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
+        """Check whether a table exists in the database.
+
+        Executes a simple ``SELECT 1`` probe against the table.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            table_name: Name of the table to check.
+            schema: Optional schema name (unused).
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            bool: ``True`` if the table exists, ``False`` otherwise.
+        """
         quoted = self.identifier_preparer.quote(table_name)
         stmt = text(f"SELECT 1 from '{quoted}' LIMIT 1")
         try:
@@ -130,21 +226,57 @@ class JDBC_dialect(DefaultDialect):
             return False
 
     def get_isolation_level(self, dbapi_connection: Any) -> Any:
+        """Return the current isolation level of a DBAPI connection.
+
+        Args:
+            dbapi_connection: The raw DBAPI connection.
+
+        Returns:
+            Any: Always ``None`` (not tracked by the JDBC dialect).
+        """
         return None
 
     @classmethod
     def get_pool_class(cls, url: URL) -> Any:
+        """Return the connection pool class to use.
+
+        Args:
+            url: The SQLAlchemy engine URL.
+
+        Returns:
+            Any: :class:`~sqlalchemy.pool.AsyncAdaptedQueuePool`.
+        """
         return AsyncAdaptedQueuePool
 
     @classmethod
     def import_dbapi(
         cls,
     ) -> Any:
+        """Import and return the JPype DBAPI2 module.
+
+        Returns:
+            Any: The ``jpype.dbapi2`` module.
+        """
         return import_module("jpype.dbapi2")
 
     @staticmethod
     @lru_cache(512)
     def _escape_jdbc_name(inp: str, escape: Any) -> str:
+        """Escape a name for use in JDBC metadata search patterns.
+
+        JDBC metadata methods interpret ``_`` and ``%`` as wildcards.
+        This helper escapes those characters (and the escape character
+        itself) so that they are treated literally.
+
+        Args:
+            inp: The raw identifier string to escape.
+            escape: The escape character reported by
+                ``DatabaseMetaData.getSearchStringEscape()``.  Falls
+                back to ``\\`` when falsy.
+
+        Returns:
+            str: The escaped identifier string.
+        """
         escape = str(escape) if escape else "\\"
         re_escaped = re.escape(escape)
         result_escape = escape
@@ -154,6 +286,15 @@ class JDBC_dialect(DefaultDialect):
 
     @reflection.cache
     def get_schema_names(self, connection: Connection, **kw: Any) -> list[str]:
+        """Return all schema names visible to the JDBC connection.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[str]: A list of schema name strings.
+        """
         jdbc_connection = cast(DBAPIConnection, connection.connection.dbapi_connection).connection
         metadata = jdbc_connection.getMetaData()
         table_set = metadata.getSchemas()
@@ -169,6 +310,16 @@ class JDBC_dialect(DefaultDialect):
     def get_table_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
+        """Return all regular table names in the given schema.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            schema: Optional schema to filter by.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[str]: A list of table name strings.
+        """
         jdbc_connection = unpack_to_jdbc_connection(connection)
 
         # .driver_connection.connection
@@ -189,6 +340,18 @@ class JDBC_dialect(DefaultDialect):
     def get_temp_table_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
+        """Return all temporary table names in the given schema.
+
+        Includes both ``GLOBAL TEMPORARY`` and ``LOCAL TEMPORARY`` tables.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            schema: Optional schema to filter by.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[str]: A list of temporary table name strings.
+        """
         jdbc_connection = unpack_to_jdbc_connection(connection)
         metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
@@ -210,6 +373,16 @@ class JDBC_dialect(DefaultDialect):
     def get_temp_view_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
+        """Return all temporary view names in the given schema.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            schema: Optional schema to filter by.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[str]: A list of temporary view name strings.
+        """
         jdbc_connection = unpack_to_jdbc_connection(connection)
         metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
@@ -228,6 +401,16 @@ class JDBC_dialect(DefaultDialect):
     def get_view_names(
         self, connection: Connection, schema: str | None = None, **kw: Any
     ) -> list[str]:
+        """Return all view names in the given schema.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            schema: Optional schema to filter by.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[str]: A list of view name strings.
+        """
         jdbc_connection = unpack_to_jdbc_connection(connection)
         metadata = jdbc_connection.getMetaData()
         escape = metadata.getSearchStringEscape()
@@ -246,6 +429,18 @@ class JDBC_dialect(DefaultDialect):
     def get_view_definition(
         self, connection: Connection, view_name: str, schema: str | None = None, **kw: Any
     ) -> str:
+        """Return the SQL definition of a view.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            view_name: Name of the view.
+            schema: Optional schema name.
+            **kw: Additional keyword arguments (ignored).
+
+        Raises:
+            NotImplementedError: Always raised — JDBC metadata does not
+                provide view definitions.
+        """
         raise NotImplementedError()
 
     def get_multi_columns(
@@ -256,6 +451,22 @@ class JDBC_dialect(DefaultDialect):
         filter_names: None | Collection[str] = None,
         **kw: Any,
     ) -> Iterable[tuple[TableKey, list[ReflectedColumn]]]:
+        """Reflect column metadata for multiple tables at once.
+
+        Queries JDBC ``DatabaseMetaData.getColumns()`` and maps each
+        JDBC type to the corresponding SQLAlchemy type.  Results are
+        returned as ``(table_key, columns)`` pairs.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            schema: Optional schema to filter by.
+            filter_names: Optional collection of table names to include.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            Iterable[tuple[TableKey, list[ReflectedColumn]]]: An
+                iterable of ``(table_key, column_list)`` tuples.
+        """
         # this requires the jpype.imports import in overwrites
         from java.sql import SQLException
         from jpype import dbapi2
@@ -325,6 +536,18 @@ class JDBC_dialect(DefaultDialect):
     def get_pk_constraint(
         self, connection: Connection, table_name: str, schema: str | None = None, **kw: Any
     ) -> ReflectedPrimaryKeyConstraint:
+        """Return the primary key constraint for a table.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            table_name: Name of the table.
+            schema: Optional schema name.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            ReflectedPrimaryKeyConstraint: A dict-like object with
+                ``constrained_columns`` and ``name`` keys.
+        """
         constraint_name: str | None = None
         pkeys: list[str] = []
         jdbc_connection = unpack_to_jdbc_connection(connection)
@@ -354,6 +577,18 @@ class JDBC_dialect(DefaultDialect):
     def get_foreign_keys(
         self, connection: Connection, table_name: str, schema: str | None = None, **kw: Any
     ) -> list[ReflectedForeignKeyConstraint]:
+        """Return all foreign key constraints for a table.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            table_name: Name of the table.
+            schema: Optional schema name.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[ReflectedForeignKeyConstraint]: A list of reflected
+                foreign key constraint dicts.
+        """
         # this requires the jpype.imports import in overwrites
         from java.sql import SQLException
 
@@ -408,6 +643,16 @@ class JDBC_dialect(DefaultDialect):
 
     @staticmethod
     def get_sort_order(order: str | None) -> tuple[str, ...]:
+        """Map a JDBC sort-order indicator to a SQLAlchemy sort tuple.
+
+        Args:
+            order: ``"A"`` for ascending, ``"D"`` for descending, or
+                ``None`` / any other value for unspecified.
+
+        Returns:
+            tuple[str, ...]: A 1-tuple ``("asc",)`` or ``("desc",)``,
+                or an empty tuple if the order is unspecified.
+        """
         if order == "A":
             return ("asc",)
         elif order == "D":
@@ -424,6 +669,22 @@ class JDBC_dialect(DefaultDialect):
         unique: bool = False,
         **kw: Any,
     ) -> list[ReflectedIndex]:
+        """Return all indexes for a table.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            table_name: Name of the table.
+            schema: Optional schema name.
+            unique: If ``True``, only return unique indexes.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[ReflectedIndex]: A list of reflected index dicts.
+
+        Raises:
+            sqlalchemy.exc.NoSuchTableError: If the table does not
+                exist.
+        """
         # this requires the jpype.imports import in overwrites
         from java.sql import SQLException
 
@@ -497,6 +758,22 @@ class JDBC_dialect(DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> list[ReflectedUniqueConstraint]:
+        """Return all unique constraints for a table.
+
+        Delegates to :meth:`get_indexes` with ``unique=True`` and
+        converts each unique index to a
+        :class:`ReflectedUniqueConstraint`.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            table_name: Name of the table.
+            schema: Optional schema name.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[ReflectedUniqueConstraint]: A list of reflected unique
+                constraint dicts.
+        """
         data = self.get_indexes(
             connection,
             schema=schema,
@@ -520,6 +797,21 @@ class JDBC_dialect(DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> list[ReflectedCheckConstraint]:
+        """Return check constraints for a table.
+
+        Not yet implemented — JDBC metadata does not directly expose
+        check constraints.  Always returns the SQLAlchemy reflection
+        defaults.
+
+        Args:
+            connection: The active SQLAlchemy connection.
+            table_name: Name of the table.
+            schema: Optional schema name.
+            **kw: Additional keyword arguments (ignored).
+
+        Returns:
+            list[ReflectedCheckConstraint]: An empty default list.
+        """
         # FIXME: NOT IMPLEMENTED YET
         # MAYBE implementable via INFORMATION_SCHEMA
         return reflection.ReflectionDefaults.check_constraints()
