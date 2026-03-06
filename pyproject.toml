@@ -75,16 +75,31 @@ all = ["databasez[jdbc,mysql,aiomysql,odbc,postgresql,sqlite]"]
 path = "databasez/__init__.py"
 
 
-[tool.mypy]
-strict = true
-disallow_any_generics = false
-disallow_untyped_decorators = true
-implicit_reexport = true
-disallow_incomplete_defs = true
-disable_error_code = "attr-defined"
-disallow_untyped_defs = true
-ignore_missing_imports = true
-no_implicit_optional = true
+[tool.ty]
+
+[tool.ty.src]
+exclude = ["docs_src/"]
+
+[tool.ty.terminal]
+error-on-warning = true
+
+[tool.ty.rules]
+unresolved-import = "ignore"
+redundant-cast = "ignore"
+unused-type-ignore-comment = "ignore"
+possibly-missing-attribute = "ignore"
+unresolved-attribute = "ignore"
+call-top-callable = "ignore"
+call-non-callable = "ignore"
+invalid-type-form = "ignore"
+invalid-parameter-default = "ignore"
+invalid-method-override = "ignore"
+invalid-assignment = "ignore"
+invalid-argument-type = "ignore"
+conflicting-declarations = "ignore"
+unknown-argument = "ignore"
+unsupported-operator = "ignore"
+invalid-await = "ignore"
 
 [tool.ruff]
 extend-exclude = ["docs"]
@@ -123,20 +138,6 @@ known-third-party = ["ravyn", "starlette", "lilya"]
 max-line-length = 120
 max-doc-length = 120
 
-[[tool.mypy.overrides]]
-module = "databasez.tests.*"
-ignore_missing_imports = true
-check_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = ["sqlalchemy.*", "asyncpg", "alembic", "sqlalchemy_utils.*"]
-ignore_missing_imports = true
-ignore_errors = true
-
-[[tool.mypy.overrides]]
-module = "docs_src.*"
-ignore_errors = true
-
 [tool.pytest.ini_options]
 addopts = [
     "--strict-config",
@@ -159,6 +160,8 @@ include = ["/databasez"]
 [tool.hatch.envs.default]
 features = ["all"]
 extra-dependencies = [
+    "ty",
+    "ruff>=0.3.0,<5.0.0",
     # for debugging
     "sqlalchemy_utils",
     "ipdb>=0.13.13",
@@ -168,6 +171,10 @@ extra-dependencies = [
 [tool.hatch.envs.default.scripts]
 clean_pyc = "find . -type f -name \"*.pyc\" -delete"
 clean_pycache = "find . -type d -name \"*__pycache__*\" -delete"
+check_types = "ty check --error-on-warning databasez"
+ruff = "hatch fmt --check"
+lint = "hatch fmt --check && ty check --error-on-warning databasez"
+format = "hatch fmt && hatch fmt --check && ty check --error-on-warning databasez"
 
 [tool.hatch.envs.docs]
 dependencies = [
@@ -185,10 +192,10 @@ dev = "python scripts/docs.py serve"
 [tool.hatch.envs.test]
 # type-checking
 features = ["all"]
-extra-dependencies = ["mypy>=1.1.0,<2.0.0"]
+extra-dependencies = ["ty"]
 
 [tool.hatch.envs.test.scripts]
-check_types = "mypy -p databasez"
+check_types = "ty check --error-on-warning databasez"
 
 [tool.hatch.envs.hatch-static-analysis]
 # disables custom ruff rules, required to align with pre-commit
@@ -204,7 +211,7 @@ extra-dependencies = [
     "sqlalchemy_utils",
     "ipdb>=0.13.13",
     "ravyn>=0.3.8",
-    "mypy>=1.1.0,<2.0.0",
+    "ty",
     "starlette>=0.26.1",
     "httpx",
     "psycopg[binary]",

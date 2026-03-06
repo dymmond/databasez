@@ -13,4 +13,6 @@ async def main() -> None:
             )
 
         async with database.transaction(force_rollback=True):
-            await database.execute("INSERT INTO notes(text) VALUES (:text)", {"text": "rolled back"})
+            await database.execute(
+                "INSERT INTO notes(text) VALUES (:text)", {"text": "rolled back"}
+            )

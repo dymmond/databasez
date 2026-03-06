@@ -14,7 +14,9 @@ async def test_foo() -> None:
             await database.execute("INSERT INTO notes(text) VALUES (:text)", {"text": "saved"})
 
             async with database.transaction(force_rollback=True):
-                await database.execute("INSERT INTO notes(text) VALUES (:text)", {"text": "rolled"})
+                await database.execute(
+                    "INSERT INTO notes(text) VALUES (:text)", {"text": "rolled"}
+                )
 
         rows = await database.fetch_all("SELECT text FROM notes ORDER BY id")
         assert [row.text for row in rows] == ["saved"]

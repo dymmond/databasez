@@ -1,6 +1,26 @@
 version: 3
 
 tasks:
+  ruff:
+    desc: Runs ruff linting checks
+    cmds:
+      - hatch run ruff
+
+  lint:
+    desc: Runs linting checks (ruff + ty)
+    cmds:
+      - hatch run lint
+
+  format:
+    desc: Formats the codebase and re-runs checks
+    cmds:
+      - hatch run format
+
+  ty:
+    desc: Runs type checking with ty
+    cmds:
+      - hatch run test:check_types
+
   docs_prepare:
     desc: Prepares documentation sources for Zensical
     cmds:

@@ -57,8 +57,24 @@ $ hatch test -- tests/test_database_url.py -q
 ## Linting and formatting
 
 ```shell
-$ hatch fmt --check
-$ hatch fmt
+$ hatch run ruff
+$ hatch run lint
+$ hatch run format
+```
+
+## Type checking
+
+```shell
+$ hatch run test:check_types
+```
+
+Taskfile shortcut:
+
+```shell
+$ task ruff
+$ task ty
+$ task lint
+$ task format
 ```
 
 ## Documentation workflow (Zensical)
