@@ -39,7 +39,7 @@ class Database(SQLAlchemyDatabase):
                 remaining options dictionary.
         """
         database_url_new, options = super().extract_options(database_url, **options)
-        if database_url_new.driver in {None, "pscopg2"}:
+        if database_url_new.driver in {None, "psycopg2"}:
             database_url_new = database_url_new.replace(driver="psycopg")
         return database_url_new, options
 

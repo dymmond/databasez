@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import os
+import re
 from typing import Any, Union
 
 import sqlalchemy
@@ -318,6 +319,13 @@ class DatabaseTestClient(Database):
             )
         return Database(url, force_rollback=False, full_isolation=False)
 
+    @staticmethod
+    def _sanitize_charset_name(value: str) -> str:
+        """Validate and normalize a charset/encoding identifier for DDL."""
+        if not re.fullmatch(r"[A-Za-z0-9_]+", value):
+            raise ValueError(f"Invalid encoding name: {value!r}")
+        return value
+
     @classmethod
     async def create_database(
         cls,
@@ -343,6 +351,7 @@ class DatabaseTestClient(Database):
             if dialect_name == "postgresql":
                 if not template:
                     template = "template1"
+                encoding = cls._sanitize_charset_name(encoding)
 
                 async with db_client.connection() as conn:
                     quote = get_quoter(conn.async_connection)
@@ -353,9 +362,10 @@ class DatabaseTestClient(Database):
                     await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "mysql":
+                encoding = cls._sanitize_charset_name(encoding)
                 async with db_client.connection() as conn:
                     quote = get_quoter(conn.async_connection)
-                    text = f"CREATE DATABASE {quote(database)} CHARACTER SET = '{quote(encoding)}'"
+                    text = f"CREATE DATABASE {quote(database)} CHARACTER SET {encoding}"
                     await conn.execute(sqlalchemy.text(text))
 
             elif dialect_name == "sqlite" and database != ":memory:":
@@ -412,13 +422,15 @@ class DatabaseTestClient(Database):
                     version = tuple(map(int, server_version_raw.split(".")))
                     pid_column = "pid" if (version >= (9, 2)) else "procpid"
                     quoted_db = quote(database)
-                    text = f"""
+                    text = sqlalchemy.text(
+                        f"""
                     SELECT pg_terminate_backend(pg_stat_activity.{pid_column})
                     FROM pg_stat_activity
-                    WHERE pg_stat_activity.datname = '{quoted_db}'
+                    WHERE pg_stat_activity.datname = :database
                     AND {pid_column} <> pg_backend_pid();
                     """
-                    await conn.execute(text)
+                    )
+                    await conn.execute(text, {"database": database})
 
                     # Drop the database.
                     text = f"DROP DATABASE {exists_text}{quoted_db}"

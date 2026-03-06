@@ -214,7 +214,7 @@ class DBAPI2_dialect(DefaultDialect):
             bool: ``True`` if the table exists, ``False`` otherwise.
         """
         quoted = self.identifier_preparer.quote(table_name)
-        stmt = text(f"select 1 from '{quoted}' LIMIT 1")
+        stmt = text(f"select 1 from {quoted} LIMIT 1")
         try:
             connection.execute(stmt)
             return True

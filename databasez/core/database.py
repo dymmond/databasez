@@ -387,6 +387,9 @@ class Database:
         Not multithreading safe!
         """
         async with self.ref_lock:
+            if self.ref_counter <= 0:
+                self.ref_counter = 0
+                return False
             self.ref_counter -= 1
             # on the last call, the count is 0
             if self.ref_counter == 0:
@@ -438,9 +441,9 @@ class Database:
         if self._call_hooks:
             try:
                 await self.connect_hook()
-            except BaseException as exc:
+            except BaseException:
                 await self.decr_refcount()
-                raise exc
+                raise
         self._loop = asyncio.get_event_loop()
 
         await self.backend.connect(self.url, **self.options)
@@ -478,17 +481,26 @@ class Database:
                 if only the ref-counter was decremented.
         """
         # parent_database is injected and should not be specified manually
-        if not await self.decr_refcount() or force:
+        force_disconnect_with_refcount = False
+        if force:
+            async with self.ref_lock:
+                force_disconnect_with_refcount = self.ref_counter > 0
+                self.ref_counter = 0
+        elif not await self.decr_refcount():
             if not self.is_connected:
                 logger.debug("Already disconnected, skip disconnecting")
                 return False
-            if force:
-                logger.warning("Force disconnect, despite refcount not 0")
-            else:
-                return False
+            return False
+
+        if force and force_disconnect_with_refcount:
+            logger.warning("Force disconnect, despite refcount not 0")
+        if not self.is_connected:
+            logger.debug("Already disconnected, skip disconnecting")
+            return False
+
         if parent_database is not None:
             loop = asyncio.get_running_loop()
-            del parent_database._databases_map[loop]
+            parent_database._databases_map.pop(loop, None)
         if force and self._databases_map:
             for sub_database in self._databases_map.values():
                 await arun_coroutine_threadsafe(

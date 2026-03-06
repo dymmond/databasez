@@ -137,6 +137,9 @@ class Transaction:
         self._force_rollback = force_rollback
         self._extra_options = kwargs
         self._existing_transaction = existing_transaction
+        self._is_active = False
+        self._start_task: asyncio.Task[Any] | None = None
+        self._is_finalizing = False
 
     @property
     def connection(self) -> Connection:
@@ -187,6 +190,10 @@ class Transaction:
         Rolls back if an exception occurred or if *force_rollback* is set;
         otherwise commits.
         """
+        # Allow explicit manual commit()/rollback() inside an async-with block.
+        # In that case, context-exit is intentionally a no-op.
+        if not self._is_active:
+            return
         if exc_type is not None or self._force_rollback:
             await self.rollback()
         else:
@@ -214,7 +221,13 @@ class Transaction:
 
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            async with self:
+            transaction = self.__class__(
+                self._connection_callable,
+                force_rollback=self._force_rollback,
+                existing_transaction=self._existing_transaction,
+                **self._extra_options,
+            )
+            async with transaction:
                 return await func(*args, **kwargs)
 
         return wrapper  # type: ignore
@@ -246,7 +259,63 @@ class Transaction:
             # because we have an await before, we need the _transaction_lock
             self._transaction = _transaction
             connection._transaction_stack.append((self, _transaction))
-            _transaction = self._transaction
+            self._is_active = True
+            self._start_task = asyncio.current_task()
+
+    async def _begin_finalize(self) -> tuple[Any, bool]:
+        """Prepare this transaction for commit/rollback.
+
+        For nested transactions started in the same task, out-of-order finalization
+        remains an error. For sibling transactions from other tasks, wait until this
+        transaction reaches the top of the stack.
+
+        Returns:
+            tuple[Any, bool]: Backend transaction and whether the connection should
+            be closed after finalize.
+        """
+        connection = self.connection
+        while True:
+            async with connection._transaction_lock:
+                if not self._is_active:
+                    raise RuntimeError("Transaction is not active")
+                if not connection._transaction_stack:
+                    raise RuntimeError("Transaction stack is empty")
+
+                index = -1
+                for i, (stack_transaction, _) in enumerate(connection._transaction_stack):
+                    if stack_transaction is self:
+                        index = i
+                        break
+                if index < 0:
+                    # Defensive sync with stack state; transaction already removed.
+                    self._is_active = False
+                    raise RuntimeError("Transaction is not active")
+
+                if index != len(connection._transaction_stack) - 1:
+                    if any(
+                        stack_transaction._start_task is self._start_task
+                        for stack_transaction, _ in connection._transaction_stack[index + 1 :]
+                    ):
+                        raise RuntimeError("Transaction is not the active transaction")
+                else:
+                    if self._is_finalizing:
+                        raise RuntimeError("Transaction is already being finalized")
+                    _, _transaction = connection._transaction_stack[index]
+                    self._is_active = False
+                    self._is_finalizing = True
+                    close_connection = connection.connection_transaction is not self
+                    return _transaction, close_connection
+            await asyncio.sleep(0)
+
+    async def _finish_finalize(self) -> None:
+        """Remove this transaction from the stack after backend finalize."""
+        connection = self.connection
+        async with connection._transaction_lock:
+            for index in range(len(connection._transaction_stack) - 1, -1, -1):
+                if connection._transaction_stack[index][0] is self:
+                    connection._transaction_stack.pop(index)
+                    break
+            self._is_finalizing = False
 
     async def start(
         self,
@@ -281,14 +350,14 @@ class Transaction:
         # we have a loop now in case of full_isolation
         try:
             await self._start(timeout=timeout)
-        except BaseException as exc:
+        except BaseException:
             # normal start call
             if (
                 cleanup_on_error
                 and getattr(connection, "connection_transaction", None) is not self
             ):
                 await connection.__aexit__()
-            raise exc
+            raise
         return self
 
     @multiloop_protector(False)
@@ -303,15 +372,22 @@ class Transaction:
         ``connection_transaction``, the connection context is also exited.
         """
         connection = self.connection
-        async with connection._transaction_lock:
-            # some transactions are tied to connections and are not on the transaction stack
-            if connection._transaction_stack and connection._transaction_stack[-1][0] is self:
-                _, _transaction = connection._transaction_stack.pop()
-                await _transaction.commit()
-        # if a connection_transaction, the connection cleans it up in __aexit__
-        # prevent loop
-        if connection.connection_transaction is not self:
-            await connection.__aexit__()
+        if (
+            self._existing_transaction is not None
+            and not self._is_active
+            and connection.connection_transaction is self
+        ):
+            return
+
+        _transaction, close_connection = await self._begin_finalize()
+        try:
+            await _transaction.commit()
+        finally:
+            try:
+                await self._finish_finalize()
+            finally:
+                if close_connection:
+                    await connection.__aexit__()
 
     @multiloop_protector(False)
     async def rollback(
@@ -325,12 +401,19 @@ class Transaction:
         ``connection_transaction``, the connection context is also exited.
         """
         connection = self.connection
-        async with connection._transaction_lock:
-            # some transactions are tied to connections and are not on the transaction stack
-            if connection._transaction_stack and connection._transaction_stack[-1][0] is self:
-                _, _transaction = connection._transaction_stack.pop()
-                await _transaction.rollback()
-        # if a connection_transaction, the connection cleans it up in __aexit__
-        # prevent loop
-        if connection.connection_transaction is not self:
-            await connection.__aexit__()
+        if (
+            self._existing_transaction is not None
+            and not self._is_active
+            and connection.connection_transaction is self
+        ):
+            return
+
+        _transaction, close_connection = await self._begin_finalize()
+        try:
+            await _transaction.rollback()
+        finally:
+            try:
+                await self._finish_finalize()
+            finally:
+                if close_connection:
+                    await connection.__aexit__()

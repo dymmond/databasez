@@ -8,6 +8,16 @@
 - Fixed transaction decorator (`Transaction.__call__`) silently discarding the decorated function's return value. `await func(...)` is now `return await func(...)`.
 - Fixed force-disconnect cleanup in `Database.disconnect()` being unreachable dead code. An `assert not self._databases_map` inside an `if self._databases_map:` block always fired before the sub-database cleanup loop could execute.
 - Fixed `Database._connection` property setter returning a value (silently discarded by Python) and having an incorrect `-> Connection | None` return annotation. Setters are now correctly `-> None`.
+- Fixed refcount underflow in `Database.disconnect()` when disconnecting without a prior successful connect, and normalized force-disconnect behavior to reset refcount safely.
+- Fixed transaction lifecycle edge cases where double commit / rollback could underflow connection counters.
+- Fixed out-of-order transaction finalization to raise explicit runtime errors instead of silently continuing.
+- Fixed transaction finalization to still clean up connection state when backend commit/rollback raises.
+- Fixed `SQLAlchemyTransaction` cleanup paths to always clear backend transaction state and restore previous isolation level on failure paths.
+- Fixed cancellation safety in cross-loop forwarding (`arun_coroutine_threadsafe`) so cancelled callers also cancel the submitted future.
+- Fixed SQL construction in `dbapi2` and `jdbc` dialect `has_table()` probes to avoid malformed identifier quoting.
+- Fixed JDBC reflection index sort-order mapping (`get_indexes`) using the wrong list element for `column_sorting`.
+- Fixed PostgreSQL overwrite driver auto-upgrade typo (`"pscopg2"` -> `"psycopg2"`), restoring expected async driver upgrade behavior.
+- Fixed ASGI lifespan failure messages to use `message` (ASGI-compatible key) instead of `msg`.
 
 ### Changed
 
@@ -17,6 +27,9 @@
 - Tightened type annotations: `column: Any` → `column: int | str`, `template: Any` → `template: str | None`.
 - Removed duplicated exception handling block in `AsyncWrapper.__getattribute__` (second block was unreachable dead code).
 - Simplified `else: raise exc` anti-patterns to bare `raise` in `utils.py`.
+- Hardened test-database DDL generation by validating charset/encoding names before interpolation.
+- PostgreSQL test-database termination query now binds database name as a parameter instead of interpolating into SQL text.
+- Added focused regression coverage for disconnect/refcount handling, transaction finalization safety, cancellation behavior, SQL quoting paths, and overwrite driver upgrades.
 
 ## 0.11.5
 

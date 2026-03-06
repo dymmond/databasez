@@ -82,9 +82,9 @@ async def arun_coroutine_threadsafe(
             _arun_coroutine_threadsafe_result_shim(future, loop, poll_interval),
             DATABASEZ_RESULT_TIMEOUT,
         )
-    except TimeoutError as exc:
+    except BaseException:
         future.cancel()
-        raise exc
+        raise
 
 
 async_wrapper_slots = (
@@ -263,10 +263,13 @@ class ThreadPassingExceptions(Thread):
             timeout: Maximum seconds to wait (``None`` = forever).
 
         Raises:
+            TimeoutError: If *timeout* elapses before completion.
             Exception: Any exception that occurred inside the thread.
         """
         try:
             super().join(timeout=timeout)
+            if self.is_alive():
+                raise TimeoutError("Timed out while waiting for thread to finish")
         finally:
             if self._exc_raised is not None:
                 raise self._exc_raised

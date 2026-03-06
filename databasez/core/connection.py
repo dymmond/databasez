@@ -245,9 +245,9 @@ class Connection:
                             force_rollback=self._force_rollback
                         )
                         await self.connection_transaction.start()
-            except BaseException as e:
+            except BaseException:
                 self._connection_counter -= 1
-                raise e
+                raise
 
     async def __aenter__(self) -> Connection:
         """Enter the connection context.
@@ -316,6 +316,14 @@ class Connection:
         closing = False
         async with self._connection_lock:
             assert self._connection is not None
+            if self._connection_counter == 0:
+                # The global force-rollback connection may be created but never
+                # entered; treat close as a no-op in that state.
+                if self._connection.async_connection is None:
+                    return False
+                raise RuntimeError("Connection counter is desynchronized")
+            if self._connection_counter < 0:
+                raise RuntimeError("Connection context exited too many times")
             self._connection_counter -= 1
             if self._connection_counter == 0:
                 closing = True

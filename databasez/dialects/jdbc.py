@@ -218,7 +218,7 @@ class JDBC_dialect(DefaultDialect):
             bool: ``True`` if the table exists, ``False`` otherwise.
         """
         quoted = self.identifier_preparer.quote(table_name)
-        stmt = text(f"SELECT 1 from '{quoted}' LIMIT 1")
+        stmt = text(f"SELECT 1 from {quoted} LIMIT 1")
         try:
             connection.execute(stmt)
             return True
@@ -738,7 +738,7 @@ class JDBC_dialect(DefaultDialect):
                     column_names=index[-3],
                     expressions=index[-2],
                     column_sorting={
-                        col: self.get_sort_order(indexes[-1][num])  # type: ignore
+                        col: self.get_sort_order(index[-1][num])  # type: ignore
                         for num, col in enumerate(index[-3])
                         if col is not None
                     },
