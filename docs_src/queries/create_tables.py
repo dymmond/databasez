@@ -27,8 +27,11 @@ for table in metadata.tables.values():
     query = str(schema.compile(dialect=dialect))
     await database.execute(query=query)
 
-# Create tables automatic
+# Create tables automatically using SQLAlchemy metadata.
 await database.create_all(metadata)
+
+# Drop all tables when needed.
+await database.drop_all(metadata)
 
 # Close all connections in the connection pool
 await database.disconnect()

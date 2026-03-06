@@ -2,19 +2,23 @@ import contextlib
 
 import databasez
 
-async with databasez.Database("database_url") as db:
-    async with db.transaction() as outer:
-        # Do something in the outer transaction
-        ...
 
-        # Suppress to prevent influence on the outer transaction
-        with contextlib.suppress(ValueError):
-            async with db.transaction():
-                # Do something in the inner transaction
-                ...
+async def main() -> None:
+    async with databasez.Database("sqlite+aiosqlite:///example.db") as db:
+        await db.execute(
+            "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text VARCHAR(100))"
+        )
+        await db.execute("DELETE FROM notes")
 
-                raise ValueError("Abort the inner transaction")
+        async with db.transaction():
+            await db.execute("INSERT INTO notes(text) VALUES (:text)", {"text": "outer"})
 
-    # Observe the results of the outer transaction,
-    # without effects from the inner transaction.
-    await db.fetch_all("SELECT * FROM ...")
+            # Suppress so the inner transaction rolls back without breaking
+            # the outer one.
+            with contextlib.suppress(ValueError):
+                async with db.transaction():
+                    await db.execute("INSERT INTO notes(text) VALUES (:text)", {"text": "inner"})
+                    raise ValueError("Abort the inner transaction")
+
+        rows = await db.fetch_all("SELECT text FROM notes ORDER BY id")
+        assert [row.text for row in rows] == ["outer"]

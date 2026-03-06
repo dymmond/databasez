@@ -1,144 +1,125 @@
 # Contributing
 
-Thank you for showing interes in contributing to Databasez. There are many ways you can help and contribute to the
-project.
+Thank you for showing interest in contributing to Databasez.
 
-* Try Databasez and [report bugs and issues](https://github.com/dymmond/databasez/issues/new) you find.
-* [Implement new features](https://github.com/dymmond/databasez/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-* Help othes by [reviewing pull requests](https://github.com/dymmond/databasez/pulls)
-* Help writting documentation
-* Use the discussions and actively participate on them.
-* Become an contributor by helping Databasez growing and spread the words across small, medium, large or any company
-size.
+Ways to help:
 
-## Reporting possible bugs and issues
+- try Databasez and [report bugs/issues](https://github.com/dymmond/databasez/issues/new)
+- [implement features](https://github.com/dymmond/databasez/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+- [review pull requests](https://github.com/dymmond/databasez/pulls)
+- improve documentation
+- participate in discussions
 
-It is natural that you might find something that Databasez should support or even experience some sorte of unexpected
-behaviour that needs addressing.
+## Reporting bugs and issues
 
-The way we love doing things is very simple, contributions should start out with a
-[discussion](https://github.com/dymmond/databasez/discussions). The potential bugs shall be raised as "Potential Issue"
-in the discussions, the feature requests may be raised as "Ideas".
+The preferred flow starts with [GitHub Discussions](https://github.com/dymmond/databasez/discussions):
 
-We can then decide if the discussion needs to be escalated into an "Issue" or not.
+- potential bugs: raise as "Potential Issue"
+- feature ideas: raise as "Ideas"
 
-When reporting something you should always try to:
+From there, we can escalate into a formal issue when appropriate.
 
-* Be as more descriptive as possible
-* Provide as much evidence as you can, something like:
-    * OS platform
-    * Python version
-    * Installed dependencies
-    * Code snippets
-    * Tracebacks
+When reporting, include:
 
-Avoid putting examples extremely complex to understand and read. Simplify the examples as much as possible to make
-it clear to understand and get the required help.
+- OS/platform
+- Python version
+- installed dependencies
+- minimal reproducible snippet
+- traceback/log output
 
-## Development
+## Development setup
 
-To develop for Databasez, create a fork of the [Databasez repository](https://github.com/dymmond/databasez) on GitHub.
-
-After, clone your fork with the follow command replacing `YOUR-USERNAME` wih your GitHub username:
+Fork and clone:
 
 ```shell
 $ git clone https://github.com/YOUR-USERNAME/databasez
+$ cd databasez
 ```
 
-### Install the project dependencies
+Create environments:
 
 ```shell
-$ cd databasez
 $ hatch env create
 ```
 
-### Run the tests
-
-To run the tests, use:
+## Running tests
 
 ```shell
 $ hatch test
 ```
 
-Because Databasez uses pytest, any additional arguments will be passed. More info within the
-[pytest documentation](https://docs.pytest.org/en/latest/how-to/usage.html)
-
-For example, to run a single test_script:
+Pass extra pytest arguments after `--`:
 
 ```shell
-$ hatch test tests/test_apiviews.py
+$ hatch test -- tests/test_database_url.py -q
 ```
 
-To run the linting, use:
+## Linting and formatting
 
 ```shell
-$ hatch fmt
+$ hatch run ruff
+$ hatch run lint
+$ hatch run format
 ```
 
-!!! Note
-    If you get stuck into segfaults, you might want to use the environment parameter: `TEST_NO_RISK_SEGFAULTS=true`.
-    MSSQL and odbc may can segfault, though seldom.
-    This parameter is active for github actions.
-
-### Documentation
-
-Improving the documentation is quite easy and it is placed inside the `databasez/docs` folder.
-
-To start the docs, run:
+## Type checking
 
 ```shell
-$ scripts/docs
+$ hatch run test:check_types
 ```
 
-## Building Databasez
-
-To build a package locally, run:
+Taskfile shortcut:
 
 ```shell
-$ scripts/build
+$ task ruff
+$ task ty
+$ task lint
+$ task format
 ```
 
-Alternatively running:
+## Documentation workflow (Zensical)
 
+Prepare rendered docs (expands snippet includes):
+
+```shell
+$ hatch run docs:prepare
 ```
-$ scripts/install
+
+Build docs:
+
+```shell
+$ hatch run docs:build
 ```
 
-It will install the requirements and create a local build in your virtual environment.
+Serve docs locally:
 
-## Releasing
+```shell
+$ hatch run docs:serve
+```
 
-*This section is for the maintainers of `Databasez`*.
+Taskfile shortcuts are also available:
 
-### Building the Databasez for release
+```shell
+$ task docs_prepare
+$ task build
+$ task serve
+```
 
-Before releasing a new package into production some considerations need to be taken into account.
+## Building package artifacts
 
-* **Changelog**
-    * Like many projects, we follow the format from [keepchangelog](https://keepachangelog.com/en/1.0.0/).
-    * [Compare](https://github.com/dymmond/databasez/compare/) `main` with the release tag and list of the entries
-that are of interest to the users of the framework.
-        * What **must** go in the changelog? added, changed, removed or deprecated features and the bug fixes.
-        * What is **should not go** in the changelog? Documentation changes, tests or anything not specified in the
-point above.
-        * Make sure the order of the entries are sorted by importance.
-        * Keep it simple.
+```shell
+$ hatch build
+```
 
-* *Version bump*
-    * The version should be in `__init__.py` of the main package.
+## Releasing (maintainers)
 
-#### Releasing
+Before release:
 
-Once the `release` PR is merged, create a new [release](https://github.com/dymmond/databasez/releases/new)
-that includes:
+- update changelog with user-visible changes
+- bump version in `databasez/__init__.py`
 
-Example:
+Then create a GitHub release:
 
-There will be a release of the version `0.2.3`, this is what it should include.
-
-* Release title: `Version 0.2.3`.
-* Tag: `0.2.3`.
-* The description should be copied from the changelog.
-
-Once the release is created, it should automatically upload the new version to PyPI. If something
-does not work with PyPI the release can be done by running `scripts/release`.
+- title: `Version X.Y.Z`
+- tag: `X.Y.Z`
+- release body from changelog

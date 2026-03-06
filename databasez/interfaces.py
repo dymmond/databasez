@@ -293,8 +293,7 @@ class ConnectionBackend(ABC):
         Yields:
             Sequence[Record]: A batch of result rows.
         """
-        # mypy needs async iterators to contain a `yield`
-        # https://github.com/python/mypy/issues/5385#issuecomment-407281656
+        # Type checkers need async iterators to contain a `yield`.
         yield True  # type: ignore
 
     async def iterate(

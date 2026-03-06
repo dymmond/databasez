@@ -8,7 +8,7 @@ await database.connect()
 
 # Execute
 query = "INSERT INTO users(name, address) VALUES (:name, :address)"
-values = {"text": "databasez", "address": "London, United Kingdom"}
+values = {"name": "databasez", "address": "London, United Kingdom"}
 await database.execute(query=query, values=values)
 
 # Execute many
@@ -26,3 +26,6 @@ rows = await database.fetch_all(query=query, values={"address": "London, United 
 # Fetch single row
 query = "SELECT * FROM users WHERE id = :id"
 result = await database.fetch_one(query=query, values={"id": 1})
+
+# Close all connections in the connection pool
+await database.disconnect()

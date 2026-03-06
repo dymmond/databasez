@@ -1,86 +1,65 @@
 # Queries
 
-Databasez supports queries using SQLAlchemy core as well as raw SQL. This means you can take
-advantage or the full power of the package as well as be free to do your own custom queries.
+Databasez supports queries using SQLAlchemy Core and raw SQL.
 
-## Declarations
+## Table declarations
 
-To be able to make queries using the SQLAlchemy core you will need to create/declare your tables
-in your codebase using the proper syntax.
-
-It is good practice in any case as this make it a lot easier to keep your database schema in sync
-with the code that is accessing it. This also allows to use a database migration tool of choice to
-manage any schema change.
+To use SQLAlchemy Core queries, define your metadata and tables first.
 
 ```python
 {!> ../docs_src/queries/declarations.py !}
 ```
 
-Declaring a database table using SQLAlchemy core is very simple and it should follow the best
-practices mentioned by the author. You can create as many tables and columns as you wish.
+Another example with JSON columns:
 
-Regarding the columns, you can use any of the SQLAlchemy column types such as `sqlalchemy.JSON`
-or a custom column type.
-
-Another example could be:
-
-```python hl_lines="11"
+```python
 {!> ../docs_src/queries/declarations2.py !}
 ```
 
 ## Creating tables
 
-As per fork of Databases, **Databasez** also does not use SQLAlchemy's engine for database access
-internally. [The usual SQLAlchemy core way to create tables with `create_all`](https://docs.sqlalchemy.org/en/20/core/metadata.html#sqlalchemy.schema.MetaData.create_all)
-is therefore not available.
+Databasez provides `create_all` and `drop_all` helpers that call SQLAlchemy metadata operations through the active connection.
 
-To circunvent this situation you can use SQLAlchemy to [compile the query to SQL](https://docs.sqlalchemy.org/en/20/faq/sqlexpressions.html#how-do-i-render-sql-expressions-as-strings-possibly-with-bound-parameters-inlined) and then
-execute it with databasez.
+You can also compile DDL manually when needed.
 
 ```python
 {!> ../docs_src/queries/create_tables.py !}
 ```
 
 !!! Note
-    Note that this is way of creating tables is only useful for local testing and experimentation.
-    For big and serious projects, you should be using something like
-    [Alembic](https://alembic.sqlalchemy.org/en/latest/) or any proper migration solution tool.
+    For production projects, use a migration tool such as [Alembic](https://alembic.sqlalchemy.org/en/latest/).
 
-## Queries
-
-Since you can use [SQLAlchemy core](https://docs.sqlalchemy.org/en/20/core/), that also means you
-can also use the queries. Check out the [official tutorial](https://docs.sqlalchemy.org/en/20/tutorial/).
+## SQLAlchemy Core queries
 
 ```python
 {!> ../docs_src/queries/queries.py !}
 ```
 
-Connections are managed as task-local state, with driver implementations using connection pooling
-behind the scenes.
-
-Task-local implies, you need a new task for a new connection. This is important when querying during iterations.
-You will need to wrap the new query in a Task (e.g. by `create_task`).
-
-## Raw Queries
+## Raw SQL queries
 
 ```python
 {!> ../docs_src/queries/raw_queries.py !}
 ```
 
 !!! Tip
-    The query arguments should follow the `:query_arg` style.
+    Use named bind parameters with `:param_name` style.
 
-Databasez allows the same level of flexibility as per its ancestor and adds its own extra flavours
-on the top.
+## Iteration and batching
 
+- `iterate(...)` yields row-by-row.
+- `batched_iterate(...)` yields batches.
+- `batch_wrapper` can transform each batch (`tuple`, `list`, custom callable).
 
 ## Timeouts
 
-Most query methods and the connection() method of database support a timeout parameter.
-It can be used to limit the time used for an operation.
+Most query methods accept `timeout=...`.
 
-Note: There is a stronger parameter which should be only used for debugging (multithreading):
+For cross-loop debug timeout, use:
 
 `databasez.utils.DATABASEZ_RESULT_TIMEOUT`
 
-It is a stronger timeout which applies everywhere where `arun_coroutine_threadsafe` with a different loop is used (most methods).
+## Related pages
+
+- [Database](./database.md)
+- [Connections & Transactions](./connections-and-transactions.md)
+- [Extra drivers and overwrites](./extra-drivers-and-overwrites.md)

@@ -9,7 +9,11 @@ CONFIG = {
             "user": "sa",
             "password": "Mssql123mssql",
             "database": "master",
-            "options": {"driver": "ODBC Driver 17 for SQL Server"},
+            "options": {
+                "driver": "ODBC Driver 18 for SQL Server",
+                "TrustServerCertificate": "yes",
+                "Encrypt": "Optional",
+            },
         }
     }
 }

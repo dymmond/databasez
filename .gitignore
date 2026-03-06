@@ -14,3 +14,7 @@ testsuite.sqlite3
 test_testsuite.sqlite3
 /site
 /dist
+/docs/generated
+/docs/.generated.tmp
+/.cache
+.DS_Store

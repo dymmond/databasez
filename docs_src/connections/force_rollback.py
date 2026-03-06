@@ -1,15 +1,21 @@
 from databasez import Database
 
-database = Database("sqlite:///foo.sqlite", force_rollback=True)
+setup_database = Database("sqlite+aiosqlite:///testsuite.sqlite3")
+database = Database("sqlite+aiosqlite:///testsuite.sqlite3", force_rollback=True)
 
 
-def test_foo():
+async def test_foo() -> None:
+    async with setup_database:
+        await setup_database.execute(
+            "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text VARCHAR(100))"
+        )
+
     async with database:
-        ...
-        # do the tests
-    # and now everything is rolled back
+        await database.execute("DELETE FROM notes")
+        await database.execute("INSERT INTO notes(text) VALUES (:text)", {"text": "inside-test"})
+        row = await database.fetch_val("SELECT COUNT(*) FROM notes")
+        assert row == 1
 
     async with database:
-        ...
-        # do the tests
-    # and now everything is rolled back again
+        row = await database.fetch_val("SELECT COUNT(*) FROM notes")
+        assert row == 0

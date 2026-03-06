@@ -2,89 +2,94 @@
 
 ## Extra drivers
 
-### JDBC
+Databasez registers two additional SQLAlchemy dialects:
 
-Databasez injects a jdbc driver. You can use it as simple as:
+- `jdbc`
+- `dbapi2`
 
-`jdbc+jdbc-dsn-driver-name://dsn?jdbc_driver=?`
-
-or for modern jdbc drivers
-
-`jdbc+jdbc-dsn-driver-name://dsn`
-
-Despite the jdbc-dsn-driver-name is not known by sqlalchemy this works. The overwrites rewrite the URL for sqlalchemy.
-
+These are useful when there is no native async SQLAlchemy driver for your target.
 
 !!! Warning
-    It seems like injecting classpathes in a running JVM doesn't work properly. If you have more then one jdbc driver,
-    make sure all classpathes are specified.
+    Both drivers intentionally have limited behavior compared with first-class async dialects.
 
+## JDBC
 
-!!! Warning
-    The jdbc driver doesn't support setting the isolation_level yet (this is highly db vendor specific).
+### URL format
 
-### Parameters
+```text
+jdbc+<dsn-driver>://<dsn>?jdbc_driver=<java.class.Name>
+```
 
-The jdbc driver supports some extra parameters which will be removed from the query (note: most of them can be also passed via keywords)
+Examples:
 
-* **jdbc_driver** - import path of the jdbc driver (java format). Required for old jdbc drivers.
-* **jdbc_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
-* **jdbc_dsn_driver** - Not really required because of the rewrite but if the url only specifies jdbc:// withouth the dsn driver you can set it here manually.
+- `jdbc+sqlite://testsuite.sqlite3?classpath=tests/sqlite-jdbc-3.47.0.0.jar&jdbc_driver=org.sqlite.JDBC`
+- `jdbc+postgresql://localhost:5432/app?...`
 
-### Direct-only parameters
+### JDBC options
 
-These parameters are directly set in database as keywords and have no DSN conversion.
+- `jdbc_driver`: Java driver class name.
+- `jdbc_driver_args`: JSON driver kwargs.
+- `jdbc_dsn_driver`: explicit DSN driver override.
+- `classpath`: jar path(s), passed as keyword argument or query option.
 
-* **transform_reflected_names** - Because JDBC drivers  (especially old) do strange name mangling we may need this parameter.
-  It has 3 possible values: "upper", "lower", "none" (default). When upper or lower is used, all names are converted in this case.
-  This is required for ancient sqlite jdbc drivers.
-* **use_code_datatype** - When True the java code type is evaluated instead of parsing the SQL string datatype. By default False.
+### JDBC direct keyword options
 
-### dbapi2
-
-
-Databasez injects a dbapi2 driver. You can use it as simple as:
-
-`dbapi2+foo://dsn`
-
-or simply
-
-`dbapi2://dsn`
+- `transform_reflected_names`: `"none" | "upper" | "lower"`.
+- `use_code_datatype`: use JDBC integer type code for reflected datatype mapping.
 
 !!! Warning
-    The dbapi2 driver doesn't support setting the isolation_level yet (this is highly db vendor specific).
+    Injecting additional classpaths into an already-running JVM is not always reliable. Prefer passing all required jars up front.
 
-### Parameters
+## DBAPI2
 
-The dbapi2 driver supports some extra parameters which will be removed from the query (note: most of them can be also passed via keywords)
+### URL format
 
-* **dbapi_driver_args** - additional keyword arguments for the driver. Note: they must be passed in json format. Query only parameter.
-* **dbapi_dsn_driver** - If required it is possible to set the dsn driver here. Normally it should work without. You can use the same trick like in jdbc to provide a dsn driver.
-* **dbapi_pool** - thread/process. Default: thread. How the dbapi2. is isolated. Either via ProcessPool or ThreadPool (with one worker).
-* **dbapi_force_async_wrapper** - bool/None. Default: None. Figure out if the async_wrapper is required. By setting a bool the wrapper can be enforced or removed.
+```text
+dbapi2://<dsn>
+dbapi2+<dsn-driver>://<dsn>
+```
 
-The dbapi2 has some extra options which cannot be passed via the url, some of them are required:
+### Required option
 
-* **dbapi_path** - Import path of the dbapi2 module. Required
+- `dbapi_path`: Python import path for the DBAPI module.
+
+### DBAPI2 options
+
+- `dbapi_driver_args`: JSON driver kwargs.
+- `dbapi_dsn_driver`: DSN driver override.
+- `dbapi_pool`: `"thread"` (default) or `"process"`.
+- `dbapi_force_async_wrapper`: `True`, `False`, or `None` (auto-detect).
 
 ## Overwrites
 
-Overwrites can improve existing dialects or coexist with extra drivers to add some tricks.
-For example dialects having a json_serializer/json_deserializer parameter, have it set to orjson for more performance.
+Overwrites customize behavior per dialect by exposing classes in modules under `databasez.overwrites`.
 
-Overwrites can consist of three components, which must be classes of the name in a module:
+Recognized class names:
 
-- Database
-- Connection
-- Transaction
+- `Database`
+- `Connection`
+- `Transaction`
 
-All of them are independent by default and must inherite from:
+They must inherit from:
 
-- DatabaseBackend
-- ConnectionBackend
-- TransactionBackend
+- `DatabaseBackend`
+- `ConnectionBackend`
+- `TransactionBackend`
 
-For simplification there are full functional implementations in `databasez.sqlalchemy`.
-It is recommended to inherit from there and just adjust the behavior.
+In practice, inherit from `databasez.sqlalchemy` backends and override only what you need.
 
-You can have a look in `databasez/overwrites` for examples.
+Built-in examples:
+
+- `databasez.overwrites.postgresql`
+- `databasez.overwrites.mysql`
+- `databasez.overwrites.sqlite`
+- `databasez.overwrites.mssql`
+- `databasez.overwrites.jdbc`
+- `databasez.overwrites.dbapi2`
+
+## What built-in overwrites do
+
+- set async driver defaults (`psycopg`, `asyncmy`, `aiosqlite`, `aioodbc`)
+- set default transaction isolation level per dialect where needed
+- adapt iteration behavior (e.g. PostgreSQL transactional streaming)
+- move driver-specific options from kwargs into URL query parameters for custom dialects

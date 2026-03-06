@@ -1,62 +1,52 @@
 # Tests and Migrations
 
-Databasez is designed to allow you to fully integrate with production
-ready services, with API support for test isolation, and integration
-with [Alembic][alembic] for database migrations.
+Databasez is designed for production services and test isolation flows.
 
 ## Test isolation
 
-Databasez provides the [DatabaseTestClient](./test-client.md#databasetestclient) already configured
-to create the `test_` database from you.
+For integration tests, use [DatabaseTestClient](./test-client.md).
+
+Two common strategies:
+
+1. one reusable test database with rollback per test
+2. create/drop test database around suite runs
+
+Databasez supports both with `force_rollback`, `drop_database`, and `use_existing`.
 
 ## Migrations
 
-Because `databasez` uses SQLAlchemy core, you can integrate with [Alembic][alembic]
-for database migration support. The same as you could do with `databases`.
+Databasez works with SQLAlchemy Core metadata, so Alembic integration is straightforward.
 
 ```shell
 $ pip install alembic
 $ alembic init migrations
 ```
 
-You'll want to set things up so that Alembic references the configured
-`DATABASE_URL`, and uses your table metadata.
-
-In `alembic.ini` remove the following line:
+In `alembic.ini`, remove:
 
 ```shell
 sqlalchemy.url = driver://user:pass@localhost/dbname
 ```
 
-In `migrations/env.py`, you need to set the ``'sqlalchemy.url'`` configuration key,
-and the `target_metadata` variable. You'll want something like this:
+In `migrations/env.py`, set URL and metadata:
 
 ```python
-# The Alembic Config object.
-config = context.config
+from alembic import context
 
-# Configure Alembic to use our DATABASE_URL and our table definitions.
-# These are just examples - the exact setup will depend on whatever
-# framework you're integrating against.
 from myapp.settings import DATABASE_URL
 from myapp.tables import metadata
 
-config.set_main_option('sqlalchemy.url', str(DATABASE_URL))
+config = context.config
+config.set_main_option("sqlalchemy.url", str(DATABASE_URL))
 target_metadata = metadata
-
-...
 ```
 
-Note that migrations will use a standard synchronous database driver,
-rather than using the async drivers that `databases` provides support for.
+## Sync driver note
 
-This will also be the case if you're using SQLAlchemy's standard tooling, such
-as using `metadata.create_all(engine)` to setup the database tables.
+Alembic migrations run with synchronous SQLAlchemy engines/drivers. This is normal and separate from your async runtime queries.
 
 ## Examples
 
-[Edgy][edgy] (from the same author) is a good example as it has an internal migration system
-based on Alembic and integrates with **Databasez**.
+[Edgy][edgy] is a good real-world example from the same ecosystem.
 
-[alembic]: https://alembic.sqlalchemy.org/en/latest/
 [edgy]: https://edgy.dymmond.com
