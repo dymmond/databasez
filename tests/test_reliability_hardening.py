@@ -124,6 +124,26 @@ async def test_concurrent_sibling_transaction_commit_waits_for_top_of_stack() ->
 
 
 @pytest.mark.asyncio
+async def test_transaction_contextmanager_allows_explicit_commit() -> None:
+    async with Database("sqlite+aiosqlite:///:memory:") as database:
+        connection = database.connection()
+        async with connection, connection.transaction() as transaction:
+            await transaction.commit()
+        assert connection._transaction_stack == []
+        assert connection._connection_counter == 0
+
+
+@pytest.mark.asyncio
+async def test_transaction_contextmanager_allows_explicit_rollback() -> None:
+    async with Database("sqlite+aiosqlite:///:memory:") as database:
+        connection = database.connection()
+        async with connection, connection.transaction() as transaction:
+            await transaction.rollback()
+        assert connection._transaction_stack == []
+        assert connection._connection_counter == 0
+
+
+@pytest.mark.asyncio
 async def test_arun_coroutine_threadsafe_cancels_future_on_caller_cancellation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -190,6 +190,10 @@ class Transaction:
         Rolls back if an exception occurred or if *force_rollback* is set;
         otherwise commits.
         """
+        # Allow explicit manual commit()/rollback() inside an async-with block.
+        # In that case, context-exit is intentionally a no-op.
+        if not self._is_active:
+            return
         if exc_type is not None or self._force_rollback:
             await self.rollback()
         else:
