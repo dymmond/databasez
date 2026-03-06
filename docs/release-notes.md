@@ -27,7 +27,6 @@
 - Tightened type annotations: `column: Any` → `column: int | str`, `template: Any` → `template: str | None`.
 - Removed duplicated exception handling block in `AsyncWrapper.__getattribute__` (second block was unreachable dead code).
 - Simplified `else: raise exc` anti-patterns to bare `raise` in `utils.py`.
-- `DatabaseTestClient.setup_protected()` now surfaces timeout errors instead of silently suppressing them.
 - Hardened test-database DDL generation by validating charset/encoding names before interpolation.
 - PostgreSQL test-database termination query now binds database name as a parameter instead of interpolating into SQL text.
 - Added focused regression coverage for disconnect/refcount handling, transaction finalization safety, cancellation behavior, SQL quoting paths, and overwrite driver upgrades.

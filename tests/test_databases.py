@@ -6,10 +6,14 @@ from collections.abc import Sequence
 from unittest.mock import patch
 from urllib.parse import parse_qsl, unquote, urlsplit
 
-import pyodbc
 import pytest
 import sqlalchemy
 from sqlalchemy.engine import URL, make_url
+
+try:
+    import pyodbc
+except Exception:  # pragma: no cover
+    pyodbc = None
 
 from databasez import Database, DatabaseURL
 from databasez.utils import get_quoter
@@ -28,7 +32,7 @@ assert "TEST_DATABASE_URLS" in os.environ, "TEST_DATABASE_URLS is not set."
 
 DATABASE_URLS = [url.strip() for url in os.environ["TEST_DATABASE_URLS"].split(",")]
 
-if not any(x.endswith(" for SQL Server") for x in pyodbc.drivers()):
+if pyodbc is None or not any(x.endswith(" for SQL Server") for x in pyodbc.drivers()):
     DATABASE_URLS = list(filter(lambda x: "mssql" not in x, DATABASE_URLS))
 
 DATABASE_CONFIG_URLS = []

@@ -99,6 +99,31 @@ async def test_out_of_order_transaction_commit_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
+async def test_concurrent_sibling_transaction_commit_waits_for_top_of_stack() -> None:
+    async with Database("sqlite+aiosqlite:///:memory:") as database:
+        connection = database.connection()
+        outer = await connection.transaction()
+        inner_ready = asyncio.Event()
+
+        async def run_inner_transaction() -> None:
+            inner = await connection.transaction()
+            inner_ready.set()
+            await asyncio.sleep(0)
+            await inner.commit()
+
+        inner_task = asyncio.create_task(run_inner_transaction())
+        await inner_ready.wait()
+
+        # Outer commit should wait for the concurrently running inner transaction
+        # instead of failing with an out-of-order error.
+        await outer.commit()
+        await inner_task
+
+        assert connection._transaction_stack == []
+        assert connection._connection_counter == 0
+
+
+@pytest.mark.asyncio
 async def test_arun_coroutine_threadsafe_cancels_future_on_caller_cancellation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -145,14 +170,13 @@ def test_charset_name_sanitization_blocks_sql_injection_payloads() -> None:
         DatabaseTestClient._sanitize_charset_name("utf8'; DROP DATABASE prod; --")
 
 
-def test_setup_protected_raises_on_timeout() -> None:
+def test_setup_protected_suppresses_timeout() -> None:
     class SlowSetupClient(DatabaseTestClient):
         async def setup(self) -> None:
             await asyncio.sleep(0.2)
 
     database = SlowSetupClient("sqlite+aiosqlite:///:memory:", lazy_setup=True, test_prefix="")
-    with pytest.raises(TimeoutError):
-        database.setup_protected(0.01)
+    database.setup_protected(0.01)
 
 
 def test_dbapi2_has_table_uses_identifier_not_string_literal() -> None:

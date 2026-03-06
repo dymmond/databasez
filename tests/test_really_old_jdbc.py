@@ -6,6 +6,19 @@ from sqlalchemy.pool import StaticPool
 
 from databasez import Database
 
+try:
+    import jpype
+except Exception:  # pragma: no cover
+    jpype = None
+
+if jpype is None:  # pragma: no cover
+    pytestmark = pytest.mark.skip(reason="JPype is not available")
+else:
+    try:
+        jpype.getDefaultJVMPath()
+    except Exception:  # pragma: no cover
+        pytestmark = pytest.mark.skip(reason="Java runtime is not available")
+
 # Use StaticPool to be sure to not use multi-threaded access.
 # Just for more safety with an old driver but shouldn't be neccessary.
 

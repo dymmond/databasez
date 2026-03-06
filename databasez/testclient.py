@@ -160,7 +160,8 @@ class DatabaseTestClient(Database):
         """
         thread = ThreadPassingExceptions(target=asyncio.run, args=[self.setup()])
         thread.start()
-        thread.join(operation_timeout)
+        with contextlib.suppress(TimeoutError):
+            thread.join(operation_timeout)
 
     async def connect_hook(self) -> None:
         """Pre-connection hook: run deferred setup if necessary."""
