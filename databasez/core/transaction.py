@@ -137,6 +137,7 @@ class Transaction:
         self._force_rollback = force_rollback
         self._extra_options = kwargs
         self._existing_transaction = existing_transaction
+        self._is_active = False
 
     @property
     def connection(self) -> Connection:
@@ -214,7 +215,13 @@ class Transaction:
 
         @wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            async with self:
+            transaction = self.__class__(
+                self._connection_callable,
+                force_rollback=self._force_rollback,
+                existing_transaction=self._existing_transaction,
+                **self._extra_options,
+            )
+            async with transaction:
                 return await func(*args, **kwargs)
 
         return wrapper  # type: ignore
@@ -246,7 +253,7 @@ class Transaction:
             # because we have an await before, we need the _transaction_lock
             self._transaction = _transaction
             connection._transaction_stack.append((self, _transaction))
-            _transaction = self._transaction
+            self._is_active = True
 
     async def start(
         self,
@@ -281,14 +288,14 @@ class Transaction:
         # we have a loop now in case of full_isolation
         try:
             await self._start(timeout=timeout)
-        except BaseException as exc:
+        except BaseException:
             # normal start call
             if (
                 cleanup_on_error
                 and getattr(connection, "connection_transaction", None) is not self
             ):
                 await connection.__aexit__()
-            raise exc
+            raise
         return self
 
     @multiloop_protector(False)
@@ -303,15 +310,30 @@ class Transaction:
         ``connection_transaction``, the connection context is also exited.
         """
         connection = self.connection
+        if (
+            self._existing_transaction is not None
+            and not self._is_active
+            and connection.connection_transaction is self
+        ):
+            return
+
+        close_connection = False
         async with connection._transaction_lock:
-            # some transactions are tied to connections and are not on the transaction stack
-            if connection._transaction_stack and connection._transaction_stack[-1][0] is self:
-                _, _transaction = connection._transaction_stack.pop()
-                await _transaction.commit()
-        # if a connection_transaction, the connection cleans it up in __aexit__
-        # prevent loop
-        if connection.connection_transaction is not self:
-            await connection.__aexit__()
+            if not self._is_active:
+                raise RuntimeError("Transaction is not active")
+            if (
+                not connection._transaction_stack
+                or connection._transaction_stack[-1][0] is not self
+            ):
+                raise RuntimeError("Transaction is not the active transaction")
+            _, _transaction = connection._transaction_stack.pop()
+            self._is_active = False
+            close_connection = connection.connection_transaction is not self
+        try:
+            await _transaction.commit()
+        finally:
+            if close_connection:
+                await connection.__aexit__()
 
     @multiloop_protector(False)
     async def rollback(
@@ -325,12 +347,27 @@ class Transaction:
         ``connection_transaction``, the connection context is also exited.
         """
         connection = self.connection
+        if (
+            self._existing_transaction is not None
+            and not self._is_active
+            and connection.connection_transaction is self
+        ):
+            return
+
+        close_connection = False
         async with connection._transaction_lock:
-            # some transactions are tied to connections and are not on the transaction stack
-            if connection._transaction_stack and connection._transaction_stack[-1][0] is self:
-                _, _transaction = connection._transaction_stack.pop()
-                await _transaction.rollback()
-        # if a connection_transaction, the connection cleans it up in __aexit__
-        # prevent loop
-        if connection.connection_transaction is not self:
-            await connection.__aexit__()
+            if not self._is_active:
+                raise RuntimeError("Transaction is not active")
+            if (
+                not connection._transaction_stack
+                or connection._transaction_stack[-1][0] is not self
+            ):
+                raise RuntimeError("Transaction is not the active transaction")
+            _, _transaction = connection._transaction_stack.pop()
+            self._is_active = False
+            close_connection = connection.connection_transaction is not self
+        try:
+            await _transaction.rollback()
+        finally:
+            if close_connection:
+                await connection.__aexit__()

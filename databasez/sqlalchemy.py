@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import AsyncGenerator, Callable, Iterable, Sequence
 from itertools import islice
@@ -83,33 +84,49 @@ class SQLAlchemyTransaction(TransactionBackend):
             self.old_transaction_level = ""
         if extra_options:
             await connection.execution_options(**extra_options)
-        assert await connection.get_isolation_level() != "AUTOCOMMIT", (
-            "transactions doesn't work with AUTOCOMMIT. Please specify another transaction level."
-        )
-        if in_transaction:
-            self.raw_transaction = await connection.begin_nested()
-        else:
-            self.raw_transaction = await connection.begin()
+        try:
+            assert await connection.get_isolation_level() != "AUTOCOMMIT", (
+                "transactions doesn't work with AUTOCOMMIT. Please specify another transaction level."
+            )
+            if in_transaction:
+                self.raw_transaction = await connection.begin_nested()
+            else:
+                self.raw_transaction = await connection.begin()
+        except BaseException:
+            if self.old_transaction_level:
+                with contextlib.suppress(Exception):
+                    await connection.execution_options(isolation_level=self.old_transaction_level)
+                self.old_transaction_level = ""
+            raise
 
     async def _close(self) -> None:
         """Close the transaction and restore the previous isolation level."""
-        assert self.raw_transaction is not None, "Transaction is not initialized"
-        await self.raw_transaction.close()
-        connection = self.async_connection
-        if connection is not None and self.old_transaction_level:
-            await connection.execution_options(isolation_level=self.old_transaction_level)
+        raw_transaction = self.raw_transaction
+        assert raw_transaction is not None, "Transaction is not initialized"
+        self.raw_transaction = None
+        try:
+            await raw_transaction.close()
+        finally:
+            connection = self.async_connection
+            if connection is not None and self.old_transaction_level:
+                await connection.execution_options(isolation_level=self.old_transaction_level)
+            self.old_transaction_level = ""
 
     async def commit(self) -> None:
         """Commit the transaction."""
         assert self.raw_transaction is not None, "Transaction is not initialized"
-        await self.raw_transaction.commit()
-        await self._close()
+        try:
+            await self.raw_transaction.commit()
+        finally:
+            await self._close()
 
     async def rollback(self) -> None:
         """Roll back the transaction."""
         assert self.raw_transaction is not None, "Transaction is not initialized"
-        await self.raw_transaction.rollback()
-        await self._close()
+        try:
+            await self.raw_transaction.rollback()
+        finally:
+            await self._close()
 
     def get_default_transaction_isolation_level(
         self, is_root: bool, **extra_options: Any

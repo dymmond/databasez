@@ -102,8 +102,7 @@ class TestTransactionDecoratorReturnValue:
         mock_connection._loop = MagicMock()
 
         # Create a Transaction with mocked internals
-        tx = Transaction.__new__(Transaction)
-        tx._connection = mock_connection
+        tx = Transaction(lambda: mock_connection, force_rollback=False)
 
         # Directly test the wrapper: patch __aenter__ and __aexit__
         async def mock_func(*args, **kwargs):

@@ -74,13 +74,13 @@ class ASGIHelper:
                     try:
                         await self.database.connect()
                     except Exception as exc:
-                        await send({"type": "lifespan.startup.failed", "msg": str(exc)})
+                        await send({"type": "lifespan.startup.failed", "message": str(exc)})
                         raise MuteInteruptException from None
                 elif message["type"] == "lifespan.shutdown":
                     try:
                         await self.database.disconnect()
                     except Exception as exc:
-                        await send({"type": "lifespan.shutdown.failed", "msg": str(exc)})
+                        await send({"type": "lifespan.shutdown.failed", "message": str(exc)})
                         raise MuteInteruptException from None
                 return message
 
