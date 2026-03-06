@@ -1,21 +1,25 @@
 import asyncio
 
-from databasez import Database, core
+from databasez import Database
 
 
-async def add_excitement(connection: core.Connection, id: int):
+async def add_excitement(connection, id: int) -> None:
     await connection.execute(
-        "UPDATE notes SET text = CONCAT(text, '!!!') WHERE id = :id", {"id": id}
+        "UPDATE notes SET text = :text WHERE id = :id",
+        {"id": id, "text": "databasez is cool!!!"},
     )
 
 
-async with Database("database_url") as database:
-    async with database.transaction():
-        # This note won't exist until the transaction closes...
-        await database.execute("INSERT INTO notes(id, text) values (1, 'databases is cool')")
-        # ...but child tasks can use this connection now!
-        await asyncio.create_task(add_excitement(database.connection(), id=1))
+async def main() -> None:
+    async with Database("sqlite+aiosqlite:///example.db") as database:
+        await database.execute(
+            "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text VARCHAR(100))"
+        )
+        await database.execute("DELETE FROM notes")
 
-    async with database.transaction(isolation_level="serializable"):
-        await database.fetch_val("SELECT text FROM notes WHERE id=1")
-        # ^ returns: "databases is cool!!!"
+        async with database.transaction(isolation_level="SERIALIZABLE"):
+            await database.execute("INSERT INTO notes(id, text) values (1, 'databasez is cool')")
+            await asyncio.create_task(add_excitement(database.connection(), id=1))
+
+        value = await database.fetch_val("SELECT text FROM notes WHERE id = :id", {"id": 1})
+        assert value == "databasez is cool!!!"

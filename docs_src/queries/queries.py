@@ -47,17 +47,17 @@ value = await database.fetch_val(query=query)
 # Fetch multiple rows without loading them all into memory at once
 query = users.select()
 async for row in database.iterate(query=query):
-    ...
+    print(row)
 
 # Fetch multiple rows in batches
 query = users.select()
 async for batch_tuple in database.batched_iterate(query=query, batch_size=10):
-    ...
+    print(batch_tuple)
 
 # Fetch multiple rows in batches and use as wrapper list
 query = users.select()
 async for batch_list in database.batched_iterate(query=query, batch_size=10, batch_wrapper=list):
-    ...
+    print(batch_list)
 
 # Close all connections in the connection pool
 await database.disconnect()

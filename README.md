@@ -56,12 +56,12 @@ Databasez is suitable for integrating against any async Web framework, such as [
 [Starlette][starlette], [Sanic][sanic], [Responder][responder], [Quart][quart], [aiohttp][aiohttp],
 [Tornado][tornado], or [FastAPI][fastapi].
 
-Databasez was built for Python 3.9+ and on the top of the newest **SQLAlchemy 2** and gives you
+Databasez was built for Python 3.10+ and on the top of the newest **SQLAlchemy 2** and gives you
 simple asyncio support for a range of databases.
 
 ### Special notes
 
-This package couldn't exist without [Databases](https://www.encode.io/databasex/) and the continuous work
+This package couldn't exist without [Databases](https://www.encode.io/databases/) and the continuous work
 done by the amazing team behind it. For that reason, thank you!
 
 ## Installation
@@ -70,7 +70,7 @@ done by the amazing team behind it. For that reason, thank you!
 $ pip install databasez
 ```
 
-If you are interested in using the [test client](./test-client.md), you can also install:
+If you are interested in using the [test client](https://databasez.dymmond.com/test-client/), you can also install:
 
 ```shell
 $ pip install databasez[testing]

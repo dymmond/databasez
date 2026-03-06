@@ -2,70 +2,50 @@
 
 ## Application integration
 
-Databasez has several ways to integrate in applications. Mainly recommended
-are the async contextmanager one and the asgi based.
+Databasez has three common integration styles:
 
-### AsyncContextManager
+1. async context manager lifecycle
+2. ASGI lifespan wrapper (`database.asgi(...)`)
+3. manual startup/shutdown hooks
 
-The recommended way of manually using databasez is via the async contextmanager protocol.
-This way it is ensured that the database is torn down on errors.
+## Async context manager (recommended)
 
-Luckily starlette based apps support the lifespan protocol (startup, teardown of an ASGI server) via async contextmanagers.
+Use an app lifespan context and keep lifecycle explicit:
 
 ```python
 {!> ../docs_src/integrations/starlette.py !}
 ```
 
-!!! Note
-    This works also in different domains which are not web related.
+This style works for web and non-web async applications.
 
+## ASGI wrapper
 
-### ASGI
+`database.asgi(app, handle_lifespan=False)` wraps an ASGI app and injects connect/disconnect on lifespan events.
 
-This is a lifespan protocol interception shim for ASGI lifespan. Instead of using the lifespan parameter of starlette, it is possible
-to wrap the ASGI application via the shim. This way databasez intercepts lifespans requests and injects its code.
-By default it passes the lifespan request further down, but it has a compatibility option named `handle_lifespan`.
-It is required for ASGI apps without lifespan support like django.
-
+For frameworks without native lifespan support, use `handle_lifespan=True`:
 
 ```python
 {!> ../docs_src/integrations/django.py !}
 ```
 
-### Manually
+## Manual startup/shutdown hooks
 
-Some Server doesn't support the lifespan protocol. E.g. WSGI based servers.
-As well as with the AsyncContextManager we are not limited to web applications.
-For demonstration purposes we use here esmerald with `on_startup` and `on_shutdown` events.
+Some servers or frameworks use event hooks instead of lifespan context managers.
 
 ```python
 {!> ../docs_src/integrations/esmerald.py !}
 ```
 
-!!! Note
-    Starlette is deprecating the integration via events.
-    If you like this way and wants to keep it you may can switch to
-    [Esmerald][esmerald], which continues to support the old way of integration or
-    to use [Starlette Bridge][starlette-bridge] which enables such behavior and is from
-    the same author.
-    [Starlette Bridge][starlette-bridge] works for Starlette and
-    any Starlette related project, for example, FastAPI.
-
-
 ## ORMs
 
 There are at least two ORMs using databasez:
 
-- [Edgy][edgy] - A re-development of saffier using pydantic. It is very fast and has more features than saffier.
-                 It is the recommended ORM.
-- [Saffier][saffier] - A stable workhorse but most development will happen now in edgy.
+- [Edgy][edgy] - recommended and actively developed.
+- [Saffier][saffier] - stable, but most new development is in Edgy.
 
-When using edgy, use the helpers of edgy instead of the ones of databasez for integrating in applications.
-This way you get all features of edgy's `Registry`.
+When using Edgy, prefer Edgy's own helpers for application integration so you get full registry features.
 
 ## Links
 
 [edgy]: https://github.com/dymmond/edgy
 [saffier]: https://github.com/tarsil/saffier
-[esmerald]: https://github.com/dymmond/esmerald
-[starlette-bridge]: https://github.com/tarsil/starlette-bridge

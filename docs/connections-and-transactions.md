@@ -2,107 +2,98 @@
 
 ## Connections
 
-Connections are the heart-piece of databasez. They are enabling rollback behavior, via transactions
-and provide all manipulation functions.
-Despite there are shortcut methods on the [Database object](./database.md), they are all using
-connections internally.
-When wanting for performance reasons one connection doing multiple jobs, retrieving a connection via
-`connection()` and perform all tasks within the connection context (connections are async contextmanagers) are the way to go.
+Connections are the core execution unit in Databasez. Even when you call high-level methods on `Database`, those calls are routed through a `Connection`.
 
-### Multithreading
+If you want multiple operations in one scoped connection, use:
 
-`sqlalchemy`'s async addon is also multi-threading capable but we cannot use this for two reasons:
+```python
+async with database.connection() as connection:
+    await connection.execute(
+        "INSERT INTO notes(text) VALUES (:text)",
+        {"text": "example"},
+    )
+    rows = await connection.fetch_all("SELECT * FROM notes")
+```
 
-- Only the `NullPool` is supported which is afaik just no pooling.
-- No global connection which is reliable resetted would be possible.
+This is the recommended style for explicit control.
 
-Therefor `databasez` uses an other approach: `isolation`:
+## Task-local behavior
 
-Event-loops are per thread. So in this approach for every new event-loop detected the database object is copied and assigned to it.
-This way all connections are running in a per-thread pool. The global connection is a bit different from the rest.
-Whenever it is accessed by an other thread, asyncio.run_coroutine_threadsafe is used.
-In the full-isolation mode (default) the global connection is even moved to an own thread.
+Connections are task-local. Inside one task, repeated `database.connection()` calls reuse the same object. Different tasks receive different connections.
 
-### Global connection with auto-rollback
+## Global connection in rollback mode
 
-Sometimes, especially for tests, you want a connection in which all changes are resetted when the database is closed.
-For having this reliable, a global connection is lazily initialized when requested on the database object via the
-`force_rollback` contextmanager/parameter/pseudo-attribute.
+When `force_rollback=True`, `database.connection()` returns a global connection that is wrapped in rollback behavior.
 
-Whenever `connection()` is called, the same global connection is returned. It behaves nearly normally except you have just one connection
-available.
-This means you have to be careful when using `iterate` to not open another connection via `connection` (except you set `force_rollback` to False before opening the connection).
-Otherwise it will deadlock.
+This is useful for tests, but remember:
 
-Example for `force_rollback`:
+- you are effectively sharing one connection
+- nested/parallel usage on the same connection must be planned carefully
+
+Runnable example:
 
 ```python
 {!> ../docs_src/connections/force_rollback.py !}
 ```
 
+## Multiloop and multithreading
+
+Databasez supports loop-aware routing:
+
+- same loop: direct call
+- different loop: operation is proxied using cross-loop helpers
+- optional full isolation: global rollback connection in a dedicated thread
+
+```mermaid
+flowchart TD
+    A["Call from current loop"] --> B{"Loop matches database loop?"}
+    B -->|Yes| C["Execute directly"]
+    B -->|No| D{"Known sub-database for loop?"}
+    D -->|Yes| E["Forward to sub-database"]
+    D -->|No| F["Proxy call with async helper"]
+```
+
 ## Transactions
 
-Transactions are lazily initialized. You dont't need a connected database to create them via `database.transaction()`.
+Transactions are lazily initialized and can be used in three ways.
 
-When created, there are three ways to activate the Transaction
-
-1. The async context manager way via `async with transaction: ...`
-2. Entering a method decorated with a transaction.
-3. The manual way via `await transaction`
-
-Whenever the transaction is activated, a connected database is required.
-
-A second way to get a transaction is via the `Connection`. It has also a `transaction()` method.
-
-
-### The three ways to use a transaction
-
-#### Via the async context manager protocol
+### 1. Async context manager
 
 ```python
 {!> ../docs_src/transactions/async_context_database.py !}
 ```
-It can also be acquired from a specific database connection:
+
+Or from a specific connection:
 
 ```python
 {!> ../docs_src/transactions/async_context_connection.py !}
 ```
 
-#### Via decorating
-
-You can also use `.transaction()` as a function decorator on any async function:
+### 2. Decorator
 
 ```python
 {!> ../docs_src/transactions/decorating.py !}
 ```
 
-#### Manually
-
-For a lower-level transaction API:
+### 3. Manual control
 
 ```python
 {!> ../docs_src/transactions/manually.py !}
 ```
 
-### Auto-rollback (`force_rollback`)
+## Transaction options
 
-Transactions support an keyword parameter named `force_rollback` which default to `False`.
-When set to `True` at the end of the transaction a rollback is tried.
-This means all changes are undone.
+### `force_rollback`
 
-This is a simpler variant of `force_rollback` of the database object.
+`transaction(force_rollback=True)` always rolls back on exit.
+
 ```python
 {!> ../docs_src/transactions/force_rollback_transaction.py !}
 ```
 
-
 ### Isolation level
 
-The state of a transaction is liked to the connection used in the currently executing async task.
-If you would like to influence an active transaction from another task, the connection must be
-shared:
-
-Transaction isolation-level can be specified if the driver backend supports that:
+You can pass backend-supported isolation levels:
 
 ```python
 {!> ../docs_src/transactions/isolation_level.py !}
@@ -110,8 +101,32 @@ Transaction isolation-level can be specified if the driver backend supports that
 
 ### Nested transactions
 
-Nested transactions are fully supported, and are implemented using database savepoints:
+Nested transactions are supported through savepoints:
 
 ```python
 {!> ../docs_src/transactions/nested_transactions.py !}
 ```
+
+## Transaction stack model
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Conn as Connection
+    participant Stack as Transaction Stack
+
+    App->>Conn: begin outer transaction
+    Conn->>Stack: push outer
+    App->>Conn: begin nested transaction
+    Conn->>Stack: push savepoint
+    App->>Conn: rollback nested
+    Conn->>Stack: pop savepoint
+    App->>Conn: commit outer
+    Conn->>Stack: pop outer
+```
+
+## See also
+
+- [Database](./database.md)
+- [Queries](./queries.md)
+- [Troubleshooting](./troubleshooting.md)

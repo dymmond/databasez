@@ -47,21 +47,15 @@ By the time this project was created, Databases was yet to merge possible SQLAlc
 from the author of this package and therefore, this package aims to unblock
 a lot of the projects out there that want SQLAlchemy 2.0 with the best of databases with new features.
 
-A lot of packages depends of Databases and this was the main reason for the fork of **Databasez**.
+A lot of packages depend on Databases and this was the main reason for the fork of **Databasez**.
 
-It allows you to make queries using the powerful [SQLAlchemy Core][sqlalchemy-core]
-expression language, and provides support for PostgreSQL, MySQL, SQLite and MSSQL.
-
-Databasez is suitable for integrating against any async Web framework, such as [Esmerald][esmerald],
-[Starlette][starlette], [Sanic][sanic], [Responder][responder], [Quart][quart], [aiohttp][aiohttp],
-[Tornado][tornado], or [FastAPI][fastapi].
-
-Databasez was built for Python 3.9+ and on the top of the newest **SQLAlchemy 2** and gives you
+Databasez was built for Python 3.10+ and on top of **SQLAlchemy 2** and gives you
 simple asyncio support for a range of databases.
 
 ### Special notes
+
 This package couldn't exist without [Databases](https://www.encode.io/databases/) and the continuous work
-done by the amazing team behind it. For that reason, thank you!
+done by the amazing team behind it. For that reason, thank you.
 
 ## Installation
 
@@ -69,87 +63,49 @@ done by the amazing team behind it. For that reason, thank you!
 $ pip install databasez
 ```
 
-If you are interested in using the [test client](./test-client.md), you can just use it.
+Optional driver extras:
 
-## What does databasez support at the moment
-
-Databasez currently supports nearly all async drivers of sqlalchemy.
-
-If this is not enough there are two special dialects with restricted features:
-
-- jdbc: can load nearly any jdbc driver
-- dbapi2: can load nearly any dbapi2 driver (python standard), async as well as sync.
-
-### Driver installation
-
-You can install the required database drivers with:
-
-#### Postgres
-
-```shell
-$ pip install databasez[asyncpg]
-```
-
-
-#### MySQL/MariaDB
-
-```shell
-$ pip install databasez[aiomysql]
-```
-
-or
-
-```shell
-$ pip install databasez[asyncmy]
-```
-
-#### SQLite
-
-```shell
-$ pip install databasez[aiosqlite]
-```
-
-#### MSSQL
-
-```shell
-$ pip install databasez[aioodbc]
-```
+- PostgreSQL: `pip install databasez[postgresql]` or `databasez[asyncpg]`
+- MySQL/MariaDB: `pip install databasez[mysql]` or `databasez[aiomysql]`
+- SQLite: `pip install databasez[sqlite]`
+- MSSQL: `pip install databasez[aioodbc]`
+- JDBC support: `pip install databasez[jdbc]`
 
 !!! Note
-    MSSQL and odbc may segfaults with threading (sometimes but in tests it can be more often).
+    MSSQL and ODBC drivers may occasionally segfault in threaded test environments.
 
----
+## What databasez supports
+
+Databasez currently supports nearly all async SQLAlchemy drivers.
+
+If this is not enough there are two extra dialects with restricted features:
+
+- `jdbc`: can load many JDBC drivers.
+- `dbapi2`: can load many DBAPI2 drivers (sync and async).
+
+See [Extra drivers and overwrites](./extra-drivers-and-overwrites.md) for details.
 
 ## Quickstart
 
-For a simple quickstart example, we will be creating a simple SQLite database to run some queries
-against.
-
-First, install the required drivers for `SQLite` and `ipython`. The `ipython` is to have an
-interactive python shell with some extras. IPython also supports `await`, which is exactly
-what we need. [See more details](https://ipython.org/) about it.
-
-**Install the required drivers**
-
-```shell
-$ pip install databases[aiosqlite]
-$ pip install ipython
-```
-
-Now from the console, we can run a simple example.
-
+For a simple quickstart example, we create a SQLite database and run a few operations.
 
 ```python
 {!> ../docs_src/quickstart/quickstart.py !}
 ```
 
-Check out the documentation on [making database queries](./queries.md)
-for examples of how to start using databases together with SQLAlchemy core expressions.
+## Recommended reading order
 
-For the integration in frameworks see:
+1. [Core Concepts](./core-concepts.md)
+2. [Database](./database.md)
+3. [Queries](./queries.md)
+4. [Connections & Transactions](./connections-and-transactions.md)
+5. [Integrations](./integrations.md)
 
-[Integrations](./integrations.md)
+## Architecture and internals
 
+- [Architecture Overview](./architecture-overview.md)
+- [Database URL](./database-url.md)
+- [Troubleshooting](./troubleshooting.md)
 
 [sqlalchemy-core]: https://docs.sqlalchemy.org/en/latest/core/
 [sqlalchemy-core-tutorial]: https://docs.sqlalchemy.org/en/latest/core/tutorial.html
@@ -162,12 +118,3 @@ For the integration in frameworks see:
 [asyncmy]: https://github.com/long2ice/asyncmy
 [aiosqlite]: https://github.com/omnilib/aiosqlite
 [aioodbc]: https://aioodbc.readthedocs.io/en/latest/
-
-[esmerald]: https://github.com/dymmond/esmerald
-[starlette]: https://github.com/encode/starlette
-[sanic]: https://github.com/huge-success/sanic
-[responder]: https://github.com/kennethreitz/responder
-[quart]: https://gitlab.com/pgjones/quart
-[aiohttp]: https://github.com/aio-libs/aiohttp
-[tornado]: https://github.com/tornadoweb/tornado
-[fastapi]: https://github.com/tiangolo/fastapi

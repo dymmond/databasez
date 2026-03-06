@@ -1,122 +1,66 @@
 # Test Client
 
-When testing an application that uses a database, you often need a dedicated test database
-to avoid polluting your development data. ``DatabaseTestClient`` automates test database
-creation, connection, and teardown.
+When testing applications that use databases, you usually want a dedicated test database so development data is never touched.
 
-Before continuing, make sure you have the databasez test client installed with the needed
-requirements.
+`DatabaseTestClient` automates:
 
-```
-$ pip install databasez[testing]
-```
-
-## History
-
-Many frameworks and helpers exist for managing test databases. Django, for example,
-creates a test database automatically when running unit tests.
-
-When ``DatabaseTestClient`` was first created, ``sqlalchemy_utils`` was the package used
-for database creation and dropping. However, up to version ``0.40.0`` that package lacked
-async support. ``DatabaseTestClient`` was built to provide async-native database lifecycle
-management directly within **databasez**.
-
-## DatabaseTestClient
-
-This is the client you have been waiting for. This object does a lot of magic for you and will
-help you manage those stubborn tests that should land on a `test_` database.
+- test database creation
+- connection lifecycle
+- optional cleanup/drop
+- optional rollback isolation workflows
 
 ```python
 from databasez.testclient import DatabaseTestClient
 ```
 
-### Parameters
+## Why it exists
 
-* **url** - The database url for your database.
-            It supports the same types like normal Database objects and has a special handling for subclasses of DatabaseTestClient.
+Historically, `sqlalchemy_utils` covered some of this lifecycle, but async support and cross-dialect behavior are not always enough for complex async test suites.
 
-* **force_rollback** - This will ensure that all database connections are run within a transaction
-                       that rollbacks once the database is disconnected.
+`DatabaseTestClient` keeps this behavior in Databasez itself.
 
-    <sup>Default: `None`, copy default or `testclient_default_force_rollback` (defaults to `False`) </sup>
+## Constructor parameters
 
-* **full_isolation** - Special mode for using force_rollback with nested queries. This parameter fully isolates the global connection
-                       in an extra thread. This way it is possible to use blocking operations like locks with force_rollback.
-                       This parameter has no use when used without force_rollback and causes a slightly slower setup (Lock is initialized).
-                       It is required for edgy or other frameworks which use threads in tests and the force_rollback parameter.
-                       For the DatabaseTestClient it is enabled by default.
+- `url`: same accepted types as `Database`.
+- `force_rollback`: rollback mode default for test sessions.
+- `full_isolation`: dedicated thread/loop mode (enabled by default for test client).
+- `poll_interval`: cross-loop polling interval.
+- `use_existing`: reuse existing prefixed test database.
+- `drop_database`: drop the test database on disconnect.
+- `lazy_setup`: defer setup to first `connect`.
+- `test_prefix`: prefix for generated test database names (default `test_`).
 
-    <sup>Default: `None`, copy default or `testclient_default_full_isolation` (defaults to `True`) </sup>
+## Defaults you can override via subclassing
 
-* **poll_interval** - When using multithreading, the poll_interval is used to retrieve results from other loops. It defaults to a sane value.
+Class-level knobs:
 
-    <sup>Default: `None`, copy default or `testclient_default_poll_interval` </sup>
+- `testclient_default_full_isolation`
+- `testclient_default_force_rollback`
+- `testclient_default_poll_interval`
+- `testclient_default_lazy_setup`
+- `testclient_default_use_existing`
+- `testclient_default_drop_database`
+- `testclient_default_test_prefix`
 
-* **lazy_setup** - This sets up the db first up on connect not in init.
+Timeout knobs:
 
-    <sup>Default: `None`, True if copying a database or `testclient_default_lazy_setup` (defaults to `False`)</sup>
+- `testclient_operation_timeout`
+- `testclient_operation_timeout_init`
 
-* **use_existing** - Uses the existing `test_` database if previously created and not dropped.
+## Basic usage
 
-    <sup>Default: `testclient_default_use_existing` (defaults to `False`)</sup>
-
-* **drop_database** - Ensures that after the tests, the database is dropped. The corresponding attribute is `drop`.
-                      When the setup fails, it is automatically set to `False`.
-
-    <sup>Default: `testclient_default_drop_database` (defaults to `False`)</sup>
-
-* **test_prefix** - Allow a custom test prefix or leave empty to use the url instead without changes.
-
-    <sup>Default: `testclient_default_test_prefix` (defaults to `test_`)</sup>
-
-### Subclassing
-
-The defaults of all parameters except the url can be changed by providing in a subclass a different value for the attribute:
-
-`testclient_default_<parameter name>`
-
-There are also 2 knobs for the operation timeout (setting up DB, dropping databases):
-
-`testclient_operation_timeout`
-
-Default: `4`.
-
-and the limit
-
-`testclient_operation_timeout_init` for the non-lazy setup in init of the database.
-
-Default: `8`.
-
-### How to use it
-
-This is the easiest part because is already very familiar with the `Database` used by Edgy or Saffier. In
-fact, this is an extension of that same object with a lot of testing flavours.
-
-Let us assume you have a database url like this following:
-
-```shell
-DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/my_db"
-```
-
-We know the database is called `my_db`, right?
-
-When using the `DatabaseTestClient`, the client will ensure the tests will land on a `test_my_db`.
-
-Pretty cool, right?
-
-Nothing like an example to see it in action.
-
-```python title="tests.py"
+```python
 {!> ../docs_src/testclient/tests.py !}
 ```
 
-#### What is happening
+## Behavior notes
 
-Well, this is rather complex test and actually a real one from Saffier and what you can see is
-that is using the `DatabaseTestClient` which means the tests against models, fields or whatever
-database operation you want will be on a `test_` database.
+- PostgreSQL/MSSQL/Cockroach use admin database redirection for create/drop operations.
+- Some dialect/driver pairs use `AUTOCOMMIT` for admin DDL operations.
+- On setup/drop errors, drop behavior may be disabled internally for safety.
 
-But you can see a `drop_database=True`, so what is that?
+## Related pages
 
-Well `drop_database=True` means that by the end of the tests finish running, drops the database
-into oblivion.
+- [Tests and Migrations](./tests-and-migrations.md)
+- [Connections & Transactions](./connections-and-transactions.md)
+- [Troubleshooting](./troubleshooting.md)

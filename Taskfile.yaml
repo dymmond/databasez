@@ -1,0 +1,27 @@
+version: 3
+
+tasks:
+  docs_prepare:
+    desc: Prepares documentation sources for Zensical
+    cmds:
+      - hatch run docs:prepare
+
+  docs_clean:
+    desc: Cleans generated docs artifacts
+    cmds:
+      - hatch run docs:clean
+
+  build:
+    desc: Builds the documentation
+    cmds:
+      - hatch run docs:build
+
+  serve:
+    desc: Runs the documentation in live mode
+    cmds:
+      - hatch run docs:serve
+
+  serve_dev:
+    desc: Runs the documentation in dev mode
+    cmds:
+      - hatch run docs:dev

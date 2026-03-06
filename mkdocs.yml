@@ -1,6 +1,8 @@
 site_name: Databasez
 site_description: Async database support for Python.
 site_url: https://databasez.dymmond.com
+docs_dir: docs/generated
+site_dir: site
 
 theme:
     name: "material"
@@ -27,49 +29,53 @@ theme:
         - search.suggest
         - search.highlight
         - content.tabs.link
+        - content.code.copy
+        - navigation.indexes
+        - navigation.path
 
 repo_name: dymmond/databasez
 repo_url: https://github.com/dymmond/databasez
 edit_uri: ""
 plugins:
     - search
-    - macros
 
 nav:
     - Databasez: "index.md"
-    - Integrations: "integrations.md"
-    - Queries: "queries.md"
+    - Architecture Overview: "architecture-overview.md"
+    - Core Concepts: "core-concepts.md"
     - Database: "database.md"
+    - Database URL: "database-url.md"
+    - Queries: "queries.md"
     - Connections & Transactions: "connections-and-transactions.md"
+    - Integrations: "integrations.md"
     - Extra drivers and overwrites: "extra-drivers-and-overwrites.md"
     - Test Client: "test-client.md"
     - Tests & Migrations: "tests-and-migrations.md"
+    - Troubleshooting: "troubleshooting.md"
     - Vendors: "vendors.md"
     - Databasez People: "databasez-people.md"
     - Contributing: "contributing.md"
     - Sponsorship: "sponsorship.md"
     - Release Notes: "release-notes.md"
+
 markdown_extensions:
     - attr_list
     - toc:
           permalink: true
-    - markdown.extensions.codehilite:
-          guess_lang: false
-    - mdx_include:
-          base_path: docs
     - admonition
-    - codehilite
-    - extra
     - pymdownx.superfences:
           custom_fences:
               - name: mermaid
                 class: mermaid
                 format: !!python/name:pymdownx.superfences.fence_code_format ""
-    - pymdownx.emoji:
-          emoji_index: !!python/name:material.extensions.emoji.twemoji
-          emoji_generator: !!python/name:material.extensions.emoji.to_svg
     - pymdownx.tabbed:
           alternate_style: true
+    - pymdownx.inlinehilite
+    - pymdownx.highlight:
+          use_pygments: true
+          anchor_linenums: true
+          line_spans: __span
+          pygments_lang_class: true
     - md_in_html
 
 extra:
@@ -79,5 +85,4 @@ extra:
           lang: en
 
 extra_css:
-    - statics/css/extra.css
-    - statics/css/custom.css
+  - stylesheets/extra.css
