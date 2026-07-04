@@ -82,6 +82,11 @@ jobs:
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 default-jre
           sudo apt-get install -y unixodbc-dev
+      - uses: actions/cache@v7
+        id: cache
+        with:
+          path: ${{ env.pythonLocation }}
+          key: ${{ runner.os }}-python-${{ env.pythonLocation }}-${{ hashFiles('pyproject.toml') }}
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: pip install hatch
