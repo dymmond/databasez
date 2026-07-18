@@ -31,7 +31,7 @@ jobs:
         options: --health-cmd="mariadb-admin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: username
           POSTGRES_PASSWORD: passwsss*1348394#@
@@ -56,8 +56,8 @@ jobs:
           --health-retries 3
 
     steps:
-      - uses: "actions/checkout@v5"
-      - uses: "dorny/paths-filter@v3"
+      - uses: "actions/checkout@v7"
+      - uses: "dorny/paths-filter@v4"
         id: filters
         with:
           filters: |
@@ -73,7 +73,7 @@ jobs:
             workflows:
               - '.github/workflows/**'
 
-      - uses: "actions/setup-python@v5"
+      - uses: "actions/setup-python@v6"
         with:
           python-version: "${{ matrix.python-version }}"
           allow-prereleases: true
@@ -82,6 +82,11 @@ jobs:
           sudo apt-get update
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 default-jre
           sudo apt-get install -y unixodbc-dev
+      - uses: actions/cache@v7
+        id: cache
+        with:
+          path: ${{ env.pythonLocation }}
+          key: ${{ runner.os }}-python-${{ env.pythonLocation }}-${{ hashFiles('pyproject.toml') }}
       - name: Install build dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: pip install hatch
