@@ -50,6 +50,23 @@ You can also compile DDL manually when needed.
 - `batched_iterate(...)` yields batches.
 - `batch_wrapper` can transform each batch (`tuple`, `list`, custom callable).
 
+## Returning support
+
+When using the returning clause which returns on updates or inserts some values.
+
+``` python
+query = notes.insert().returning(notes.columns.text)
+values = {"text": "example1", "completed": False}
+# one insert
+result = await database.execute(query, values)
+values = [
+    {"text": "example2", "completed": False},
+    {"text": "example3", "completed": False},
+]
+# multiple inserts (unknown amount values)
+results = await database.execute_many(query, values)
+```
+
 ## Timeouts
 
 Most query methods accept `timeout=...`.
