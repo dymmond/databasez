@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import weakref
 from collections.abc import AsyncGenerator, Callable, Sequence
 from functools import partial
@@ -13,7 +14,7 @@ from sqlalchemy import text
 from databasez import interfaces
 from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multiloop_protector
 
-from .transaction import Transaction
+from .transaction import BoundTransaction, Transaction
 
 if TYPE_CHECKING:
     from sqlalchemy import MetaData
@@ -37,12 +38,20 @@ async def _startup(database: Database, is_initialized: Event) -> None:
     """
     await database.connect()
     _global_connection = cast(Connection, database._global_connection)
-    await _global_connection._aenter()
-    # we ensure fresh locks
-    _global_connection._query_lock = asyncio.Lock()
-    _global_connection._connection_lock = asyncio.Lock()
-    _global_connection._transaction_lock = asyncio.Lock()
-    is_initialized.set()
+    try:
+        # multiloop is used
+        await _global_connection._aenter()
+        # we ensure fresh locks, because we are now in another thread now
+        _global_connection._query_lock = asyncio.Lock()
+        _global_connection._connection_lock = asyncio.Lock()
+        _global_connection._transaction_lock = asyncio.Lock()
+        _global_connection._transaction_notifier = asyncio.Condition(
+            _global_connection._transaction_lock
+        )
+        is_initialized.set()
+    except Exception as exc:
+        logging.exception(exc)
+        raise exc
 
 
 def _init_thread(
@@ -198,13 +207,15 @@ class Connection:
         # the asyncio locks are overwritten in python versions < 3.10 when using full_isolation
         self._query_lock = asyncio.Lock()
         self._connection_lock = asyncio.Lock()
+        self._current_transaction: Transaction | None = None
         self._transaction_lock = asyncio.Lock()
+        self._transaction_notifier = asyncio.Condition(self._transaction_lock)
         self._connection = self._backend.connection()
         self._connection.owner = self
         self._connection_counter = 0
 
         # for keeping weak references to transactions active
-        self._transaction_stack: list[tuple[Transaction, interfaces.TransactionBackend]] = []
+        self._transaction_stack: list[BoundTransaction] = []
 
         self._force_rollback = force_rollback
         self.connection_transaction: Transaction | None = None
@@ -235,11 +246,26 @@ class Connection:
                         self._connection_counter += 1
                     raw_transaction = await self._connection.acquire()
                     if raw_transaction is not None:
-                        self.connection_transaction = self.transaction(
-                            existing_transaction=raw_transaction,
-                            force_rollback=self._force_rollback,
-                        )
-                        # we don't need to call __aenter__ of connection_transaction, it is not on the stack
+                        async with self._transaction_lock:
+                            self.connection_transaction = transaction = Transaction(
+                                connection_callable=weakref.ref(self),
+                                force_rollback=self._force_rollback,
+                            )
+                            transaction_db: interfaces.TransactionBackend = (
+                                self._get_connection_backend().transaction(raw_transaction)
+                            )
+                            # we don't need to start connection_transaction, it is started already
+                            self._transaction_stack.append(
+                                BoundTransaction(
+                                    connection=self,
+                                    transaction_db=transaction_db,
+                                    transaction=transaction,
+                                    task=asyncio.current_task(),
+                                    unmanaged=True,
+                                )
+                            )
+                            # add it manually as _current_transaction because we don't use start
+                            self._current_transaction = transaction
                     elif self._force_rollback:
                         self.connection_transaction = self.transaction(
                             force_rollback=self._force_rollback
@@ -302,7 +328,6 @@ class Connection:
                         if not thread.is_alive():
                             raise Exception("Isolation thread is dead")
                         await asyncio.sleep(self.poll_interval)
-
         if not initialized:
             await self._aenter()
         return self

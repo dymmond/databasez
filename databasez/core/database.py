@@ -714,6 +714,8 @@ class Database:
         Returns:
             Transaction: A new transaction instance.
         """
+        # this uses the connection magic to get the current active connection of the db
+        # but it will fail if entered and non is available
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
     async def run_sync(

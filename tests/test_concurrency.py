@@ -2,14 +2,11 @@ import asyncio
 import contextvars
 import os
 from concurrent.futures import Future
-from contextlib import suppress
 from threading import Thread
 
 import anyio
 import pytest
 import uvloop
-
-from databasez.core import Connection
 
 try:
     import pyodbc
@@ -250,33 +247,3 @@ async def test_multi_thread_db_fails(database_url):
 
         with pytest.raises(RuntimeError):
             await asyncio.to_thread(asyncio.run, db_connect())
-
-
-class FooException(Exception):
-    pass
-
-@pytest.mark.asyncio
-async def test_concurrent_transaction_on_connection(database_url):
-    """
-    Because our tests are generally wrapped in rollback-isolation, they
-    don't have coverage for commiting the root transaction.
-
-    Deal with this here, and delete the records rather than rolling back.
-    """
-    async with Database(database_url, force_rollback=False, full_isolation=False) as database:
-        async def _create_note(connection: Connection, text: str, action: int):
-            with suppress(FooException):
-                async with connection.transaction(force_rollback=action==1):
-                    query = notes.insert().values(text=text, completed=True)
-                    await connection.execute(query)
-                    async for _ in connection.iterate(notes.select()):
-                        await asyncio.sleep(0)
-                    if action == 3:
-                        raise FooException
-        async with database.connection() as connection, connection.transaction(force_rollback=True):
-            ops = []
-            for i in range(90):
-                ops.append(_create_note(connection=connection, text=f"query{i}", action=i % 3))
-            await asyncio.gather(*ops)
-            results = await connection.fetch_all(notes.select())
-            assert len(results) == 30

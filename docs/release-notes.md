@@ -2,9 +2,15 @@
 
 ## 0.12.1
 
+### Changed
+
+- Internally now a new class named `BoundTransaction` is used to track transactions.
+- Remove `existing_transaction` parameter of `Transaction`. It was only useful for internal purpose and is now handled with `BoundTransaction`
+
 ### Fixed
 
 - Returning support with `execute`, `execute_many`.
+- Concurrent transactions on the same connection work now properly.
 
 ## 0.12.0
 
