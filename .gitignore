@@ -1,6 +1,7 @@
 .venv
 .vscode/
 .idea/
+.venv
 *.pyc
 test.db
 .coverage

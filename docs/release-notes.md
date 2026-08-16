@@ -1,5 +1,11 @@
 # Release Notes
 
+## 0.12.1
+
+### Fixed
+
+- Returning support with `execute`, `execute_many`.
+
 ## 0.12.0
 
 ### Fixed

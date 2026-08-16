@@ -200,7 +200,7 @@ check_types = "ty check --error-on-warning databasez"
 [tool.hatch.envs.hatch-static-analysis]
 # disables custom ruff rules, required to align with pre-commit
 config-path = "none"
-dependencies = ["ruff==0.13.0"]
+dependencies = ["ruff==0.16.3"]
 
 
 [tool.hatch.envs.hatch-test]

@@ -321,6 +321,8 @@ class SQLAlchemyConnection(ConnectionBackend):
         Returns:
             Record | int: The parsed result.
         """
+        if result.returns_rows:
+            return result.fetchone()
         if result.is_insert:
             try:
                 if result.inserted_primary_key:
@@ -362,6 +364,8 @@ class SQLAlchemyConnection(ConnectionBackend):
         Returns:
             Sequence[Record] | int: Primary-key rows / rowcount.
         """
+        if result.returns_rows:
+            return result.fetchall()
         if result.is_insert:
             try:
                 if result.inserted_primary_key_rows is not None:
