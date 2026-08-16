@@ -52,19 +52,13 @@ You can also compile DDL manually when needed.
 
 ## Returning support
 
-When using the returning clause which returns on updates or inserts some values.
+When using the returning clause which returns on updates or inserts some values, you can just use `execute` or `execute_many`.
+But be aware: database support is varying, so fence for portability.
 
-``` python
-query = notes.insert().returning(notes.columns.text)
-values = {"text": "example1", "completed": False}
-# one insert
-result = await database.execute(query, values)
-values = [
-    {"text": "example2", "completed": False},
-    {"text": "example3", "completed": False},
-]
-# multiple inserts (unknown amount values)
-results = await database.execute_many(query, values)
+Example:
+
+```python
+{!> ../docs_src/queries/queries_returning.py !}
 ```
 
 ## Timeouts
