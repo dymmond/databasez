@@ -17,6 +17,8 @@ except Exception:
 from databasez.interfaces import ConnectionBackend, DatabaseBackend, Record, TransactionBackend
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import CursorResult
+
     from databasez.core import DatabaseURL
 
 logger = logging.getLogger("databasez")
@@ -309,7 +311,7 @@ class SQLAlchemyConnection(ConnectionBackend):
             return await connection.execute(stmt, value)
         return await connection.execute(stmt)
 
-    def parse_execute_result(self, result: Any) -> Record | int:
+    def parse_execute_result(self, result: CursorResult) -> Record | int:
         """Extract a concise result from a SQLAlchemy result proxy.
 
         For ``INSERT`` operations, returns the inserted primary key (as a
@@ -321,6 +323,9 @@ class SQLAlchemyConnection(ConnectionBackend):
         Returns:
             Record | int: The parsed result.
         """
+        # we need this internal parameter
+        if result.context._is_explicit_returning:
+            return cast("Record", result.fetchone())
         if result.is_insert:
             try:
                 if result.inserted_primary_key:
@@ -350,7 +355,7 @@ class SQLAlchemyConnection(ConnectionBackend):
         with await self.execute_raw(stmt, value) as result:
             return self.parse_execute_result(result)
 
-    def parse_execute_many_result(self, result: Any) -> Sequence[Record] | int:
+    def parse_execute_many_result(self, result: CursorResult) -> Sequence[Record] | int:
         """Extract a concise result from a multi-execute result proxy.
 
         For ``INSERT`` operations, returns the inserted primary-key rows
@@ -362,6 +367,9 @@ class SQLAlchemyConnection(ConnectionBackend):
         Returns:
             Sequence[Record] | int: Primary-key rows / rowcount.
         """
+        # we need this internal parameter
+        if result.context._is_explicit_returning:
+            return cast("Sequence[Record]", result.fetchall())
         if result.is_insert:
             try:
                 if result.inserted_primary_key_rows is not None:

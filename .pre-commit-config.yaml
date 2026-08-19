@@ -13,10 +13,16 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.13.0
+    rev: v0.16.3
     hooks:
-      - id: ruff
-        args: ["--fix"]
+      # Run the linter.
+      - id: ruff-check
+        args: [ --fix ]
+        exclude: "^.*\\.pdbrc$"
+      # Run the formatter.
+      - id: ruff-format
+        exclude: "^.*\\.pdbrc$"
+
 ci:
   autofix_commit_msg: 🎨 [pre-commit.ci] Auto format from pre-commit.com hooks
   autoupdate_commit_msg: ⬆ [pre-commit.ci] pre-commit autoupdate

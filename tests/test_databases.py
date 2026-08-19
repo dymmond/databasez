@@ -8,6 +8,7 @@ from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pytest
 import sqlalchemy
+from sqlalchemy import bindparam
 from sqlalchemy.engine import URL, make_url
 
 try:
@@ -230,6 +231,53 @@ async def test_queries_raw(database_url):
         assert iterate_results[1].completed == False
         assert iterate_results[2].text == "example3"
         assert iterate_results[2].completed == True
+
+
+@pytest.mark.asyncio
+async def test_returning(database_url: Database):
+    """
+    Test that the basic `execute()`, `execute_many()` with returning.
+    """
+    async with Database(database_url) as database, database.transaction(force_rollback=True):
+        query = notes.insert().returning(notes.columns.text)
+        values = {"text": "example1", "completed": False}
+        result = await database.execute(query, values)
+        assert result.text == "example1"
+        values = [
+            {"text": "example2", "completed": False},
+            {"text": "example3", "completed": False},
+        ]
+        results: Sequence = await database.execute_many(query, values)
+        assert results[0].text == "example2"
+        assert results[1].text == "example3"
+        if not database.engine.dialect.update_returning:
+            return
+        query = (
+            notes.update()
+            .where(notes.columns.text == bindparam("oldtext"))
+            .returning(notes.columns.text)
+        )
+        values = {"oldtext": "example1", "text": "newexample1", "completed": True}
+        result = await database.execute(query, values)
+        assert result.text == "newexample1"
+        values = [
+            {"oldtext": "example2", "text": "newexample2", "completed": True},
+            {"oldtext": "example3", "text": "newexample3", "completed": True},
+        ]
+        if database.engine.dialect.update_executemany_returning:
+            results = await database.execute_many(query, values)
+            assert results[0].text == "newexample2"
+            assert results[1].text == "newexample3"
+
+            results = await database.fetch_all(notes.select().order_by("id"))
+            assert results[0].text == "newexample1"
+            assert results[1].text == "newexample2"
+            assert results[2].text == "newexample3"
+        else:
+            results = await database.fetch_all(notes.select().order_by("id"))
+            assert results[0].text == "newexample1"
+            assert results[1].text == "example2"
+            assert results[2].text == "example3"
 
 
 @pytest.mark.asyncio

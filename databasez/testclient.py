@@ -235,7 +235,7 @@ class DatabaseTestClient(Database):
 
         elif dialect_name == "sqlite":
             if database:
-                return database == ":memory:" or os.path.exists(database)
+                return database == ":memory:" or await asyncio.to_thread(os.path.exists, database)
             else:
                 # The default SQLAlchemy database is in memory, and :memory: is
                 # not required, thus we should support that use case.

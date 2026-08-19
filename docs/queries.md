@@ -50,6 +50,17 @@ You can also compile DDL manually when needed.
 - `batched_iterate(...)` yields batches.
 - `batch_wrapper` can transform each batch (`tuple`, `list`, custom callable).
 
+## Returning support
+
+When using the returning clause which returns on updates or inserts some values, you can just use `execute` or `execute_many`.
+But be aware: database support is varying, so fence for portability.
+
+Example:
+
+```python
+{!> ../docs_src/queries/queries_returning.py !}
+```
+
 ## Timeouts
 
 Most query methods accept `timeout=...`.
