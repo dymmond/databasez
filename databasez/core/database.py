@@ -546,6 +546,7 @@ class Database:
         self,
         query: ClauseElement | str,
         values: dict | None = None,
+        *,
         timeout: float | None = None,
     ) -> list[interfaces.Record]:
         """Execute *query* and return all result rows.
@@ -566,6 +567,7 @@ class Database:
         query: ClauseElement | str,
         values: dict | None = None,
         pos: int = 0,
+        *,
         timeout: float | None = None,
     ) -> interfaces.Record | None:
         """Execute *query* and return a single row.
@@ -588,6 +590,7 @@ class Database:
         values: dict | None = None,
         column: int | str = 0,
         pos: int = 0,
+        *,
         timeout: float | None = None,
     ) -> Any:
         """Execute *query* and return a single scalar value.
@@ -615,6 +618,7 @@ class Database:
         self,
         query: ClauseElement | str,
         values: Any = None,
+        *,
         timeout: float | None = None,
     ) -> interfaces.Record | int:
         """Execute a statement and return a concise result.
@@ -634,6 +638,7 @@ class Database:
         self,
         query: ClauseElement | str,
         values: Any = None,
+        *,
         timeout: float | None = None,
     ) -> Sequence[interfaces.Record] | int:
         """Execute a statement with multiple parameter sets.
@@ -654,6 +659,7 @@ class Database:
         query: ClauseElement | str,
         values: dict | None = None,
         chunk_size: int | None = None,
+        *,
         timeout: float | None = None,
     ) -> AsyncGenerator[interfaces.Record, None]:
         """Execute *query* and yield rows one by one.
@@ -677,6 +683,7 @@ class Database:
         values: dict | None = None,
         batch_size: int | None = None,
         batch_wrapper: BatchCallable = tuple,
+        *,
         timeout: float | None = None,
     ) -> AsyncGenerator[BatchCallableResult, None]:
         """Execute *query* and yield rows in batches.
@@ -740,7 +747,7 @@ class Database:
             return await connection.run_sync(fn, *args, **kwargs, timeout=timeout)
 
     async def create_all(
-        self, meta: MetaData, timeout: float | None = None, **kwargs: Any
+        self, meta: MetaData, *, timeout: float | None = None, **kwargs: Any
     ) -> None:
         """Create all tables defined in *meta*.
 
@@ -766,6 +773,7 @@ class Database:
     @multiloop_protector(False)
     def _non_global_connection(
         self,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> Connection:
         """Return or create the per-task connection (non-global).
@@ -778,7 +786,7 @@ class Database:
             return _connection
         return self._connection
 
-    def connection(self, timeout: float | None = None) -> Connection:
+    def connection(self, *, timeout: float | None = None) -> Connection:
         """Return a connection suitable for the current context.
 
         In force-rollback mode the global connection is returned; otherwise
