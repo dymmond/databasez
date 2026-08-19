@@ -30,9 +30,12 @@ result = await database.execute(query=query, values=values)
 if database.engine.dialect.insert_returning:
     # do something with name
     assert result.name == "databasez"
-else:
+elif isinstance(result, int):
     # row count
     assert result == 1
+else:
+    # inserted pk
+    assert result.id
 
 # Execute many
 query = users.insert()
@@ -50,7 +53,7 @@ elif isinstance(results, Sequence):
     # do something with the inserted pks
     assert results[0].id
 else:
-    # row number
+    # row count
     assert results == 2
 
 # fence the same way updates for portability
