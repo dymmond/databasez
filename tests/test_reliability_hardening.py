@@ -58,7 +58,8 @@ async def test_transaction_cleanup_on_commit_error() -> None:
     async with Database("sqlite+aiosqlite:///:memory:") as database:
         connection = database.connection()
         transaction = await connection.transaction()
-        backend_transaction = transaction._transaction
+        bound = await transaction.get_bound_transaction(connection)
+        backend_transaction = bound.transaction_db
         backend_transaction.commit = AsyncMock(side_effect=RuntimeError("commit exploded"))
 
         with pytest.raises(RuntimeError, match="commit exploded"):
@@ -73,7 +74,8 @@ async def test_transaction_cleanup_on_rollback_error() -> None:
     async with Database("sqlite+aiosqlite:///:memory:") as database:
         connection = database.connection()
         transaction = await connection.transaction()
-        backend_transaction = transaction._transaction
+        bound = await transaction.get_bound_transaction(connection)
+        backend_transaction = bound.transaction_db
         backend_transaction.rollback = AsyncMock(side_effect=RuntimeError("rollback exploded"))
 
         with pytest.raises(RuntimeError, match="rollback exploded"):
@@ -84,14 +86,18 @@ async def test_transaction_cleanup_on_rollback_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_out_of_order_transaction_commit_is_rejected() -> None:
+async def test_out_of_order_transaction_commit_is_rejectewd() -> None:
     async with Database("sqlite+aiosqlite:///:memory:") as database:
         connection = database.connection()
         outer = await connection.transaction()
+        bound = await outer.get_bound_transaction(connection)
+        assert bound.parent is None
         inner = await connection.transaction()
+        bound = await inner.get_bound_transaction(connection)
+        assert bound.parent is outer
 
-        with pytest.raises(RuntimeError, match="active transaction"):
-            await outer.commit()
+        with pytest.raises(TimeoutError):
+            await outer.commit(timeout=0.01)
 
         await inner.rollback()
         await outer.rollback()
@@ -129,6 +135,18 @@ async def test_transaction_contextmanager_allows_explicit_commit() -> None:
         connection = database.connection()
         async with connection, connection.transaction() as transaction:
             await transaction.commit()
+        assert connection._transaction_stack == []
+        assert connection._connection_counter == 0
+
+
+@pytest.mark.asyncio
+async def test_transaction_double_commit_raises() -> None:
+    async with Database("sqlite+aiosqlite:///:memory:") as database:
+        connection = database.connection()
+        async with connection, connection.transaction() as transaction:
+            await transaction.commit()
+            with pytest.raises(RuntimeError, match="Transaction is not active"):
+                await transaction.commit()
         assert connection._transaction_stack == []
         assert connection._connection_counter == 0
 

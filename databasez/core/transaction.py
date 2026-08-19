@@ -115,10 +115,8 @@ class BoundTransaction:
         Returns:
             TransactionBackend: Backend transaction
         """
-        assert self.connection._loop is asyncio.get_running_loop()
         if self.is_finalizing:
             raise RuntimeError("Transaction is already being finalized")
-        self.is_finalizing = True
         connection = self.connection
         while True:
             async with connection._transaction_lock:
@@ -126,8 +124,9 @@ class BoundTransaction:
                 if own is None:
                     raise RuntimeError("Transaction is not active") from None
                 if is_top:
+                    self.is_finalizing = True
                     return self.transaction_db
-            await asyncio.sleep(0)
+                await connection._transaction_notifier.wait()
 
     async def _finish_finalize(self) -> None:
         """Remove this transaction from the stack after backend finalize."""
@@ -140,7 +139,7 @@ class BoundTransaction:
                         connection._transaction_stack.pop(index)
                         break
                 connection._current_transaction = self.parent
-                connection._transaction_notifier.notify()
+                connection._transaction_notifier.notify_all()
         finally:
             del self.parent
             del self.connection
@@ -304,9 +303,8 @@ class Transaction:
     @multiloop_protector(False)
     async def _aexit(self, rollback: bool) -> None:
         bound = await self.get_bound_transaction(self.connection)
-        if bound is None or bound.is_finalizing:
-            raise RuntimeError("Dead transaction")
-        if bound.unmanaged:
+        if bound is None or bound.is_finalizing or bound.unmanaged:
+            # not an error
             return
         if rollback:
             await bound.rollback()
@@ -362,6 +360,8 @@ class Transaction:
     @multiloop_protector(False)
     async def _start(
         self,
+        *,
+        # required for multiple parallel transactions on the same connection
         parent_transaction: Transaction | None,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> BoundTransaction:
@@ -378,25 +378,24 @@ class Transaction:
             while True:
                 parent, own, is_parent_top = await self._get_parent_and_bound(connection)
                 stack_size = len(connection._transaction_stack)
-                is_root = stack_size == 0 or (
-                    stack_size == 1 and connection.connection_transaction
-                )
                 if own is not None:
                     # reenter self
                     return own
                 if is_parent_top and (
                     parent is None
                     or parent_transaction is None
-                    or parent.transaction == parent_transaction
-                    or is_root
+                    or parent.transaction is parent_transaction
+                    # this checks if the parent is the connection transaction
+                    # Fixes problem: when parent_transaction is None is not correct
+                    # FIXME: the former problem shouldn't happen, this clause should be not needed
+                    # or parent.transaction is connection.connection_transaction
                 ):
-                    # FIXME: is_root is neccessary, because somewhere _current_transaction is corrupted
-                    # assert (
-                    #   not (stack_size == 1 and connection.connection_transaction) or
-                    #   parent_transaction is connection.connection_transaction
-                    # )
                     break
                 await connection._transaction_notifier.wait()
+            is_root = stack_size == 0 or (
+                stack_size == 1 and connection.connection_transaction is not None
+            )
+
             # we retrieve the base connection here, loop protection is required
             _transaction = connection._get_connection_backend().transaction(None)
             await _transaction.start(is_root=is_root, **self._extra_options)

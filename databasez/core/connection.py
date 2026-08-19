@@ -36,11 +36,11 @@ async def _startup(database: Database, is_initialized: threading.Event) -> None:
         is_initialized: Threading event signalled once initialisation
             completes.
     """
-    await database.connect()
-    _global_connection = cast(Connection, database._global_connection)
     try:
+        await database.connect()
+        _global_connection = cast(Connection, database._global_connection)
         # multiloop is used
-        await _global_connection._aenter()
+        await _global_connection._aenter_raw()
         # we ensure fresh locks, because we are now in another thread now
         _global_connection._query_lock = asyncio.Lock()
         _global_connection._connection_lock = asyncio.Lock()
@@ -233,8 +233,7 @@ class Connection:
         """
         return self._connection
 
-    @multiloop_protector(False, passthrough_timeout=True)
-    async def _aenter(self, *, timeout: float | None = None) -> None:
+    async def _aenter_raw(self, *, timeout: float | None = None) -> None:
         """Acquire the backend connection and set up the connection transaction.
 
         If this is the first acquisition, the underlying backend connection
@@ -250,24 +249,25 @@ class Connection:
                         self._connection_counter += 1
                     raw_transaction = await self._connection.acquire()
                     if raw_transaction is not None:
-                        self.connection_transaction = transaction = Transaction(
-                            connection_callable=weakref.ref(self),
-                            force_rollback=self._force_rollback,
-                        )
-                        transaction_db: interfaces.TransactionBackend = (
-                            self._get_connection_backend().transaction(raw_transaction)
-                        )
-                        # we don't need to start connection_transaction, it is started already
-                        self._transaction_stack.append(
-                            BoundTransaction(
-                                connection=self,
-                                transaction_db=transaction_db,
-                                transaction=transaction,
-                                unmanaged=True,
+                        async with self._transaction_lock:
+                            self.connection_transaction = transaction = Transaction(
+                                connection_callable=weakref.ref(self),
+                                force_rollback=self._force_rollback,
                             )
-                        )
-                        # add it manually as _current_transaction because we don't use start
-                        self._current_transaction = transaction
+                            transaction_db: interfaces.TransactionBackend = (
+                                self._get_connection_backend().transaction(raw_transaction)
+                            )
+                            # we don't need to start connection_transaction, it is started already
+                            self._transaction_stack.append(
+                                BoundTransaction(
+                                    connection=self,
+                                    transaction_db=transaction_db,
+                                    transaction=transaction,
+                                    unmanaged=True,
+                                )
+                            )
+                            # add it manually as _current_transaction because we don't use start
+                            self._current_transaction = transaction
                     elif self._force_rollback:
                         self._current_transaction = None
                         self.connection_transaction = None
@@ -282,6 +282,11 @@ class Connection:
             except BaseException:
                 self._connection_counter -= 1
                 raise
+
+    @multiloop_protector(False, passthrough_timeout=True)
+    async def _aenter(self, *, timeout: float | None = None):
+        """Enter multithreading-safe the start routine"""
+        return await self._aenter_raw(timeout=timeout)
 
     async def __aenter__(self) -> Connection:
         """Enter the connection context.
@@ -315,6 +320,7 @@ class Connection:
                         ],
                         daemon=True,
                     )
+                    thread.name = "databasez_full_isolation_thread"
                     # must be started with lock held, for setting is_alive
                     thread.start()
             assert thread is not None
@@ -367,6 +373,8 @@ class Connection:
                         await self.connection_transaction.__aexit__()
                         # untie, for allowing gc
                         self.connection_transaction = None
+                    async with self._transaction_lock:
+                        self._current_transaction = None
                 finally:
                     await self._connection.release()
                     self._database._connection = None

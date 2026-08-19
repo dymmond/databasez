@@ -419,7 +419,7 @@ async def test_transaction_rollback_low_level(database_url):
 
 
 @pytest.mark.parametrize(
-    "full_isolation", [True, False], ids=["full_isolation", "no_full_isolation"]
+    "full_isolation", [True, False], ids=["with_full_isolation", "no_full_isolation"]
 )
 @pytest.mark.asyncio
 async def test_transaction_decorator(database_url, full_isolation):

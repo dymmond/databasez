@@ -62,13 +62,13 @@ def _future_helper(awaitable, future):
     ],
     ids=[
         "to_thread-no_full_isolation",
-        "to_thread-full_isolation",
-        "thread_join_with_context-full_isolation",
+        "to_thread-with_full_isolation",
+        "thread_join_with_context-with_full_isolation",
         "thread_join_without_context-full_isolation",
     ],
 )
 @pytest.mark.parametrize(
-    "force_rollback", [True, False], ids=["force_rollback", "no_force_rollback"]
+    "force_rollback", [True, False], ids=["with_force_rollback", "no_force_rollback"]
 )
 @pytest.mark.asyncio
 async def test_multi_thread_db(database_url, force_rollback, join_type, full_isolation):
@@ -128,13 +128,13 @@ async def test_multi_thread_db(database_url, force_rollback, join_type, full_iso
     ],
     ids=[
         "to_thread-no_full_isolation",
-        "to_thread-full_isolation",
-        "thread_join_with_context-full_isolation",
+        "to_thread-with_full_isolation",
+        "thread_join_with_context-with_full_isolation",
         "thread_join_without_context-full_isolation",
     ],
 )
 @pytest.mark.parametrize(
-    "force_rollback", [True, False], ids=["force_rollback", "no_force_rollback"]
+    "force_rollback", [True, False], ids=["with_force_rollback", "no_force_rollback"]
 )
 def test_multi_thread_db_anyio(
     run_params, plain_database_url, force_rollback, join_type, full_isolation
@@ -159,13 +159,13 @@ def test_multi_thread_db_anyio(
     ],
     ids=[
         "to_thread-no_full_isolation",
-        "to_thread-full_isolation",
-        "thread_join_with_context-full_isolation",
+        "to_thread-with_full_isolation",
+        "thread_join_with_context-with_full_isolation",
         "thread_join_without_context-full_isolation",
     ],
 )
 @pytest.mark.parametrize(
-    "force_rollback", [True, False], ids=["force_rollback", "no_force_rollback"]
+    "force_rollback", [True, False], ids=["with_force_rollback", "no_force_rollback"]
 )
 @pytest.mark.asyncio
 async def test_multi_thread_db_contextmanager(

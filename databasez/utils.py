@@ -309,10 +309,11 @@ async def _arun_with_timeout(inp: Any, timeout: float | None) -> Any:
     Raises:
         TimeoutError: If the timeout is exceeded.
     """
-    if timeout is not None and timeout > 0 and inspect.isawaitable(inp):
-        return await asyncio.wait_for(inp, timeout=timeout)
-    elif inspect.isawaitable(inp):
-        return await inp
+    if inspect.isawaitable(inp):
+        if timeout is not None and timeout > 0:
+            return await asyncio.wait_for(inp, timeout=timeout)
+        else:
+            return await inp
     return inp
 
 
