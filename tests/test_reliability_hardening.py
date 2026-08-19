@@ -96,7 +96,7 @@ async def test_out_of_order_transaction_commit_is_rejectewd() -> None:
         bound = await inner.get_bound_transaction(connection)
         assert bound.parent is outer
 
-        with pytest.raises(TimeoutError):
+        with pytest.raises(asyncio.TimeoutError if sys.version_info < (3, 11) else TimeoutError):
             await outer.commit(timeout=0.01)
 
         await inner.rollback()
