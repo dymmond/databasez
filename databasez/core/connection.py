@@ -324,6 +324,7 @@ class Connection:
             assert thread is not None
             # bypass for full_isolated
             if thread is not threading.current_thread():
+                # is the initializer thread active?
                 if initialized_in_thread:
                     # wait polling
                     while not self._connection_thread_is_initialized.is_set():
@@ -342,7 +343,7 @@ class Connection:
                             raise Exception("Isolation thread is dead")
                         await asyncio.sleep(self.poll_interval)
         if not initialized_in_thread:
-            # initialized is set if full isolation thread is started
+            # initialized_in_thread is set if full isolation thread is started
             # start only when either in thread or no thread is used
             await self._aenter()
         return self
