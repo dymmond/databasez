@@ -385,11 +385,9 @@ class Transaction:
                     parent is None
                     or parent_transaction is None
                     or parent.transaction is parent_transaction
-                    # this checks if the parent is the connection transaction
-                    # Fixes problem: when parent_transaction is None is not correct
-                    # FIXME: the former problem shouldn't happen, this clause should be not needed
-                    # or parent.transaction is connection.connection_transaction
                 ):
+                    # it is possible in case of bugs, that parent_transaction is not _current_transaction now
+                    # this problems seems to be fixed now
                     break
                 await connection._transaction_notifier.wait()
             is_root = stack_size == 0 or (
