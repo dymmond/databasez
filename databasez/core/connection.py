@@ -72,8 +72,6 @@ def _init_thread(
     """
     # ensure only thread manages the connection thread at the same time
     # this is only relevant when starting up after a shutdown
-    if _connection_thread_running_lock.locked():
-        raise RuntimeError("thread was initialized already")
     with _connection_thread_running_lock:
         loop = asyncio.new_event_loop()
         # keep reference
@@ -450,6 +448,7 @@ class Connection:
         Args:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -474,6 +473,7 @@ class Connection:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
             pos: Row position (0-based, ``-1`` for last).
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -500,6 +500,7 @@ class Connection:
             values: Optional bind parameters.
             column: Column index or name.
             pos: Row position (0-based).
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -522,6 +523,7 @@ class Connection:
         Args:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -548,6 +550,7 @@ class Connection:
         Args:
             query: SQL string or SQLAlchemy clause element.
             values: A sequence of parameter mappings.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -576,7 +579,8 @@ class Connection:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
             chunk_size: Backend batch-size hint.
-            timeout: Per-row timeout in seconds.
+        Kwargs:
+            timeout: Optional per-row timeout in seconds.
 
         Yields:
             interfaces.Record: Result rows.
@@ -617,7 +621,8 @@ class Connection:
             values: Optional bind parameters.
             batch_size: Number of rows per batch.
             batch_wrapper: Callable to transform each batch (default ``tuple``).
-            timeout: Per-batch timeout in seconds.
+        Kwargs:
+            timeout: Optional per-batch timeout in seconds.
 
         Yields:
             BatchCallableResult: A batch of result rows.
@@ -654,6 +659,7 @@ class Connection:
         Args:
             fn: A synchronous function.
             *args: Positional arguments for *fn*.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Keyword arguments for *fn*.
 
@@ -675,6 +681,7 @@ class Connection:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData` instance.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments forwarded to ``meta.create_all``.
         """
@@ -692,6 +699,7 @@ class Connection:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData` instance.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments forwarded to ``meta.drop_all``.
         """
@@ -723,6 +731,8 @@ class Connection:
     ) -> Any:
         """Return the real raw driver connection.
 
+        Kwargs:
+            timeout: Optional timeout in seconds.
         Returns:
             Any: The underlying driver connection.
         """

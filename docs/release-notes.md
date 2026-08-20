@@ -1,16 +1,21 @@
 # Release Notes
 
-## 0.12.1
+## 0.13.0
 
 ### Changed
 
 - Internally now a new class named `BoundTransaction` is used to track transactions.
-- Remove `existing_transaction` parameter of `Transaction`. It was only useful for internal purpose and is now handled with `BoundTransaction`
+- Remove `existing_transaction` parameter of `Transaction`. It was only useful for internal purpose and is now handled with `BoundTransaction`.
+- `timeout` is now keyword only. It was accidentally made available as non-keyword which breaks `multiloop_protector`.
 
 ### Fixed
 
 - Returning support with `execute`, `execute_many`.
 - Concurrent transactions on the same connection work now properly.
+
+### Breaking
+
+- Accidentally the keyword parameter `timeout` was made available as argument. This did work **sometimes**.
 
 ## 0.12.0
 

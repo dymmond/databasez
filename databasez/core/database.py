@@ -576,6 +576,7 @@ class Database:
             query: SQL string or clause element.
             values: Optional bind parameters.
             pos: Row position (0-based, ``-1`` for last).
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -600,6 +601,7 @@ class Database:
             values: Optional bind parameters.
             column: Column index or name.
             pos: Row position.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -626,6 +628,7 @@ class Database:
         Args:
             query: SQL string or clause element.
             values: Optional bind parameters.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -646,6 +649,7 @@ class Database:
         Args:
             query: SQL string or clause element.
             values: A sequence of parameter mappings.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -668,7 +672,8 @@ class Database:
             query: SQL string or clause element.
             values: Optional bind parameters.
             chunk_size: Backend batch-size hint.
-            timeout: Per-row timeout in seconds.
+        Kwargs:
+            timeout: Optional per-row timeout in seconds.
 
         Yields:
             interfaces.Record: Result rows.
@@ -693,7 +698,8 @@ class Database:
             values: Optional bind parameters.
             batch_size: Rows per batch.
             batch_wrapper: Callable to transform each batch.
-            timeout: Per-batch timeout in seconds.
+        Kwargs:
+            timeout: Optional per-batch timeout in seconds.
 
         Yields:
             BatchCallableResult: Batches of result rows.
@@ -737,6 +743,7 @@ class Database:
         Args:
             fn: A synchronous function.
             *args: Positional arguments.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Keyword arguments.
 
@@ -753,6 +760,7 @@ class Database:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData`.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments for ``meta.create_all``.
         """
@@ -764,6 +772,7 @@ class Database:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData`.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments for ``meta.drop_all``.
         """
@@ -792,7 +801,7 @@ class Database:
         In force-rollback mode the global connection is returned; otherwise
         a per-task connection is returned (created on demand).
 
-        Args:
+        Kwargs:
             timeout: Optional timeout for cross-loop proxying.
 
         Returns:
