@@ -299,7 +299,7 @@ class Connection:
         Raises:
             Exception: If the isolation thread fails to start.
         """
-        initialized: bool = False
+        initialized_in_thread: bool = False
         if self._full_isolation:
             thread: threading.Thread | None = None
             assert self._connection_thread_lock is not None
@@ -308,7 +308,7 @@ class Connection:
             with self._connection_thread_lock:
                 thread = self._isolation_thread
                 if thread is None:
-                    initialized = True
+                    initialized_in_thread = True
                     self._isolation_thread = thread = threading.Thread(
                         target=_init_thread,
                         args=[
@@ -324,7 +324,8 @@ class Connection:
             assert thread is not None
             # bypass for full_isolated
             if thread is not threading.current_thread():
-                if initialized:
+                if initialized_in_thread:
+                    # wait polling
                     while not self._connection_thread_is_initialized.is_set():
                         if not thread.is_alive():
                             with self._connection_thread_lock:
@@ -340,8 +341,9 @@ class Connection:
                         if not thread.is_alive():
                             raise Exception("Isolation thread is dead")
                         await asyncio.sleep(self.poll_interval)
-        if not initialized:
-            # set if full isolation thread is started
+        if not initialized_in_thread:
+            # initialized is set if full isolation thread is started
+            # start only when either in thread or no thread is used
             await self._aenter()
         return self
 
