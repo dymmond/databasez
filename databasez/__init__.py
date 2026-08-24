@@ -8,11 +8,13 @@ pooling, transactions, force rollback testing, and multi-loop isolation.
 Example:
     >>> from databasez import Database, DatabaseURL
     >>> async with Database("sqlite:///example.db") as database:
-    ...     await database.execute("CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY)")
+    ...     await database.execute(
+    ...         "CREATE TABLE IF NOT EXISTS test (id INTEGER PRIMARY KEY)"
+    ...     )
 """
 
 from databasez.core import Database, DatabaseURL
 
-__version__ = "0.12.1"
+__version__ = "0.13.0"
 
 __all__ = ["Database", "DatabaseURL"]

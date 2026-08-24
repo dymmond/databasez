@@ -546,6 +546,7 @@ class Database:
         self,
         query: ClauseElement | str,
         values: dict | None = None,
+        *,
         timeout: float | None = None,
     ) -> list[interfaces.Record]:
         """Execute *query* and return all result rows.
@@ -566,6 +567,7 @@ class Database:
         query: ClauseElement | str,
         values: dict | None = None,
         pos: int = 0,
+        *,
         timeout: float | None = None,
     ) -> interfaces.Record | None:
         """Execute *query* and return a single row.
@@ -574,6 +576,7 @@ class Database:
             query: SQL string or clause element.
             values: Optional bind parameters.
             pos: Row position (0-based, ``-1`` for last).
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -588,6 +591,7 @@ class Database:
         values: dict | None = None,
         column: int | str = 0,
         pos: int = 0,
+        *,
         timeout: float | None = None,
     ) -> Any:
         """Execute *query* and return a single scalar value.
@@ -597,6 +601,7 @@ class Database:
             values: Optional bind parameters.
             column: Column index or name.
             pos: Row position.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -615,6 +620,7 @@ class Database:
         self,
         query: ClauseElement | str,
         values: Any = None,
+        *,
         timeout: float | None = None,
     ) -> interfaces.Record | int:
         """Execute a statement and return a concise result.
@@ -622,6 +628,7 @@ class Database:
         Args:
             query: SQL string or clause element.
             values: Optional bind parameters.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -634,6 +641,7 @@ class Database:
         self,
         query: ClauseElement | str,
         values: Any = None,
+        *,
         timeout: float | None = None,
     ) -> Sequence[interfaces.Record] | int:
         """Execute a statement with multiple parameter sets.
@@ -641,6 +649,7 @@ class Database:
         Args:
             query: SQL string or clause element.
             values: A sequence of parameter mappings.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -654,6 +663,7 @@ class Database:
         query: ClauseElement | str,
         values: dict | None = None,
         chunk_size: int | None = None,
+        *,
         timeout: float | None = None,
     ) -> AsyncGenerator[interfaces.Record, None]:
         """Execute *query* and yield rows one by one.
@@ -662,7 +672,8 @@ class Database:
             query: SQL string or clause element.
             values: Optional bind parameters.
             chunk_size: Backend batch-size hint.
-            timeout: Per-row timeout in seconds.
+        Kwargs:
+            timeout: Optional per-row timeout in seconds.
 
         Yields:
             interfaces.Record: Result rows.
@@ -677,6 +688,7 @@ class Database:
         values: dict | None = None,
         batch_size: int | None = None,
         batch_wrapper: BatchCallable = tuple,
+        *,
         timeout: float | None = None,
     ) -> AsyncGenerator[BatchCallableResult, None]:
         """Execute *query* and yield rows in batches.
@@ -686,7 +698,8 @@ class Database:
             values: Optional bind parameters.
             batch_size: Rows per batch.
             batch_wrapper: Callable to transform each batch.
-            timeout: Per-batch timeout in seconds.
+        Kwargs:
+            timeout: Optional per-batch timeout in seconds.
 
         Yields:
             BatchCallableResult: Batches of result rows.
@@ -714,6 +727,8 @@ class Database:
         Returns:
             Transaction: A new transaction instance.
         """
+        # this uses the connection magic to get the current active connection of the db
+        # but it will fail if entered and non is available
         return Transaction(self.connection, force_rollback=force_rollback, **kwargs)
 
     async def run_sync(
@@ -728,6 +743,7 @@ class Database:
         Args:
             fn: A synchronous function.
             *args: Positional arguments.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Keyword arguments.
 
@@ -738,12 +754,13 @@ class Database:
             return await connection.run_sync(fn, *args, **kwargs, timeout=timeout)
 
     async def create_all(
-        self, meta: MetaData, timeout: float | None = None, **kwargs: Any
+        self, meta: MetaData, *, timeout: float | None = None, **kwargs: Any
     ) -> None:
         """Create all tables defined in *meta*.
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData`.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments for ``meta.create_all``.
         """
@@ -755,6 +772,7 @@ class Database:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData`.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments for ``meta.drop_all``.
         """
@@ -764,6 +782,7 @@ class Database:
     @multiloop_protector(False)
     def _non_global_connection(
         self,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> Connection:
         """Return or create the per-task connection (non-global).
@@ -776,13 +795,13 @@ class Database:
             return _connection
         return self._connection
 
-    def connection(self, timeout: float | None = None) -> Connection:
+    def connection(self, *, timeout: float | None = None) -> Connection:
         """Return a connection suitable for the current context.
 
         In force-rollback mode the global connection is returned; otherwise
         a per-task connection is returned (created on demand).
 
-        Args:
+        Kwargs:
             timeout: Optional timeout for cross-loop proxying.
 
         Returns:

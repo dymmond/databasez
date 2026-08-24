@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import threading
 import weakref
 from collections.abc import AsyncGenerator, Callable, Sequence
 from functools import partial
-from threading import Event, Lock, Thread, current_thread
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, cast
 
@@ -13,7 +14,7 @@ from sqlalchemy import text
 from databasez import interfaces
 from databasez.utils import _arun_with_timeout, arun_coroutine_threadsafe, multiloop_protector
 
-from .transaction import Transaction
+from .transaction import BoundTransaction, Transaction
 
 if TYPE_CHECKING:
     from sqlalchemy import MetaData
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
     from .database import Database
 
 
-async def _startup(database: Database, is_initialized: Event) -> None:
+async def _startup(database: Database, is_initialized: threading.Event) -> None:
     """Bootstrap a full-isolation database connection on a background loop.
 
     Connects the database, enters the global connection, and replaces its
@@ -35,18 +36,28 @@ async def _startup(database: Database, is_initialized: Event) -> None:
         is_initialized: Threading event signalled once initialisation
             completes.
     """
-    await database.connect()
-    _global_connection = cast(Connection, database._global_connection)
-    await _global_connection._aenter()
-    # we ensure fresh locks
-    _global_connection._query_lock = asyncio.Lock()
-    _global_connection._connection_lock = asyncio.Lock()
-    _global_connection._transaction_lock = asyncio.Lock()
-    is_initialized.set()
+    try:
+        await database.connect()
+        _global_connection = cast(Connection, database._global_connection)
+        # multiloop is used
+        await _global_connection._aenter_raw()
+        # we ensure fresh locks, because we are now in another thread now
+        _global_connection._query_lock = asyncio.Lock()
+        _global_connection._connection_lock = asyncio.Lock()
+        _global_connection._transaction_lock = asyncio.Lock()
+        _global_connection._transaction_notifier = asyncio.Condition(
+            _global_connection._transaction_lock
+        )
+        is_initialized.set()
+    except Exception as exc:
+        logging.exception(exc)
+        raise exc
 
 
 def _init_thread(
-    database: Database, is_initialized: Event, _connection_thread_running_lock: Lock
+    database: Database,
+    is_initialized: threading.Event,
+    _connection_thread_running_lock: threading.Lock,
 ) -> None:
     """Entry point for the full-isolation background thread.
 
@@ -182,14 +193,14 @@ class Connection:
         """
         self._orig_database = self._database = database
         self._full_isolation = full_isolation
-        self._connection_thread_lock: Lock | None = None
-        self._connection_thread_is_initialized: Event | None = None
-        self._connection_thread_running_lock: Lock | None = None
-        self._isolation_thread: Thread | None = None
+        self._connection_thread_lock: threading.Lock | None = None
+        self._connection_thread_is_initialized: threading.Event | None = None
+        self._connection_thread_running_lock: threading.Lock | None = None
+        self._isolation_thread: threading.Thread | None = None
         if self._full_isolation:
-            self._connection_thread_lock = Lock()
-            self._connection_thread_is_initialized = Event()
-            self._connection_thread_running_lock = Lock()
+            self._connection_thread_lock = threading.Lock()
+            self._connection_thread_is_initialized = threading.Event()
+            self._connection_thread_running_lock = threading.Lock()
             self._database = database.__class__(
                 database, force_rollback=force_rollback, full_isolation=False, poll_interval=-1
             )
@@ -198,13 +209,15 @@ class Connection:
         # the asyncio locks are overwritten in python versions < 3.10 when using full_isolation
         self._query_lock = asyncio.Lock()
         self._connection_lock = asyncio.Lock()
+        self._current_transaction: Transaction | None = None
         self._transaction_lock = asyncio.Lock()
+        self._transaction_notifier = asyncio.Condition(self._transaction_lock)
         self._connection = self._backend.connection()
         self._connection.owner = self
         self._connection_counter = 0
 
         # for keeping weak references to transactions active
-        self._transaction_stack: list[tuple[Transaction, interfaces.TransactionBackend]] = []
+        self._transaction_stack: list[BoundTransaction] = []
 
         self._force_rollback = force_rollback
         self.connection_transaction: Transaction | None = None
@@ -218,8 +231,7 @@ class Connection:
         """
         return self._connection
 
-    @multiloop_protector(False, passthrough_timeout=True)
-    async def _aenter(self) -> None:
+    async def _aenter_raw(self, *, timeout: float | None = None) -> None:
         """Acquire the backend connection and set up the connection transaction.
 
         If this is the first acquisition, the underlying backend connection
@@ -235,19 +247,44 @@ class Connection:
                         self._connection_counter += 1
                     raw_transaction = await self._connection.acquire()
                     if raw_transaction is not None:
-                        self.connection_transaction = self.transaction(
-                            existing_transaction=raw_transaction,
-                            force_rollback=self._force_rollback,
-                        )
-                        # we don't need to call __aenter__ of connection_transaction, it is not on the stack
+                        async with self._transaction_lock:
+                            self.connection_transaction = transaction = Transaction(
+                                connection_callable=weakref.ref(self),
+                                force_rollback=self._force_rollback,
+                            )
+                            transaction_db: interfaces.TransactionBackend = (
+                                self._get_connection_backend().transaction(raw_transaction)
+                            )
+                            # we don't need to start connection_transaction, it is started already
+                            self._transaction_stack.append(
+                                BoundTransaction(
+                                    connection=self,
+                                    transaction_db=transaction_db,
+                                    transaction=transaction,
+                                    unmanaged=True,
+                                )
+                            )
+                            # add it manually as _current_transaction because we don't use start
+                            self._current_transaction = transaction
                     elif self._force_rollback:
+                        self._current_transaction = None
+                        self.connection_transaction = None
+                        assert not self._transaction_stack
                         self.connection_transaction = self.transaction(
                             force_rollback=self._force_rollback
                         )
-                        await self.connection_transaction.start()
+                        await self.connection_transaction.start(timeout=timeout)
+                        self._current_transaction = self.connection_transaction
+                    else:
+                        self._current_transaction = None
             except BaseException:
                 self._connection_counter -= 1
                 raise
+
+    @multiloop_protector(False, passthrough_timeout=True)
+    async def _aenter(self, *, timeout: float | None = None):
+        """Enter multithreading-safe the start routine"""
+        return await self._aenter_raw(timeout=timeout)
 
     async def __aenter__(self) -> Connection:
         """Enter the connection context.
@@ -262,17 +299,17 @@ class Connection:
         Raises:
             Exception: If the isolation thread fails to start.
         """
-        initialized: bool = False
+        initialized_in_thread: bool = False
         if self._full_isolation:
-            thread: Thread | None = None
+            thread: threading.Thread | None = None
             assert self._connection_thread_lock is not None
             assert self._connection_thread_is_initialized is not None
             assert self._connection_thread_running_lock is not None
             with self._connection_thread_lock:
                 thread = self._isolation_thread
                 if thread is None:
-                    initialized = True
-                    self._isolation_thread = thread = Thread(
+                    initialized_in_thread = True
+                    self._isolation_thread = thread = threading.Thread(
                         target=_init_thread,
                         args=[
                             self._database,
@@ -281,12 +318,15 @@ class Connection:
                         ],
                         daemon=True,
                     )
+                    thread.name = "databasez_full_isolation_thread"
                     # must be started with lock held, for setting is_alive
                     thread.start()
             assert thread is not None
             # bypass for full_isolated
-            if thread is not current_thread():
-                if initialized:
+            if thread is not threading.current_thread():
+                # is the initializer thread active?
+                if initialized_in_thread:
+                    # wait polling
                     while not self._connection_thread_is_initialized.is_set():
                         if not thread.is_alive():
                             with self._connection_thread_lock:
@@ -302,8 +342,9 @@ class Connection:
                         if not thread.is_alive():
                             raise Exception("Isolation thread is dead")
                         await asyncio.sleep(self.poll_interval)
-
-        if not initialized:
+        if not initialized_in_thread:
+            # initialized_in_thread is set if full isolation thread is started
+            # start only when either in thread or no thread is used
             await self._aenter()
         return self
 
@@ -333,13 +374,15 @@ class Connection:
                         await self.connection_transaction.__aexit__()
                         # untie, for allowing gc
                         self.connection_transaction = None
+                    async with self._transaction_lock:
+                        self._current_transaction = None
                 finally:
                     await self._connection.release()
                     self._database._connection = None
         return closing
 
-    @multiloop_protector(False, passthrough_timeout=True)
-    async def _aexit(self) -> Thread | None:
+    @multiloop_protector(False, passthrough_timeout=False)
+    async def _aexit(self, *, timeout: float | None = None) -> threading.Thread | None:
         """Loop-protected exit. Stops the isolation thread if applicable.
 
         Returns:
@@ -369,7 +412,7 @@ class Connection:
     ) -> None:
         """Exit the connection context and join the isolation thread."""
         thread = await self._aexit()
-        if thread is not None and thread is not current_thread():
+        if thread is not None and thread is not threading.current_thread():
             while thread.is_alive():  # noqa: ASYNC110
                 await asyncio.sleep(self.poll_interval)
             thread.join(1)
@@ -400,6 +443,7 @@ class Connection:
         self,
         query: ClauseElement | str,
         values: dict | None = None,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> list[interfaces.Record]:
         """Execute *query* and return all result rows.
@@ -407,6 +451,7 @@ class Connection:
         Args:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -422,6 +467,7 @@ class Connection:
         query: ClauseElement | str,
         values: dict | None = None,
         pos: int = 0,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> interfaces.Record | None:
         """Execute *query* and return a single result row.
@@ -430,6 +476,7 @@ class Connection:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
             pos: Row position (0-based, ``-1`` for last).
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -446,6 +493,7 @@ class Connection:
         values: dict | None = None,
         column: int | str = 0,
         pos: int = 0,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> Any:
         """Execute *query* and return a single scalar value.
@@ -455,6 +503,7 @@ class Connection:
             values: Optional bind parameters.
             column: Column index or name.
             pos: Row position (0-based).
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -469,6 +518,7 @@ class Connection:
         self,
         query: ClauseElement | str,
         values: Any = None,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> interfaces.Record | int:
         """Execute a statement and return a concise result.
@@ -476,6 +526,7 @@ class Connection:
         Args:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -494,6 +545,7 @@ class Connection:
         self,
         query: ClauseElement | str,
         values: Any = None,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> Sequence[interfaces.Record] | int:
         """Execute a statement with multiple parameter sets.
@@ -501,6 +553,7 @@ class Connection:
         Args:
             query: SQL string or SQLAlchemy clause element.
             values: A sequence of parameter mappings.
+        Kwargs:
             timeout: Optional timeout in seconds.
 
         Returns:
@@ -520,6 +573,7 @@ class Connection:
         query: ClauseElement | str,
         values: dict | None = None,
         chunk_size: int | None = None,
+        *,
         timeout: float | None = None,
     ) -> AsyncGenerator[interfaces.Record, None]:
         """Execute *query* and yield rows one by one.
@@ -528,7 +582,8 @@ class Connection:
             query: SQL string or SQLAlchemy clause element.
             values: Optional bind parameters.
             chunk_size: Backend batch-size hint.
-            timeout: Per-row timeout in seconds.
+        Kwargs:
+            timeout: Optional per-row timeout in seconds.
 
         Yields:
             interfaces.Record: Result rows.
@@ -559,6 +614,7 @@ class Connection:
         values: dict | None = None,
         batch_size: int | None = None,
         batch_wrapper: BatchCallable = tuple,
+        *,
         timeout: float | None = None,
     ) -> AsyncGenerator[BatchCallableResult, None]:
         """Execute *query* and yield rows in batches.
@@ -568,7 +624,8 @@ class Connection:
             values: Optional bind parameters.
             batch_size: Number of rows per batch.
             batch_wrapper: Callable to transform each batch (default ``tuple``).
-            timeout: Per-batch timeout in seconds.
+        Kwargs:
+            timeout: Optional per-batch timeout in seconds.
 
         Yields:
             BatchCallableResult: A batch of result rows.
@@ -605,6 +662,7 @@ class Connection:
         Args:
             fn: A synchronous function.
             *args: Positional arguments for *fn*.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Keyword arguments for *fn*.
 
@@ -618,6 +676,7 @@ class Connection:
     async def create_all(
         self,
         meta: MetaData,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
         **kwargs: Any,
     ) -> None:
@@ -625,6 +684,7 @@ class Connection:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData` instance.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments forwarded to ``meta.create_all``.
         """
@@ -634,6 +694,7 @@ class Connection:
     async def drop_all(
         self,
         meta: MetaData,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
         **kwargs: Any,
     ) -> None:
@@ -641,6 +702,7 @@ class Connection:
 
         Args:
             meta: A SQLAlchemy :class:`~sqlalchemy.MetaData` instance.
+        Kwargs:
             timeout: Optional timeout in seconds.
             **kwargs: Extra arguments forwarded to ``meta.drop_all``.
         """
@@ -667,10 +729,13 @@ class Connection:
     @multiloop_protector(False)
     async def get_raw_connection(
         self,
+        *,
         timeout: float | None = None,  # stub for multiloop_protector
     ) -> Any:
         """Return the real raw driver connection.
 
+        Kwargs:
+            timeout: Optional timeout in seconds.
         Returns:
             Any: The underlying driver connection.
         """

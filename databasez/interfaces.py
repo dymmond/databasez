@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from databasez.core.database import Connection as RootConnection
     from databasez.core.database import Database as RootDatabase
     from databasez.core.databaseurl import DatabaseURL
-    from databasez.core.transaction import Transaction as RootTransaction
+    from databasez.core.transaction import BoundTransaction
 
 __all__ = ["Record", "DatabaseBackend", "ConnectionBackend", "TransactionBackend"]
 
@@ -101,19 +101,19 @@ class TransactionBackend(ABC):
         return result.async_connection
 
     @property
-    def owner(self) -> RootTransaction | None:
+    def owner(self) -> BoundTransaction | None:
         """Return the high-level :class:`Transaction` wrapper, if alive.
 
         Returns:
-            RootTransaction | None: The wrapper, or ``None``.
+            BoundTransaction | None: The wrapper, or ``None``.
         """
         result = self.__dict__.get("owner")
         if result is None:
             return None
-        return cast("RootTransaction", result())
+        return cast("BoundTransaction", result())
 
     @owner.setter
-    def owner(self, value: RootTransaction) -> None:
+    def owner(self, value: BoundTransaction) -> None:
         self.__dict__["owner"] = weakref.ref(value)
 
     @abstractmethod

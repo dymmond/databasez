@@ -1,10 +1,17 @@
+from __future__ import annotations
+
 import asyncio
 import gc
 import os
 from collections.abc import MutableMapping
+from contextlib import suppress
+from typing import TYPE_CHECKING
 
 import pytest
 import sqlalchemy
+
+if TYPE_CHECKING:
+    from databasez.core import Connection
 
 try:
     import pyodbc
@@ -86,14 +93,16 @@ async def test_transaction_context_child_task_inheritance(database_url):
     """
     Ensure that transactions are inherited by child tasks.
     """
-    async with Database(database_url) as database:
+    async with Database(database_url) as database, database.connection() as connection:
 
         async def check_transaction(transaction, active_transaction):
+            bound = await transaction.get_bound_transaction(connection)
             # Should have inherited the same transaction backend from the parent task
-            assert transaction._transaction is active_transaction
+            assert bound.transaction_db is active_transaction
 
-        async with database.transaction() as transaction:
-            await asyncio.create_task(check_transaction(transaction, transaction._transaction))
+        async with connection.transaction() as transaction:
+            bound = await transaction.get_bound_transaction(connection)
+            await asyncio.create_task(check_transaction(transaction, bound.transaction_db))
 
 
 @pytest.mark.asyncio
@@ -243,7 +252,27 @@ async def test_rollback_isolation_with_contextmanager(database_url):
 
 
 @pytest.mark.asyncio
-async def test_transaction_commit(database_url):
+async def test_transaction_commit_connection(database_url):
+    """
+    Ensure that transaction commit is supported.
+    """
+
+    async with (
+        Database(database_url, full_isolation=False) as database,
+        database.connection() as connection,
+        connection.transaction(force_rollback=True),
+    ):
+        async with connection.transaction():
+            query = notes.insert().values(text="example1", completed=True)
+            await connection.execute(query)
+
+        query = notes.select()
+        results = await connection.fetch_all(query=query)
+        assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_transaction_commit_global(database_url):
     """
     Ensure that transaction commit is supported.
     """
@@ -390,7 +419,7 @@ async def test_transaction_rollback_low_level(database_url):
 
 
 @pytest.mark.parametrize(
-    "full_isolation", [True, False], ids=["full_isolation", "no_full_isolation"]
+    "full_isolation", [True, False], ids=["with_full_isolation", "no_full_isolation"]
 )
 @pytest.mark.asyncio
 async def test_transaction_decorator(database_url, full_isolation):
@@ -498,7 +527,7 @@ async def test_transaction_context_sibling_task_isolation(database_url):
     start = asyncio.Event()
     end = asyncio.Event()
 
-    async with Database(database_url) as database:
+    async with Database(database_url) as database, database.connection() as connection:
 
         async def check_transaction(transaction):
             await start.wait()
@@ -512,8 +541,43 @@ async def test_transaction_context_sibling_task_isolation(database_url):
 
         async with transaction:
             start.set()
-            assert transaction._transaction is not None
+            assert (await transaction.get_bound_transaction(connection)) is not None
             await end.wait()
 
         # Cleanup for "Task not awaited" warning
         await task
+
+
+class FooException(Exception):
+    pass
+
+
+@pytest.mark.asyncio
+async def test_concurrent_transaction_on_same_connection(database_url):
+    """
+    Test multiple transactions on the same connection
+    """
+    async with Database(database_url, force_rollback=False, full_isolation=False) as database:
+
+        async def _create_note(connection: Connection, text: str, action: int):
+            with suppress(FooException):
+                async with connection.transaction(force_rollback=action == 1):
+                    query = notes.insert().values(text=text, completed=True)
+                    await connection.execute(query)
+                    async for _ in connection.iterate(notes.select()):
+                        await asyncio.sleep(0)
+                    if action == 2:
+                        raise FooException
+
+        async with (
+            database.connection() as connection,
+            connection.transaction(force_rollback=True),
+        ):
+            ops = []
+            for i in range(90):
+                ops.append(_create_note(connection=connection, text=f"query{i}", action=i % 3))
+            await asyncio.gather(*ops)
+            results = await connection.fetch_all(notes.select())
+            assert len(results) == 30
+            assert database.is_connected
+    assert not database.is_connected
